@@ -72,7 +72,7 @@ const Footer = () => (
   <footer className="py-12 text-center border-t border-[#30363d] w-full mt-10 bg-[#0d1117]">
     <div className="container mx-auto px-4 max-w-[1200px]">
       <div className="text-[13px] text-gray-400 font-medium leading-relaxed">
-        All Rights reserved © U Quiz 2026 | Developed by Ansh Yadav
+        All Rights reserved © U Quiz 2026 <br> Developed by Ansh Yadav
         <div className="mt-4 flex flex-wrap justify-center gap-x-8 gap-y-2">
           <a 
             href="https://instagram.com/anshtgyadav" 
