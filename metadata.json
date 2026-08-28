@@ -1,5 +1,8 @@
 {
   "name": "U Quiz - NCERT AI Quizzing",
-  "description": "A dedicated quizzing platform strictly based on the NCERT syllabus for Classes 1 to 12, powered by Gemini 2.5 Flash Lite for fresh, dynamic question generation.",
-  "requestFramePermissions": []
+  "description": "A dedicated quizzing platform strictly based on the latest 2026-27 NCF-SE and 2025-26 NCERT syllabus for Classes 1 to 12, powered by Gemini Flash Lite for high-speed dynamic question generation and KaTeX rendering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

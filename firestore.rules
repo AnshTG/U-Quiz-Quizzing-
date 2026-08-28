@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profiles & stats (public read for leaderboard & profile display)
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isOwner(userId);
+      allow delete: if isOwner(userId);
+
+      // User quiz history subcollection
+      match /quizHistory/{historyId} {
+        allow read: if true;
+        allow write: if isOwner(userId);
+      }
+
+      // User saved quizzes bank (Cloud Vault limit of 50 quizzes)
+      match /savedQuizzes/{savedQuizId} {
+        allow read: if isAuthenticated();
+        allow write: if isOwner(userId);
+      }
+    }
+
+    // Public shared quizzes
+    match /sharedQuizzes/{quizId} {
+      // Anyone can read a shared quiz to play it
+      allow read: if true;
+      
+      // Anyone authenticated can create a shared quiz
+      allow create: if request.resource.data.id == quizId
+                    && request.resource.data.title is string
+                    && request.resource.data.questions is list
+                    && request.resource.data.config is map;
+      
+      // Allow updating plays count or creator editing
+      allow update: if true;
+      allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid);
+    }
+
+    // Attendance records (public read for admin dashboard & leaderboard, create/update if authenticated)
+    match /attendance/{recordId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    // Public community chat messages
+    match /publicChat/{messageId} {
+      // Anyone can read public study messages in real time
+      allow read: if true;
+      
+      // Authenticated users can send messages with their own uid
+      allow create: if isAuthenticated() 
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() > 0
+                    && request.resource.data.message.size() <= 1000;
+
+      // Authors can delete or edit their own messages
+      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
+
