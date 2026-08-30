@@ -39,40 +39,28 @@ app.post('/api/generate-quiz', async (req, res) => {
 
     const ai = getAIClient();
     const topicsList = config.topics.join(', ');
-    const quantity = typeof config.quantity === "number" && config.quantity > 0 ? config.quantity : 10;
-    const strength = config.strength || "Medium";
-    const syllabusYear = config.syllabusYear || "2026-27";
-    const questionFormat = config.questionFormat || "single"; // 'single' | 'multiple' | 'mixed'
-
-    let formatInstruction = "All questions must be standard Single Choice Questions (exactly 1 correct option).";
-    if (questionFormat === "multiple") {
-      formatInstruction = "All questions must be Multiple Choice Questions with multiple correct options (2 or 3 correct answers out of 4). Clearly add '(Select all that apply)' in the question stem. Set isMultiple to true.";
-    } else if (questionFormat === "mixed") {
-      formatInstruction = "Include a realistic blend of Single Choice Questions (1 correct answer, isMultiple: false) and Multiple Choice Questions with 2-3 correct answers (Select all that apply, isMultiple: true).";
-    }
+    const quantity = typeof config.quantity === 'number' && config.quantity > 0 ? config.quantity : 10;
+    const strength = config.strength || 'Medium';
+    const syllabusYear = config.syllabusYear || '2026-27';
 
     const prompt = `
       Act as a senior NCERT Subject Matter Expert.
       Generate a high-quality assessment with exactly ${quantity} items strictly aligned with the NCERT ${syllabusYear} curriculum.
       
       CONTEXT:
-      - Academic Session: ${syllabusYear} (${syllabusYear === '2026-27' ? 'Latest Updated NCF-SE / NEP 2020 Unified Curriculum' : 'Rationalized Standard Edition'})
+      - Academic Session: ${syllabusYear}
       - Grade: ${config.class}
       - Subject: ${config.subject}
       - Scope / Chapters: ${topicsList}
       - Cognitive Demand: ${strength} (Easy=Recall, Medium=Application, Hard=Analysis)
-      - Question Style Requirement: ${formatInstruction}
 
       OUTPUT FORMAT RULES (MANDATORY):
       1. Language: Use professional, academic English as per the subject.
       2. Options: Exactly 4 distinct options per question.
-      3. Correct Answer: For single choice, provide the exact option string. For multiple choice (when isMultiple is true), provide the correct options joined by semicolons (e.g. "Option A; Option C") or the exact matching string.
-      4. Explanation: Provide a comprehensive "Rationale" citing the official NCERT concept from the ${syllabusYear} textbook.
-      5. isMultiple: Boolean (true for multi-select questions, false for single choice).
+      3. Explanation: Provide a "Rationale" citing the official NCERT concept from the ${syllabusYear} textbook.
       
       TEXT & MATH RENDERING RULES (CRITICAL):
-      - Double escape all backslashes in JSON output so LaTeX is preserved cleanly. For example, write "\\\\frac{1}{2}", "\\\\sqrt{50}", "30^\\\\circ", "\\\\pm", "\\\\times", "\\\\div", "\\\\theta", "\\\\pi", "\\\\Delta". NEVER emit bare "rac{1}{2}" or unescaped control characters!
-      - Wrap mathematical formulas and equations in single dollar signs ($...$).
+      - Mathematical formulas and equations: Write using clean LaTeX enclosed in single dollar signs ($...$) or standard notation (e.g., $x^2 + 5x + 6 = 0$, $\\sqrt{25} = 5$, $\\frac{3}{4}$).
       - Currency: Always use "₹" for Indian Rupee (e.g. ₹500, never $500).
       - Plain text & Units: DO NOT wrap plain words, units, or plain numbers in dollar signs.
       - Clean Formatting: Ensure all opening dollar signs have matching closing dollar signs.
@@ -96,7 +84,6 @@ app.post('/api/generate-quiz', async (req, res) => {
                 },
                 correctAnswer: { type: Type.STRING },
                 explanation: { type: Type.STRING },
-                isMultiple: { type: Type.BOOLEAN },
               },
               required: ['question', 'options', 'correctAnswer', 'explanation'],
             },

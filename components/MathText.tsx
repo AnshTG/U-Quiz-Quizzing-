@@ -24,34 +24,21 @@ function sanitizeAndFormatMath(rawContent: string): string {
   // 1. Normalize line endings
   text = text.replace(/\r\n/g, '\n');
 
-  // 2. Fix form-feed + rac or orphan rac{...}{...} caused by unescaped \frac
-  text = text.replace(/[\x0c]rac\{/g, '\\frac{');
-  text = text.replace(/(^|[^a-zA-Z0-9\\])rac\{([^{}]+)\}\{([^{}]+)\}/g, '$1\\frac{$2}{$3}');
-
-  // 3. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
-  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|le|ge|neq|cdot|sin|cos|tan|log|ln|int|sum|prod|circ|angle)/g, '\\$1');
-
-  // 4. Handle \degree and degree symbols
-  text = text.replace(/\\degree/g, '^{\\circ}');
-  text = text.replace(/(\d+)\s*°(?!\$)/g, '$1^{\\circ}');
-
-  // 5. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
+  // 2. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$1$$$');
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
-  // 6. Handle standalone un-delimited LaTeX fractions like \frac{1}{2} -> $\frac{1}{2}$
+  // 3. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
+  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|le|ge|neq|cdot|sin|cos|tan|log|ln|int|sum|prod)/g, '\\$1');
+
+  // 4. Handle standalone un-delimited LaTeX fractions like \frac{1}{2} -> $\frac{1}{2}$
   text = text.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, '$\\frac{$1}{$2}$');
 
-  // 7. Handle standalone square roots like \sqrt{50} or \sqrt{x+1} -> $\sqrt{50}$
-  text = text.replace(/(?<!\$)\\sqrt(?:\[([^\]]+)\])?\{([^{}]+)\}(?!\$)/g, (_m, root, val) => {
-    return root ? `$\\sqrt[${root}]{${val}}$` : `$\\sqrt{${val}}$`;
-  });
+  // 5. Handle standalone square roots like \sqrt{x} or \sqrt{25} -> $\sqrt{25}$
+  text = text.replace(/(?<!\$)\\sqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
 
-  // 8. Handle standalone Greek / math symbols like \theta, \pi, \Delta -> $\theta$
-  text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|le|ge|neq|cdot|circ|angle)(?!\$)/g, '$\\$1$');
-
-  // 9. Handle simple inline exponents like x^2, y^3 when not inside $
-  text = text.replace(/(?<!\$)\b([a-zA-Z])\^([0-9]+)\b(?!\$)/g, '$$$1^{$2}$$');
+  // 6. Handle standalone Greek / math symbols like \theta, \pi, \Delta -> $\theta$
+  text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|le|ge|neq|cdot)(?!\$)/g, '$\\$1$');
 
   return text;
 }
@@ -68,15 +55,7 @@ export const MathText: React.FC<MathTextProps> = ({ content, className = '' }) =
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[
-          [rehypeKatex, { 
-            throwOnError: false, 
-            strict: false,
-            macros: {
-              "\\degree": "^\\circ",
-              "\\deg": "^\\circ",
-              "\\celsius": "^\\circ\\text{C}"
-            }
-          }],
+          [rehypeKatex, { throwOnError: false, strict: false }],
           rehypeRaw
         ]}
         components={{

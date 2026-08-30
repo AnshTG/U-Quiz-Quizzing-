@@ -73,42 +73,18 @@ export const QuizView: React.FC<QuizViewProps> = ({
   const currentAnswer = userAnswers[currentIndex];
   const isFlagged = flaggedQuestions[currentIndex];
 
-  const isMultiSelect = !!currentQ.isMultiple;
-
-  // Selected options array helper
-  const selectedOptionsList = React.useMemo(() => {
-    if (!currentAnswer) return [];
-    if (isMultiSelect) {
-      return currentAnswer.split(';').map(s => s.trim()).filter(Boolean);
-    }
-    return [currentAnswer];
-  }, [currentAnswer, isMultiSelect]);
-
   const handleSelectOption = (option: string) => {
     setUserAnswers(prev => {
       const updated = [...prev];
-      const existing = updated[currentIndex];
+      updated[currentIndex] = option;
+      return updated;
+    });
+  };
 
-      if (isMultiSelect) {
-        const currentList = existing ? existing.split(';').map(s => s.trim()).filter(Boolean) : [];
-        if (currentList.includes(option)) {
-          // Deselect option
-          const nextList = currentList.filter(o => o !== option);
-          updated[currentIndex] = nextList.length > 0 ? nextList.join('; ') : null;
-        } else {
-          // Add option
-          const nextList = [...currentList, option];
-          updated[currentIndex] = nextList.join('; ');
-        }
-      } else {
-        // Single choice: if clicking already selected, deselect it (null)
-        if (existing === option) {
-          updated[currentIndex] = null;
-        } else {
-          updated[currentIndex] = option;
-        }
-      }
-
+  const handleClearAnswer = () => {
+    setUserAnswers(prev => {
+      const updated = [...prev];
+      updated[currentIndex] = null;
       return updated;
     });
   };
@@ -231,7 +207,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
               Q{currentIndex + 1}
             </span>
             <span className="text-xs text-slate-400 font-mono">
-              {isMultiSelect ? 'Multiple Choice (Select all that apply)' : 'Multiple Choice (Single Option)'}
+              Multiple Choice (Single Option)
             </span>
           </div>
 
@@ -256,7 +232,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
         {/* 4 Options Grid */}
         <div className="space-y-3 pt-2">
           {currentQ.options.map((option, optIdx) => {
-            const isSelected = selectedOptionsList.includes(option);
+            const isSelected = currentAnswer === option;
             const letter = optionLetters[optIdx];
 
             return (
@@ -264,7 +240,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
                 key={optIdx}
                 type="button"
                 onClick={() => handleSelectOption(option)}
-                className={`w-full p-4 sm:p-5 rounded-2xl border text-left transition-all duration-150 flex items-center gap-4 group cursor-pointer ${
+                className={`w-full p-4 sm:p-5 rounded-2xl border text-left transition-all duration-150 flex items-center gap-4 group ${
                   isSelected
                     ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-lg shadow-emerald-500/10 scale-[1.005]'
                     : 'bg-slate-950/50 hover:bg-slate-900 border-slate-800/80 text-slate-200 hover:border-slate-700'
@@ -284,24 +260,14 @@ export const QuizView: React.FC<QuizViewProps> = ({
                   <MathText content={option} />
                 </div>
 
-                {/* Selection Radio / Checkbox Icon */}
-                {isMultiSelect ? (
-                  <div className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition-colors ${
-                    isSelected
-                      ? 'border-emerald-400 bg-emerald-400 text-slate-950'
-                      : 'border-slate-700 group-hover:border-slate-500'
-                  }`}>
-                    {isSelected && <CheckCircle2 className="w-3.5 h-3.5 stroke-[3]" />}
-                  </div>
-                ) : (
-                  <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                    isSelected
-                      ? 'border-emerald-400 bg-emerald-400 text-slate-950'
-                      : 'border-slate-700 group-hover:border-slate-500'
-                  }`}>
-                    {isSelected && <div className="w-2 h-2 rounded-full bg-slate-950" />}
-                  </div>
-                )}
+                {/* Selection Radio Icon */}
+                <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                  isSelected
+                    ? 'border-emerald-400 bg-emerald-400 text-slate-950'
+                    : 'border-slate-700 group-hover:border-slate-500'
+                }`}>
+                  {isSelected && <div className="w-2 h-2 rounded-full bg-slate-950" />}
+                </div>
               </button>
             );
           })}
@@ -312,25 +278,32 @@ export const QuizView: React.FC<QuizViewProps> = ({
       {/* Bottom Action Controls */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur-md p-4 flex flex-wrap items-center justify-between gap-3">
         
-        {/* Left: Previous */}
+        {/* Left: Previous & Clear */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={currentIndex === 0}
             onClick={() => setCurrentIndex(c => c - 1)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none text-slate-200 text-xs font-semibold transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none text-slate-200 text-xs font-semibold transition-all"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>Previous</span>
           </button>
+
+          {currentAnswer !== null && (
+            <button
+              type="button"
+              onClick={handleClearAnswer}
+              className="flex items-center gap-1 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear</span>
+            </button>
+          )}
         </div>
 
         {/* Center shortcuts tip */}
-        <div className="hidden md:flex items-center gap-2 text-[11px] font-mono text-slate-400">
-          <span>Click option to select/deselect</span>
-          <span>•</span>
-          <span>Keys: <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">A-D</kbd> select, <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">← →</kbd> nav</span>
-        </div>
+        <div className="hidden md:flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
           <span>Keys:</span>
           <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">A-D</span>
           <span>select</span>

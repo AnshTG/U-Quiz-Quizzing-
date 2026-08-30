@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { QuizConfig, SyllabusYear, QuestionFormat } from '../types';
+import { QuizConfig, SyllabusYear } from '../types';
 import { 
   CLASSES_2026_27, 
   CLASSES_2025_26, 
@@ -26,8 +26,7 @@ import {
   CheckCircle2,
   HelpCircle,
   Layers,
-  GraduationCap,
-  ListFilter
+  GraduationCap
 } from 'lucide-react';
 import { ShareReminderModal } from './ShareReminderModal';
 
@@ -63,9 +62,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
   );
   const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(
     initialConfig?.timeLimitMinutes !== undefined ? initialConfig.timeLimitMinutes : null
-  );
-  const [questionFormat, setQuestionFormat] = useState<QuestionFormat>(
-    initialConfig?.questionFormat || 'single'
   );
 
   const [topicSearch, setTopicSearch] = useState<string>('');
@@ -193,7 +189,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
       quantity,
       timeLimitMinutes,
       syllabusYear: selectedYear,
-      questionFormat,
     });
   };
 
@@ -206,10 +201,9 @@ export const SetupView: React.FC<SetupViewProps> = ({
     !!strength,
     !!quantity,
     timeLimitMinutes !== null,
-    !!questionFormat,
   ].filter(Boolean).length;
 
-  const totalSteps = 8;
+  const totalSteps = 7;
   const isFormComplete = completedSteps === totalSteps;
 
   const quantityOptions = [5, 10, 15, 20, 25];
@@ -658,79 +652,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
                         <span>{opt.label}</span>
                       </div>
                       {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Step 8: Question Format (Single, Multiple, Mixed) */}
-            <div className="pt-4 border-t border-slate-800/80">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${questionFormat ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    8
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-bold text-white font-display">Question Response Style</h3>
-                    <p className="text-xs text-slate-400">Single choice (1 correct), Multiple choice (multi-select), or Mixed</p>
-                  </div>
-                </div>
-                {questionFormat && (
-                  <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
-                    <Check className="w-3.5 h-3.5" /> {
-                      questionFormat === 'single' 
-                        ? 'Single Choice' 
-                        : questionFormat === 'multiple' 
-                        ? 'Multiple Choice' 
-                        : 'Mixed (Both)'
-                    }
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {[
-                  {
-                    id: 'single' as QuestionFormat,
-                    title: 'Single Choice',
-                    badge: '1 Correct',
-                    desc: 'Standard 4 options with exactly one correct answer'
-                  },
-                  {
-                    id: 'multiple' as QuestionFormat,
-                    title: 'Multiple Choice',
-                    badge: 'Multi-Select',
-                    desc: 'Questions with multiple correct answers (Select all that apply)'
-                  },
-                  {
-                    id: 'mixed' as QuestionFormat,
-                    title: 'Both (Mixed)',
-                    badge: 'Comprehensive',
-                    desc: 'Realistic blend of single and multi-response questions'
-                  }
-                ].map((fmt) => {
-                  const isSelected = questionFormat === fmt.id;
-                  return (
-                    <button
-                      key={fmt.id}
-                      type="button"
-                      onClick={() => setQuestionFormat(fmt.id)}
-                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
-                        isSelected
-                          ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-white">{fmt.title}</span>
-                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
-                          isSelected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
-                        }`}>
-                          {fmt.badge}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 leading-tight">{fmt.desc}</span>
                     </button>
                   );
                 })}

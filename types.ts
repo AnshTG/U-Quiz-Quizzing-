@@ -9,8 +9,6 @@ export interface NCERTEntry {
   textbookName?: string;
 }
 
-export type QuestionFormat = 'single' | 'multiple' | 'mixed';
-
 export interface QuizConfig {
   class: string;
   subject: string;
@@ -19,15 +17,13 @@ export interface QuizConfig {
   quantity: number;
   timeLimitMinutes?: number; // 0 = untimed
   syllabusYear?: SyllabusYear;
-  questionFormat?: QuestionFormat; // 'single' | 'multiple' | 'mixed'
 }
 
 export interface Question {
   question: string;
   options: string[];
-  correctAnswer: string | string[];
+  correctAnswer: string;
   explanation: string;
-  isMultiple?: boolean;
 }
 
 export interface QuizResultRecord {
