@@ -34,7 +34,8 @@ import {
   SavedQuizRecord, 
   LeaderboardUser,
   AttendanceRecord,
-  ChatMessage 
+  ChatMessage,
+  MaintenanceConfig 
 } from '../types';
 
 // Initialize Firebase App
@@ -373,11 +374,107 @@ export const subscribeToUserQuizHistory = (
 export const deleteUserQuizResult = async (userId: string, resultId: string): Promise<void> => {
   try {
     const docRef = doc(db, 'users', userId, 'quizHistory', resultId);
+    const snap = await getDoc(docRef);
+    const oldData = snap.exists() ? (snap.data() as QuizResultRecord) : null;
     await deleteDoc(docRef);
+
+    if (oldData) {
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, {
+        quizzesCompleted: increment(-1),
+        totalQuestionsAnswered: increment(-oldData.total),
+        totalScore: increment(-oldData.score),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
   } catch (error) {
     console.error('Failed to delete quiz result:', error);
   }
 };
+
+/**
+ * Admin: Delete any user's specific quiz result and recalculate aggregate metrics
+ */
+export const adminDeleteUserQuizResult = async (userId: string, resultId: string): Promise<void> => {
+  return deleteUserQuizResult(userId, resultId);
+};
+
+/**
+ * Admin: Modify score and details of any quiz result
+ */
+export const adminUpdateUserQuizResult = async (
+  userId: string,
+  resultId: string,
+  updatedFields: Partial<QuizResultRecord>
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'users', userId, 'quizHistory', resultId);
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) throw new Error('Result record not found');
+    const oldData = snap.data() as QuizResultRecord;
+
+    await setDoc(docRef, updatedFields, { merge: true });
+
+    // If score or total questions changed, update aggregate user score
+    if (updatedFields.score !== undefined || updatedFields.total !== undefined) {
+      const scoreDiff = (updatedFields.score !== undefined ? updatedFields.score : oldData.score) - oldData.score;
+      const totalDiff = (updatedFields.total !== undefined ? updatedFields.total : oldData.total) - oldData.total;
+      
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, {
+        totalScore: increment(scoreDiff),
+        totalQuestionsAnswered: increment(totalDiff),
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+    }
+  } catch (error) {
+    console.error('Admin update quiz result error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete all quiz history records for a user
+ */
+export const adminDeleteAllUserQuizHistory = async (userId: string): Promise<void> => {
+  try {
+    const historyCol = collection(db, 'users', userId, 'quizHistory');
+    const snapshot = await getDocs(historyCol);
+    const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(deletePromises);
+
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      quizzesCompleted: 0,
+      totalQuestionsAnswered: 0,
+      totalScore: 0,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Admin delete all quiz history error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Update user profile stats (score, streak, quizzes, attendance, display name)
+ */
+export const adminUpdateUserProfile = async (
+  userId: string,
+  updatedData: Partial<UserProfile>
+): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      ...updatedData,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Admin update user profile error:', error);
+    throw error;
+  }
+};
+
 
 // ==========================================
 // CLOUD QUIZ STORAGE VAULT (Limit: 50 Quizzes)
@@ -748,6 +845,42 @@ export const deleteSharedQuizByAdmin = async (quizId: string): Promise<void> => 
   }
 };
 
+/**
+ * Delete a shared quiz (allowed if user is creator or admin)
+ */
+export const deleteSharedQuiz = async (
+  quizId: string,
+  userId?: string | null,
+  isAdmin: boolean = false
+): Promise<void> => {
+  try {
+    const quizRef = doc(db, 'sharedQuizzes', quizId);
+    if (!isAdmin && userId) {
+      const snap = await getDoc(quizRef);
+      if (snap.exists()) {
+        const data = snap.data() as SharedQuiz;
+        if (data.creatorId !== userId) {
+          throw new Error('Permission denied: You can only delete quizzes you created.');
+        }
+      }
+    }
+    await deleteDoc(quizRef);
+  } catch (error) {
+    console.error('Failed to delete shared quiz:', error);
+    throw error;
+  }
+};
+
+/**
+ * Real-time subscription to public shared quizzes list for community tab
+ */
+export const subscribeToAllSharedQuizzes = (
+  callback: (quizzes: SharedQuiz[]) => void
+): Unsubscribe => {
+  return subscribeToSharedQuizzesForAdmin(callback);
+};
+
+
 // ==========================================
 // PUBLIC LEADERBOARD AGGREGATION (Real-Time)
 // ==========================================
@@ -953,5 +1086,81 @@ export const deletePublicChatMessage = async (messageId: string): Promise<void> 
   const msgRef = doc(db, 'publicChat', messageId);
   await deleteDoc(msgRef);
 };
+
+export const togglePublicChatReaction = async (
+  messageId: string,
+  emoji: string,
+  userId: string
+): Promise<void> => {
+  try {
+    const msgRef = doc(db, 'publicChat', messageId);
+    const snap = await getDoc(msgRef);
+    if (!snap.exists()) return;
+    const data = snap.data() as ChatMessage;
+    const currentReactions = data.reactions || {};
+    const usersForEmoji = currentReactions[emoji] || [];
+    
+    let updatedUsers: string[];
+    if (usersForEmoji.includes(userId)) {
+      updatedUsers = usersForEmoji.filter(id => id !== userId);
+    } else {
+      updatedUsers = [...usersForEmoji, userId];
+    }
+    
+    const updatedReactions = { ...currentReactions };
+    if (updatedUsers.length === 0) {
+      delete updatedReactions[emoji];
+    } else {
+      updatedReactions[emoji] = updatedUsers;
+    }
+    
+    await updateDoc(msgRef, { reactions: updatedReactions });
+  } catch (err) {
+    console.error('Failed to toggle chat reaction:', err);
+  }
+};
+
+// ==========================================
+// SYSTEM MAINTENANCE MODE
+// ==========================================
+
+export const listenToMaintenanceMode = (
+  callback: (config: MaintenanceConfig) => void
+): Unsubscribe => {
+  try {
+    const docRef = doc(db, 'system', 'maintenance');
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data() as MaintenanceConfig);
+      } else {
+        // Default: maintenance inactive
+        callback({ isActive: false });
+      }
+    }, (err) => {
+      console.warn('Maintenance mode onSnapshot error:', err);
+      callback({ isActive: false });
+    });
+  } catch (err) {
+    console.error('Failed to listen to maintenance mode:', err);
+    return () => {};
+  }
+};
+
+export const updateMaintenanceMode = async (
+  config: Partial<MaintenanceConfig>
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'system', 'maintenance');
+    await setDoc(docRef, {
+      ...config,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Update maintenance mode error:', error);
+    throw error;
+  }
+};
+
+
 
 

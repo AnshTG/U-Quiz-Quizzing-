@@ -16,7 +16,8 @@ import {
   TrendingUp,
   ShieldCheck,
   UserCheck,
-  Radio
+  Radio,
+  ArrowLeft
 } from 'lucide-react';
 
 interface LeaderboardViewProps {
@@ -120,6 +121,18 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => onNavigate(AppState.HOME)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-amber-400 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Dashboard</span>
+              </button>
+              <span className="text-slate-600">•</span>
+              <span className="text-xs text-slate-400 font-mono">Live Ranks</span>
+            </div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold">
               <Trophy className="w-3.5 h-3.5" />
               <span>Real-Time Scholar Standings</span>

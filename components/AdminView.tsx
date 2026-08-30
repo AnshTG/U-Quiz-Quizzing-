@@ -5,7 +5,8 @@ import {
   SavedQuizRecord, 
   SharedQuiz,
   AttendanceRecord,
-  AppState 
+  AppState,
+  MaintenanceConfig 
 } from '../types';
 import { 
   fetchAllUsersForAdmin, 
@@ -16,6 +17,12 @@ import {
   subscribeToAllUsersForAdmin,
   subscribeToSharedQuizzesForAdmin,
   subscribeToAttendance,
+  adminDeleteUserQuizResult,
+  adminUpdateUserQuizResult,
+  adminDeleteAllUserQuizHistory,
+  adminUpdateUserProfile,
+  listenToMaintenanceMode,
+  updateMaintenanceMode,
   getISTDateString,
   getISTTimeString
 } from '../services/firebase';
@@ -45,7 +52,13 @@ import {
   UserCheck,
   CalendarCheck,
   Radio,
-  Filter
+  Filter,
+  Edit3,
+  Save,
+  Check,
+  AlertTriangle,
+  Power,
+  Server
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -71,7 +84,27 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
   // Selected quiz attempt for detail inspection
   const [inspectingQuizRecord, setInspectingQuizRecord] = useState<QuizResultRecord | null>(null);
 
-  // Real-time synchronization for users, shared quizzes, and attendance
+  // Score editing state for individual result
+  const [editingResult, setEditingResult] = useState<QuizResultRecord | null>(null);
+  const [editScoreVal, setEditScoreVal] = useState<number>(0);
+  const [editTotalVal, setEditTotalVal] = useState<number>(0);
+
+  // User stats editing state
+  const [isEditingUserStats, setIsEditingUserStats] = useState<boolean>(false);
+  const [editUserName, setEditUserName] = useState<string>('');
+  const [editTotalScore, setEditTotalScore] = useState<number>(0);
+  const [editQuizzesCount, setEditQuizzesCount] = useState<number>(0);
+  const [editQuestionsCount, setEditQuestionsCount] = useState<number>(0);
+  const [editStreak, setEditStreak] = useState<number>(1);
+
+  // Maintenance mode state
+  const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
+  const [isUpdatingMaintenance, setIsUpdatingMaintenance] = useState<boolean>(false);
+  const [customMaintenanceMsg, setCustomMaintenanceMsg] = useState<string>('');
+  const [estimatedDuration, setEstimatedDuration] = useState<string>('');
+  const [showMaintenanceSettings, setShowMaintenanceSettings] = useState<boolean>(false);
+
+  // Real-time synchronization for users, shared quizzes, attendance, and maintenance
   useEffect(() => {
     setIsLoading(true);
 
@@ -88,18 +121,71 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       setAttendanceRecords(records);
     });
 
+    const unsubMaintenance = listenToMaintenanceMode((config) => {
+      setMaintenanceConfig(config);
+      if (config.message && !customMaintenanceMsg) setCustomMaintenanceMsg(config.message);
+      if (config.estimatedDuration && !estimatedDuration) setEstimatedDuration(config.estimatedDuration);
+    });
+
     return () => {
       unsubUsers();
       unsubShared();
       unsubAttendance();
+      unsubMaintenance();
     };
   }, []);
+
+  const handleToggleMaintenance = async (targetActive: boolean) => {
+    const action = targetActive ? 'ACTIVATE' : 'DEACTIVATE';
+    const confirmPrompt = targetActive 
+      ? 'Put website into MAINTENANCE MODE? All non-admin users will immediately be blocked from accessing quizzes, chat, and pages until deactivated.' 
+      : 'DEACTIVATE Maintenance Mode and restore public access for all students?';
+
+    if (!window.confirm(confirmPrompt)) return;
+    
+    setIsUpdatingMaintenance(true);
+    try {
+      await updateMaintenanceMode({
+        isActive: targetActive,
+        message: customMaintenanceMsg.trim() || 'U-Quiz is currently undergoing scheduled platform upgrades to improve syllabus accuracy, speed, and real-time assessment capabilities.',
+        estimatedDuration: estimatedDuration.trim() || 'Brief maintenance',
+        enabledAt: new Date().toISOString(),
+        enabledBy: 'Admin Portal'
+      });
+    } catch (err) {
+      alert('Failed to update maintenance mode. Please try again.');
+    } finally {
+      setIsUpdatingMaintenance(false);
+    }
+  };
+
+  const handleSaveMaintenanceMessage = async () => {
+    setIsUpdatingMaintenance(true);
+    try {
+      await updateMaintenanceMode({
+        message: customMaintenanceMsg.trim(),
+        estimatedDuration: estimatedDuration.trim()
+      });
+      alert('Maintenance notice updated successfully!');
+    } catch (err) {
+      alert('Failed to save notice.');
+    } finally {
+      setIsUpdatingMaintenance(false);
+    }
+  };
 
   // Inspect single user progress & history
   const handleInspectUser = async (user: UserProfile) => {
     setSelectedUser(user);
     setIsLoadingUserDetails(true);
     setInspectingQuizRecord(null);
+    setEditingResult(null);
+    setIsEditingUserStats(false);
+    setEditUserName(user.displayName || '');
+    setEditTotalScore(user.totalScore || 0);
+    setEditQuizzesCount(user.quizzesCompleted || 0);
+    setEditQuestionsCount(user.totalQuestionsAnswered || 0);
+    setEditStreak(user.currentStreak || 1);
 
     try {
       const [history, savedQuizzes] = await Promise.all([
@@ -112,6 +198,86 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       console.error('Failed to fetch user details:', e);
     } finally {
       setIsLoadingUserDetails(false);
+    }
+  };
+
+  // Admin delete specific quiz result
+  const handleDeleteUserResult = async (resultId: string) => {
+    if (!selectedUser) return;
+    if (!window.confirm('Delete this assessment result? User aggregate scores will be automatically recalculated.')) return;
+    try {
+      await adminDeleteUserQuizResult(selectedUser.uid, resultId);
+      setSelectedUserHistory(prev => prev.filter(r => r.id !== resultId));
+      if (inspectingQuizRecord?.id === resultId) setInspectingQuizRecord(null);
+      if (editingResult?.id === resultId) setEditingResult(null);
+    } catch (err) {
+      alert('Failed to delete quiz result.');
+    }
+  };
+
+  // Admin start editing score
+  const handleStartEditScore = (rec: QuizResultRecord) => {
+    setEditingResult(rec);
+    setEditScoreVal(rec.score);
+    setEditTotalVal(rec.total);
+  };
+
+  // Admin save modified score
+  const handleSaveResultScore = async () => {
+    if (!selectedUser || !editingResult) return;
+    try {
+      await adminUpdateUserQuizResult(selectedUser.uid, editingResult.id, {
+        score: Number(editScoreVal),
+        total: Number(editTotalVal),
+      });
+      setSelectedUserHistory(prev => prev.map(r => 
+        r.id === editingResult.id ? { ...r, score: Number(editScoreVal), total: Number(editTotalVal) } : r
+      ));
+      if (inspectingQuizRecord?.id === editingResult.id) {
+        setInspectingQuizRecord(prev => prev ? { ...prev, score: Number(editScoreVal), total: Number(editTotalVal) } : null);
+      }
+      setEditingResult(null);
+    } catch (err) {
+      alert('Failed to update score.');
+    }
+  };
+
+  // Admin save modified user profile stats
+  const handleSaveUserStats = async () => {
+    if (!selectedUser) return;
+    try {
+      await adminUpdateUserProfile(selectedUser.uid, {
+        displayName: editUserName.trim() || selectedUser.displayName,
+        totalScore: Number(editTotalScore),
+        quizzesCompleted: Number(editQuizzesCount),
+        totalQuestionsAnswered: Number(editQuestionsCount),
+        currentStreak: Number(editStreak),
+      });
+      setSelectedUser(prev => prev ? {
+        ...prev,
+        displayName: editUserName.trim() || prev.displayName,
+        totalScore: Number(editTotalScore),
+        quizzesCompleted: Number(editQuizzesCount),
+        totalQuestionsAnswered: Number(editQuestionsCount),
+        currentStreak: Number(editStreak),
+      } : null);
+      setIsEditingUserStats(false);
+    } catch (err) {
+      alert('Failed to update user profile stats.');
+    }
+  };
+
+  // Admin delete all results for user
+  const handleDeleteAllUserResults = async () => {
+    if (!selectedUser) return;
+    if (!window.confirm(`Are you sure you want to delete ALL quiz results for ${selectedUser.displayName || selectedUser.email}? This will reset their total scores.`)) return;
+    try {
+      await adminDeleteAllUserQuizHistory(selectedUser.uid);
+      setSelectedUserHistory([]);
+      setInspectingQuizRecord(null);
+      setEditingResult(null);
+    } catch (err) {
+      alert('Failed to delete all quiz history.');
     }
   };
 
@@ -207,6 +373,124 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
             <span>Exit Admin</span>
           </button>
         </div>
+      </div>
+
+      {/* Real-time System Maintenance Mode Control Box */}
+      <div className={`p-6 rounded-3xl border transition-all duration-300 shadow-xl ${
+        maintenanceConfig.isActive 
+          ? 'bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border-rose-500/50 shadow-rose-950/30' 
+          : 'bg-slate-900/90 border-slate-800/90'
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-start gap-4">
+            <div className={`p-3 rounded-2xl border shrink-0 ${
+              maintenanceConfig.isActive 
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse' 
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}>
+              {maintenanceConfig.isActive ? (
+                <AlertTriangle className="w-7 h-7 text-rose-400" />
+              ) : (
+                <Power className="w-7 h-7 text-emerald-400" />
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  System Maintenance Mode
+                </h2>
+                {maintenanceConfig.isActive ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-rose-500 text-white animate-pulse">
+                    ACTIVE (Public Blocked)
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                    LIVE (Normal Access)
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 max-w-xl">
+                {maintenanceConfig.isActive 
+                  ? "The website is currently blocked for all students and public visitors. Only administrators with IST credentials can bypass this screen." 
+                  : "Turn on maintenance mode during critical curriculum updates or server maintenance to display a friendly maintenance notice."
+                }
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => setShowMaintenanceSettings(!showMaintenanceSettings)}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
+            >
+              {showMaintenanceSettings ? "Hide Settings" : "Configure Notice"}
+            </button>
+
+            <button
+              onClick={() => handleToggleMaintenance(!maintenanceConfig.isActive)}
+              disabled={isUpdatingMaintenance}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all cursor-pointer disabled:opacity-50 ${
+                maintenanceConfig.isActive
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
+                  : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+              }`}
+            >
+              <Power className="w-4 h-4" />
+              <span>
+                {isUpdatingMaintenance 
+                  ? 'Updating...' 
+                  : maintenanceConfig.isActive 
+                    ? 'Deactivate Maintenance (Go Live)' 
+                    : 'Put in Maintenance Mode'}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Expandable Maintenance Settings Form */}
+        {showMaintenanceSettings && (
+          <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                Maintenance Notice for Students
+              </label>
+              <textarea
+                value={customMaintenanceMsg}
+                onChange={(e) => setCustomMaintenanceMsg(e.target.value)}
+                placeholder="e.g. U-Quiz is currently undergoing scheduled platform upgrades..."
+                rows={2}
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-amber-500 placeholder:text-slate-600 resize-none"
+              />
+            </div>
+
+            <div className="flex flex-col justify-between">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                  Estimated Duration Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={estimatedDuration}
+                  onChange={(e) => setEstimatedDuration(e.target.value)}
+                  placeholder="e.g. 15 minutes / Until 5:00 PM IST"
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-amber-500 placeholder:text-slate-600"
+                />
+              </div>
+
+              <div className="flex justify-end pt-3">
+                <button
+                  onClick={handleSaveMaintenanceMessage}
+                  disabled={isUpdatingMaintenance}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save Notice Text</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Aggregate System KPI Cards */}
@@ -756,14 +1040,23 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                   </div>
                 )}
                 <div>
-                  <h2 className="text-lg font-bold text-white font-display flex items-center gap-2">
-                    <span>{selectedUser.displayName || 'Anonymous Learner'}</span>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-white font-display">
+                      {selectedUser.displayName || 'Anonymous Learner'}
+                    </h2>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40">
                       {selectedUser.currentStreak || 1}d Streak
                     </span>
-                  </h2>
-                  <p className="text-xs text-slate-400 font-mono">
-                    {selectedUser.email || selectedUser.uid}
+                    <button
+                      onClick={() => setIsEditingUserStats(!isEditingUserStats)}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1 border border-amber-500/40 cursor-pointer"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{isEditingUserStats ? 'Close Edit' : 'Edit Profile Stats & Score'}</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                    {selectedUser.email || selectedUser.uid} • UID: {selectedUser.uid}
                   </p>
                 </div>
               </div>
@@ -776,6 +1069,91 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
               </button>
             </div>
 
+            {/* Admin User Stats Editing Form (Toggled) */}
+            {isEditingUserStats && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4 animate-in slide-in-from-top-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Admin Override: User Scores & Global Stats</span>
+                  </div>
+                  <span className="text-[11px] text-slate-400">
+                    Changes reflect on public leaderboards & user profile immediately
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Display Name</label>
+                    <input
+                      type="text"
+                      value={editUserName}
+                      onChange={(e) => setEditUserName(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Total Score (Pts)</label>
+                    <input
+                      type="number"
+                      value={editTotalScore}
+                      onChange={(e) => setEditTotalScore(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Quizzes Completed</label>
+                    <input
+                      type="number"
+                      value={editQuizzesCount}
+                      onChange={(e) => setEditQuizzesCount(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Questions Solved</label>
+                    <input
+                      type="number"
+                      value={editQuestionsCount}
+                      onChange={(e) => setEditQuestionsCount(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-sky-400 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Daily Streak (Days)</label>
+                    <input
+                      type="number"
+                      value={editStreak}
+                      onChange={(e) => setEditStreak(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-400 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingUserStats(false)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveUserStats}
+                    className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Modal Body */}
             <div className="space-y-6">
               
@@ -784,19 +1162,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
                   <span className="text-[11px] text-slate-400 block">Total Quizzes</span>
                   <span className="text-lg font-bold text-white font-mono">
-                    {selectedUserHistory.length}
+                    {selectedUser.quizzesCompleted || selectedUserHistory.length}
                   </span>
                 </div>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
                   <span className="text-[11px] text-slate-400 block">Questions Solved</span>
                   <span className="text-lg font-bold text-sky-400 font-mono">
-                    {selectedUserHistory.reduce((acc, h) => acc + h.total, 0)}
+                    {selectedUser.totalQuestionsAnswered || selectedUserHistory.reduce((acc, h) => acc + h.total, 0)}
                   </span>
                 </div>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
                   <span className="text-[11px] text-slate-400 block">Total Score</span>
                   <span className="text-lg font-bold text-emerald-400 font-mono">
-                    {selectedUserHistory.reduce((acc, h) => acc + h.score, 0)} pts
+                    {selectedUser.totalScore !== undefined ? selectedUser.totalScore : selectedUserHistory.reduce((acc, h) => acc + h.score, 0)} pts
                   </span>
                 </div>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
@@ -813,40 +1191,129 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-amber-400" />
-                    <span>Recent Assessment Attempts ({selectedUserHistory.length})</span>
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-amber-400" />
+                      <span>Assessment Attempts & History ({selectedUserHistory.length})</span>
+                    </h3>
+
+                    {selectedUserHistory.length > 0 && (
+                      <button
+                        onClick={handleDeleteAllUserResults}
+                        className="px-3 py-1 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete All User History</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Editing Individual Result Score Form */}
+                  {editingResult && (
+                    <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-3 animate-in slide-in-from-top-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                          <Edit3 className="w-3.5 h-3.5" />
+                          Modify Result Score for {editingResult.config.class} {editingResult.config.subject}
+                        </span>
+                        <button
+                          onClick={() => setEditingResult(null)}
+                          className="text-xs text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Score Obtained</label>
+                          <input
+                            type="number"
+                            value={editScoreVal}
+                            onChange={(e) => setEditScoreVal(Number(e.target.value))}
+                            className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-slate-400 block mb-1">Total Questions</label>
+                          <input
+                            type="number"
+                            value={editTotalVal}
+                            onChange={(e) => setEditTotalVal(Number(e.target.value))}
+                            className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingResult(null)}
+                          className="px-3 py-1 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveResultScore}
+                          className="px-4 py-1 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold flex items-center gap-1.5"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Update Score</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {selectedUserHistory.length === 0 ? (
                     <p className="text-xs text-slate-500 italic py-4">No completed quiz history recorded yet for this user.</p>
                   ) : (
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                       {selectedUserHistory.map((rec) => {
                         const recAccuracy = rec.total > 0 ? Math.round((rec.score / rec.total) * 100) : 0;
                         return (
                           <div 
                             key={rec.id}
-                            className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                            className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                           >
                             <div>
-                              <div className="font-bold text-slate-200">
-                                {rec.config.class} {rec.config.subject} ({rec.config.quantity} Qs)
+                              <div className="font-bold text-slate-200 flex items-center gap-2">
+                                <span>{rec.config.class} {rec.config.subject}</span>
+                                <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
+                                  {rec.config.quantity} Qs • {rec.config.strength}
+                                </span>
                               </div>
-                              <div className="text-[11px] text-slate-400 font-mono">
+                              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
                                 {new Date(rec.date).toLocaleDateString()} • {rec.config.topics.join(', ')}
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono font-bold text-emerald-400">
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
                                 {rec.score}/{rec.total} ({recAccuracy}%)
                               </span>
+
+                              <button
+                                onClick={() => handleStartEditScore(rec)}
+                                title="Edit Score"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-500/20 hover:text-amber-400 text-slate-400 transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
                               <button
                                 onClick={() => setInspectingQuizRecord(rec)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold cursor-pointer"
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold cursor-pointer"
                               >
-                                View Answers
+                                Answers
+                              </button>
+
+                              <button
+                                onClick={() => handleDeleteUserResult(rec.id)}
+                                title="Delete Result"
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </div>

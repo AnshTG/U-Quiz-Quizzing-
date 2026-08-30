@@ -10,6 +10,7 @@ import {
   Clock, 
   BookOpen, 
   ArrowRight,
+  ArrowLeft,
   PlusCircle,
   Cloud,
   HardDrive,
@@ -26,6 +27,7 @@ interface HistoryViewProps {
   onClearHistory: () => void;
   onNewQuiz: () => void;
   onSignIn: () => void;
+  onBackHome?: () => void;
 }
 
 export const HistoryView: React.FC<HistoryViewProps> = ({
@@ -36,6 +38,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   onClearHistory,
   onNewQuiz,
   onSignIn,
+  onBackHome,
 }) => {
   const [tab, setTab] = useState<'all' | 'cloud' | 'local'>('all');
   const [cloudHistory, setCloudHistory] = useState<QuizResultRecord[]>([]);
@@ -100,14 +103,28 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
+          {onBackHome && (
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Dashboard</span>
+              </button>
+              <span className="text-slate-600">•</span>
+              <span className="text-xs text-slate-400">Personal Records</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">
             <History className="w-3.5 h-3.5" />
             <span>Progress & Analytics Dashboard</span>
           </div>
-          <h1 className="text-3xl font-extrabold font-display text-white tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold font-display text-white tracking-tight">
             Assessment Records & Cloud Sync
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Track concept mastery progress and revisit previous NCERT evaluations
           </p>
         </div>

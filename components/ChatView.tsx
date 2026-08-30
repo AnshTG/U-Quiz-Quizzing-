@@ -4,6 +4,7 @@ import {
   sendPublicChatMessage, 
   listenToPublicChat, 
   deletePublicChatMessage, 
+  togglePublicChatReaction,
   getISTTimeString 
 } from '../services/firebase';
 import { sendGeminiStudyQuery } from '../services/geminiService';
@@ -15,20 +16,29 @@ import {
   Trash2, 
   Copy, 
   Check, 
+  CheckCheck,
   Bot, 
   ArrowDown, 
+  ArrowLeft,
   RotateCcw,
   Tag,
   Clock,
   HelpCircle,
   GraduationCap,
-  ChevronDown
+  ChevronDown,
+  Smile,
+  Flame,
+  Lightbulb,
+  ThumbsUp,
+  Heart,
+  Plus
 } from 'lucide-react';
 
 interface ChatViewProps {
   user: UserProfile | null;
   onSignIn: () => void;
   initialTab?: 'gemini' | 'public';
+  onBackHome?: () => void;
 }
 
 const SUBJECT_OPTIONS = [
@@ -60,7 +70,9 @@ const QUICK_AI_SUGGESTIONS = [
   { label: '🎯 High-Yield Exam Tips', prompt: 'What are the top 5 recurring question patterns in Class 10 NCERT Science and how should I write 5-mark answers?' }
 ];
 
-export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab = 'gemini' }) => {
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏', '🔥', '💡', '👏'];
+
+export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab = 'gemini', onBackHome }) => {
   const [activeTab, setActiveTab] = useState<'gemini' | 'public'>(initialTab);
 
   // ---------------- GEMINI AI CHAT STATE ----------------
@@ -78,7 +90,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         content: `**Namaste! I am your AI NCERT Study Mentor & Doubt Solver.**\n\nI can explain concepts across **Classes 1–12 (NCF-SE & NCERT)**, break down mathematical numericals, balance chemical equations, or give you personalized practice questions.\n\n*What topic or chapter would you like to explore today?*`,
         timestamp: Date.now(),
         subjectContext: 'Science',
-        classContext: 'Class 10'
+        classContext: 'Class 10',
+        reactions: { '💡': 1 }
       }
     ];
   });
@@ -88,6 +101,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showScrollBottomAi, setShowScrollBottomAi] = useState(false);
+  const [activeReactionPickerId, setActiveReactionPickerId] = useState<string | null>(null);
   const geminiMessagesEndRef = useRef<HTMLDivElement>(null);
   const geminiScrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -101,6 +115,18 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
   const [showScrollBottomPublic, setShowScrollBottomPublic] = useState(false);
   const publicMessagesEndRef = useRef<HTMLDivElement>(null);
   const publicScrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Close reaction picker on outside click
+  useEffect(() => {
+    const handleDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.reaction-picker-container') && !target.closest('.reaction-trigger-btn')) {
+        setActiveReactionPickerId(null);
+      }
+    };
+    document.addEventListener('click', handleDocumentClick);
+    return () => document.removeEventListener('click', handleDocumentClick);
+  }, []);
 
   // Persist Gemini chat history
   useEffect(() => {
@@ -201,6 +227,21 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     }
   };
 
+  // React to Gemini Message
+  const handleGeminiReaction = (messageId: string, emoji: string) => {
+    setGeminiMessages(prev => prev.map(msg => {
+      if (msg.id !== messageId) return msg;
+      const current = { ...(msg.reactions || {}) };
+      if (current[emoji]) {
+        delete current[emoji];
+      } else {
+        current[emoji] = 1;
+      }
+      return { ...msg, reactions: current };
+    }));
+    setActiveReactionPickerId(null);
+  };
+
   // Send message to Public Room
   const handleSendPublic = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -221,6 +262,20 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
       setPublicError(err.message || 'Failed to send message.');
     } finally {
       setIsSendingPublic(false);
+    }
+  };
+
+  // React to Public Chat Message
+  const handlePublicReaction = async (messageId: string, emoji: string) => {
+    if (!user) {
+      onSignIn();
+      return;
+    }
+    setActiveReactionPickerId(null);
+    try {
+      await togglePublicChatReaction(messageId, emoji, user.uid);
+    } catch (err) {
+      console.error('Reaction error:', err);
     }
   };
 
@@ -246,7 +301,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         content: `**New session started!** I'm ready for your questions in **${selectedClass} ${selectedSubject}**. Ask me any concept, numerical, or NCERT doubt!`,
         timestamp: Date.now(),
         subjectContext: selectedSubject,
-        classContext: selectedClass
+        classContext: selectedClass,
+        reactions: { '💡': 1 }
       };
       setGeminiMessages([resetMsg]);
     }
@@ -257,228 +313,321 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     : publicMessages.filter(m => m.subjectTag === filterTag);
 
   return (
-    <div className="max-w-5xl mx-auto px-2 sm:px-4 py-2 sm:py-4">
-      {/* Main Chat Container */}
-      <div className="flex flex-col h-[calc(100vh-125px)] min-h-[580px] max-h-[820px] bg-slate-900/90 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden backdrop-blur-md">
+    <div className="w-full h-full flex flex-col bg-[#0b141a] text-[#e9edef] select-text overflow-hidden">
+      
+      {/* ===================== WHATSAPP TOP APP BAR ===================== */}
+      <header className="h-16 px-3 sm:px-5 bg-[#202c33] border-b border-[#2a3942] flex items-center justify-between gap-2 sm:gap-4 shrink-0 sticky top-0 z-30 shadow-md">
         
-        {/* ===================== CHAT TOP APP BAR ===================== */}
-        <div className="px-4 py-3 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        {/* Left: Back button + Chat Avatar & Info */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {onBackHome && (
+            <button
+              type="button"
+              onClick={onBackHome}
+              className="p-2 rounded-full hover:bg-[#374248] text-[#aebac1] hover:text-white transition-colors cursor-pointer shrink-0"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+
+          {activeTab === 'gemini' ? (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 font-black shadow-md shadow-emerald-500/20">
+                  <Bot className="w-5 h-5 text-slate-950" />
+                </div>
+                <span className="w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] absolute bottom-0 right-0" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
+                    Gemini AI NCERT Tutor
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-[#00a884]/20 text-[#25d366] border border-[#00a884]/30 shrink-0">
+                    AI Mentor
+                  </span>
+                </div>
+                <span className="text-xs text-[#00a884] font-medium flex items-center gap-1 truncate">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse" />
+                  Online • {selectedClass} • {selectedSubject}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <div className="w-10 h-10 rounded-full bg-[#374248] border border-[#2a3942] flex items-center justify-center text-[#00a884] font-bold">
+                  <Users className="w-5 h-5" />
+                </div>
+                <span className="w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] absolute bottom-0 right-0" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
+                    NCERT Scholar Public Room
+                  </span>
+                </div>
+                <span className="text-xs text-[#8696a0] truncate">
+                  {publicMessages.length} messages • Real-time peer discussions
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Center/Right: Chat Switcher & Quick Dropdowns */}
+        <div className="flex items-center gap-2 shrink-0">
           
-          {/* Left: Chat Mode Switcher */}
-          <div className="flex items-center bg-slate-900 p-1 rounded-2xl border border-slate-800 shadow-inner">
+          {/* Chat Mode Switcher Tabs */}
+          <div className="flex items-center bg-[#111b21] p-1 rounded-xl border border-[#2a3942]">
             <button
               id="tab-gemini-chat"
               onClick={() => setActiveTab('gemini')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'gemini'
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#00a884] text-slate-950 shadow-sm'
+                  : 'text-[#8696a0] hover:text-[#e9edef]'
               }`}
             >
               <Bot className="w-3.5 h-3.5" />
-              <span>Gemini AI Tutor</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="hidden sm:inline">AI Tutor</span>
             </button>
 
             <button
               id="tab-public-chat"
               onClick={() => setActiveTab('public')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'public'
-                  ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-md shadow-teal-500/20'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#00a884] text-slate-950 shadow-sm'
+                  : 'text-[#8696a0] hover:text-[#e9edef]'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
-              <span>Public Room</span>
+              <span className="hidden sm:inline">Public Room</span>
               {publicMessages.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-950/50 text-slate-300 font-mono">
+                <span className="text-[10px] px-1 rounded-full bg-slate-950/40 text-white font-mono">
                   {publicMessages.length}
                 </span>
               )}
             </button>
           </div>
 
-          {/* Right: Context Controls */}
+          {/* Context Selectors */}
           {activeTab === 'gemini' ? (
-            <div className="flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-1.5">
               <div className="relative">
                 <select
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
-                  className="appearance-none bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-semibold pl-3 pr-7 py-1.5 rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  className="appearance-none bg-[#111b21] border border-[#2a3942] text-xs text-[#00a884] font-semibold pl-2.5 pr-6 py-1.5 rounded-xl focus:outline-none focus:border-[#00a884] cursor-pointer"
                 >
                   {CLASS_OPTIONS.map(c => (
-                    <option key={c} value={c} className="bg-slate-900 text-slate-200">{c}</option>
+                    <option key={c} value={c} className="bg-[#202c33] text-white">{c}</option>
                   ))}
                 </select>
-                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-1.5 top-2.5 pointer-events-none" />
               </div>
 
               <div className="relative">
                 <select
                   value={selectedSubject}
                   onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="appearance-none bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-semibold pl-3 pr-7 py-1.5 rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  className="appearance-none bg-[#111b21] border border-[#2a3942] text-xs text-[#00a884] font-semibold pl-2.5 pr-6 py-1.5 rounded-xl focus:outline-none focus:border-[#00a884] cursor-pointer"
                 >
                   {SUBJECT_OPTIONS.map(s => (
-                    <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}</option>
+                    <option key={s} value={s} className="bg-[#202c33] text-white">{s}</option>
                   ))}
                 </select>
-                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-1.5 top-2.5 pointer-events-none" />
               </div>
 
               <button
                 onClick={handleResetAiChat}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white text-xs font-medium transition-colors cursor-pointer"
-                title="Start a new chat session"
+                className="p-2 rounded-xl bg-[#111b21] hover:bg-[#374248] border border-[#2a3942] text-[#8696a0] hover:text-white transition-colors cursor-pointer"
+                title="Clear Chat / Start New Session"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">New Chat</span>
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400 font-medium hidden sm:inline flex items-center gap-1">
-                <Tag className="w-3 h-3 text-slate-500" /> Filter:
-              </span>
+            <div className="hidden sm:flex items-center gap-1.5">
               <div className="relative">
                 <select
                   value={filterTag}
                   onChange={(e) => setFilterTag(e.target.value)}
-                  className="appearance-none bg-slate-900 border border-slate-800 text-xs text-teal-400 font-semibold pl-3 pr-7 py-1.5 rounded-xl focus:outline-none focus:border-teal-500 cursor-pointer"
+                  className="appearance-none bg-[#111b21] border border-[#2a3942] text-xs text-[#00a884] font-semibold pl-2.5 pr-6 py-1.5 rounded-xl focus:outline-none focus:border-[#00a884] cursor-pointer"
                 >
-                  <option value="All" className="bg-slate-900 text-slate-200">All Subjects ({publicMessages.length})</option>
+                  <option value="All" className="bg-[#202c33] text-white">All Subjects</option>
                   {SUBJECT_OPTIONS.map(s => (
-                    <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}</option>
+                    <option key={s} value={s} className="bg-[#202c33] text-white">{s}</option>
                   ))}
                 </select>
-                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 top-2.5 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-1.5 top-2.5 pointer-events-none" />
               </div>
             </div>
           )}
 
         </div>
+      </header>
 
-        {/* ===================== MESSAGES STREAM ===================== */}
+      {/* ===================== WHATSAPP CHAT WALLPAPER & MESSAGES ===================== */}
+      <main className="flex-1 min-h-0 overflow-y-auto relative bg-[#0b141a] p-3 sm:p-5 space-y-3 custom-scrollbar overscroll-contain">
+        
+        {/* Subtle WhatsApp style encrypted / session notice banner */}
+        <div className="flex justify-center my-1">
+          <div className="px-3.5 py-1 rounded-lg bg-[#182229] border border-[#222e35] text-[11px] text-[#8696a0] text-center max-w-md shadow-sm font-medium">
+            🔒 {activeTab === 'gemini' ? 'NCERT Syllabus 2025–27 aligned AI study session' : 'Live public scholar discussion room'}
+          </div>
+        </div>
+
         {activeTab === 'gemini' ? (
+          /* ===================== GEMINI AI CHAT STREAM ===================== */
           <div
             ref={geminiScrollContainerRef}
             onScroll={handleAiScroll}
-            className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 relative custom-scrollbar"
+            className="space-y-3.5"
           >
             {geminiMessages.map((msg) => {
               const isUser = msg.role === 'user';
               const isCopied = copiedMessageId === msg.id;
               const formattedTime = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const reactions = msg.reactions || {};
+              const hasReactions = Object.keys(reactions).length > 0;
+              const isPickerOpen = activeReactionPickerId === msg.id;
 
               return (
                 <div
                   key={msg.id}
-                  className={`flex gap-3 group items-start ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+                  className={`flex flex-col group relative ${isUser ? 'items-end' : 'items-start'}`}
                 >
-                  {/* Avatar */}
-                  <div className="shrink-0 pt-0.5">
-                    {isUser ? (
-                      user?.photoURL ? (
-                        <img
-                          src={user.photoURL}
-                          alt="You"
-                          referrerPolicy="no-referrer"
-                          className="w-8 h-8 rounded-full object-cover border border-emerald-500/40"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-emerald-500 text-slate-950 font-bold flex items-center justify-center text-xs shadow-md">
-                          {user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-                        </div>
-                      )
-                    ) : (
-                      <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center text-slate-950 shadow-md shadow-emerald-500/20">
-                        <Bot className="w-4 h-4" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Message Bubble Container */}
-                  <div className={`flex flex-col max-w-[88%] sm:max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
+                  {/* WhatsApp Floating Reaction Bar Trigger on Hover */}
+                  <div className={`relative flex items-center ${isUser ? 'flex-row-reverse' : 'flex-row'} gap-1 max-w-[92%] sm:max-w-[80%]`}>
                     
-                    {/* Author & Meta */}
-                    <div className="flex items-center gap-2 mb-1 px-1">
-                      <span className="text-xs font-semibold text-slate-300">
-                        {isUser ? 'You' : 'Gemini NCERT Tutor'}
-                      </span>
-                      {!isUser && msg.subjectContext && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          {msg.classContext ? `${msg.classContext} • ` : ''}{msg.subjectContext}
-                        </span>
+                    {/* Action pill on hover */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 px-1">
+                      <button
+                        type="button"
+                        onClick={() => setActiveReactionPickerId(isPickerOpen ? null : msg.id)}
+                        className="reaction-trigger-btn p-1.5 rounded-full bg-[#202c33] hover:bg-[#374248] text-[#8696a0] hover:text-[#00a884] border border-[#2a3942] shadow-md transition-all cursor-pointer active:scale-95"
+                        title="React with Emoji"
+                      >
+                        <Smile className="w-3.5 h-3.5" />
+                      </button>
+                      
+                      {!isUser && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(msg.id, msg.content)}
+                          className="p-1.5 rounded-full bg-[#202c33] hover:bg-[#374248] text-[#8696a0] hover:text-white border border-[#2a3942] shadow-md transition-all cursor-pointer"
+                          title="Copy Answer"
+                        >
+                          {isCopied ? <Check className="w-3.5 h-3.5 text-[#00a884]" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
                       )}
-                      <span className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
-                        <Clock className="w-2.5 h-2.5" />
-                        {formattedTime}
-                      </span>
                     </div>
 
-                    {/* Speech Bubble */}
+                    {/* Reaction Picker Popup (WhatsApp Style) */}
+                    {isPickerOpen && (
+                      <div className={`reaction-picker-container absolute -top-11 z-40 ${isUser ? 'right-0' : 'left-0'} flex items-center gap-1.5 p-1.5 rounded-full bg-[#202c33] border border-[#2a3942] shadow-2xl animate-fade-in`}>
+                        {REACTION_EMOJIS.map((emoji) => (
+                          <button
+                            key={emoji}
+                            onClick={() => handleGeminiReaction(msg.id, emoji)}
+                            className="text-lg sm:text-xl p-1 rounded-full hover:bg-[#374248] hover:scale-125 transition-all cursor-pointer active:scale-95"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* WhatsApp Speech Bubble */}
                     <div
-                      className={`p-4 rounded-2xl relative shadow-lg ${
+                      className={`relative px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-md ${
                         isUser
-                          ? 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white rounded-tr-none'
-                          : 'bg-slate-950/90 text-slate-200 border border-slate-800 rounded-tl-none'
+                          ? 'bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none'
+                          : 'bg-[#202c33] text-[#e9edef] border border-[#2a3942]/60 rounded-2xl rounded-tl-none'
                       }`}
                     >
-                      {/* Rich Markdown & KaTeX rendering */}
-                      <MathText content={msg.content} />
-
-                      {/* AI Response Action Tools */}
+                      {/* Author / Context Banner for AI */}
                       {!isUser && (
-                        <div className="flex flex-wrap items-center justify-end gap-2 mt-3 pt-2.5 border-t border-slate-800/80">
-                          <button
-                            onClick={() => handleCopyText(msg.id, msg.content)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-[11px] text-slate-400 hover:text-white transition-colors cursor-pointer border border-slate-800"
-                            title="Copy answer"
-                          >
-                            {isCopied ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span className="text-emerald-400 font-medium">Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>Copy</span>
-                              </>
-                            )}
-                          </button>
+                        <div className="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-[#2a3942]/60">
+                          <span className="text-xs font-bold text-[#00a884] flex items-center gap-1">
+                            <Bot className="w-3 h-3" />
+                            Gemini AI Tutor
+                          </span>
+                          {msg.subjectContext && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-[#111b21] text-[#8696a0] border border-[#2a3942]">
+                              {msg.classContext ? `${msg.classContext} • ` : ''}{msg.subjectContext}
+                            </span>
+                          )}
+                        </div>
+                      )}
 
+                      {/* Content with Markdown and KaTeX */}
+                      <div className="text-sm leading-relaxed">
+                        <MathText content={msg.content} />
+                      </div>
+
+                      {/* Interactive AI Suggestion Pill inside bubble */}
+                      {!isUser && (
+                        <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-[#2a3942]/50">
                           <button
+                            type="button"
                             onClick={() => handleSendGemini(`Give me 2 practice quiz questions with 4 options to test my understanding of this topic.`)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-[11px] text-emerald-400 font-medium transition-colors cursor-pointer border border-emerald-500/30"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#111b21] hover:bg-[#2a3942] text-[11px] text-[#00a884] font-medium transition-colors cursor-pointer border border-[#2a3942]"
                           >
-                            <Sparkles className="w-3 h-3" />
+                            <Sparkles className="w-3 h-3 text-[#00a884]" />
                             <span>Test Me on This</span>
                           </button>
                         </div>
                       )}
-                    </div>
 
+                      {/* WhatsApp Time & Double Checkmark */}
+                      <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-[#8696a0] select-none font-mono">
+                        <span>{formattedTime}</span>
+                        {isUser && (
+                          <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                        )}
+                      </div>
+
+                      {/* Attached WhatsApp Reaction Badges at Bottom Corner */}
+                      {hasReactions && (
+                        <div className={`absolute -bottom-3 ${isUser ? 'right-2' : 'left-2'} flex items-center gap-1 z-10`}>
+                          {Object.entries(reactions).map(([emoji, count]) => (
+                            <button
+                              key={emoji}
+                              onClick={() => handleGeminiReaction(msg.id, emoji)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#182229] border border-[#222e35] text-xs shadow-md hover:bg-[#222e35] transition-all cursor-pointer active:scale-95"
+                            >
+                              <span>{emoji}</span>
+                              {count > 1 && <span className="text-[10px] text-[#8696a0] font-mono">{count}</span>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                    </div>
                   </div>
+
                 </div>
               );
             })}
 
-            {/* Quick Starters Chip Bar (if only welcome message exists) */}
+            {/* Quick Starters Chip Bar */}
             {geminiMessages.length <= 1 && (
-              <div className="pt-3 pb-1 space-y-2">
-                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Suggested NCERT Doubts:</span>
+              <div className="pt-4 pb-2 space-y-2 max-w-xl mx-auto">
+                <div className="flex items-center gap-1.5 text-xs text-[#8696a0] font-semibold">
+                  <Sparkles className="w-3.5 h-3.5 text-[#00a884]" />
+                  <span>Suggested NCERT Doubts to Ask:</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {QUICK_AI_SUGGESTIONS.map((item, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSendGemini(item.prompt)}
-                      className="text-left px-3 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/50 text-xs text-slate-300 hover:text-white transition-all cursor-pointer"
+                      className="text-left px-3 py-1.5 rounded-xl bg-[#202c33] hover:bg-[#2a3942] border border-[#2a3942] text-xs text-[#d1d7db] hover:text-white transition-all cursor-pointer shadow-sm"
                     >
                       {item.label}
                     </button>
@@ -487,17 +636,14 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
               </div>
             )}
 
-            {/* Typing State Indicator */}
+            {/* WhatsApp Typing Bubble */}
             {isGeneratingAi && (
-              <div className="flex gap-3 items-start animate-fade-in">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center text-slate-950 shrink-0">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div className="bg-slate-950 border border-slate-800 px-4 py-3 rounded-2xl rounded-tl-none flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                  <span className="text-xs text-slate-400 ml-2 font-mono">Gemini is drafting solution...</span>
+              <div className="flex items-start gap-2 animate-fade-in">
+                <div className="bg-[#202c33] border border-[#2a3942] px-4 py-2.5 rounded-2xl rounded-tl-none flex items-center gap-2 shadow-md">
+                  <div className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 rounded-full bg-[#00a884] animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="text-xs text-[#8696a0] ml-2 font-mono">Gemini is drafting solution...</span>
                 </div>
               </div>
             )}
@@ -508,7 +654,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
             {showScrollBottomAi && (
               <button
                 onClick={() => geminiMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                className="sticky bottom-4 right-4 ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500 text-slate-950 font-bold text-xs shadow-xl hover:bg-emerald-400 transition-all cursor-pointer animate-bounce"
+                className="sticky bottom-2 right-2 ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#00a884] text-slate-950 font-bold text-xs shadow-2xl hover:bg-[#02906f] transition-all cursor-pointer animate-bounce"
               >
                 <ArrowDown className="w-3.5 h-3.5" />
                 <span>Jump to latest</span>
@@ -516,85 +662,134 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
             )}
           </div>
         ) : (
-          /* ===================== PUBLIC PEER CHAT STREAM ===================== */
+          /* ===================== PUBLIC SCHOLAR ROOM STREAM ===================== */
           <div
             ref={publicScrollContainerRef}
             onScroll={handlePublicScroll}
-            className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 relative custom-scrollbar"
+            className="space-y-3.5"
           >
             {filteredPublicMessages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
-                <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mb-3">
-                  <Users className="w-6 h-6 text-teal-400" />
+              <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-[#8696a0]">
+                <div className="w-12 h-12 rounded-2xl bg-[#202c33] border border-[#2a3942] flex items-center justify-center mb-3 text-[#00a884]">
+                  <Users className="w-6 h-6" />
                 </div>
-                <h3 className="text-sm font-bold text-slate-200">No Messages in {filterTag} Stream</h3>
-                <p className="text-xs text-slate-400 max-w-sm mt-1">
-                  Be the first scholar to ask a question, share a memory tip, or discuss an NCERT concept!
+                <h3 className="text-sm font-bold text-[#e9edef]">No Messages in {filterTag} Stream</h3>
+                <p className="text-xs text-[#8696a0] max-w-sm mt-1">
+                  Be the first scholar to post a doubt, study tip, or NCERT question!
                 </p>
               </div>
             ) : (
               filteredPublicMessages.map((msg) => {
                 const isMe = user?.uid === msg.userId;
                 const istTime = getISTTimeString(new Date(msg.timestamp));
+                const reactions = msg.reactions || {};
+                const hasReactions = Object.keys(reactions).length > 0;
+                const isPickerOpen = activeReactionPickerId === msg.id;
 
                 return (
                   <div
                     key={msg.id}
-                    className={`flex gap-3 group items-start ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
+                    className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'}`}
                   >
-                    {/* Avatar */}
-                    <div className="shrink-0 pt-0.5">
-                      {msg.userPhoto ? (
-                        <img
-                          src={msg.userPhoto}
-                          alt={msg.userName}
-                          referrerPolicy="no-referrer"
-                          className="w-8 h-8 rounded-full object-cover border border-slate-700"
-                        />
-                      ) : (
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                          isMe ? 'bg-teal-500 text-slate-950' : 'bg-slate-800 text-teal-400 border border-slate-700'
-                        }`}>
-                          {msg.userName ? msg.userName.charAt(0).toUpperCase() : 'U'}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Speech Bubble */}
-                    <div className={`flex flex-col max-w-[88%] sm:max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
-                      <div className="flex items-center gap-2 mb-1 px-1">
-                        <span className="text-xs font-semibold text-slate-300">
-                          {isMe ? 'You' : msg.userName}
-                        </span>
-                        {msg.subjectTag && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-teal-400 border border-slate-700">
-                            {msg.subjectTag}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-slate-500 flex items-center gap-1 font-mono">
-                          <Clock className="w-2.5 h-2.5" />
-                          {istTime}
-                        </span>
-                      </div>
-
-                      <div
-                        className={`p-3.5 rounded-2xl relative shadow-md ${
-                          isMe
-                            ? 'bg-gradient-to-br from-teal-600 to-cyan-700 text-white rounded-tr-none'
-                            : 'bg-slate-950/90 text-slate-100 border border-slate-800 rounded-tl-none'
-                        }`}
-                      >
-                        <MathText content={msg.message} />
-
+                    <div className={`relative flex items-center ${isMe ? 'flex-row-reverse' : 'flex-row'} gap-1 max-w-[92%] sm:max-w-[80%]`}>
+                      
+                      {/* Action trigger on hover */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 px-1">
+                        <button
+                          type="button"
+                          onClick={() => setActiveReactionPickerId(isPickerOpen ? null : msg.id)}
+                          className="reaction-trigger-btn p-1.5 rounded-full bg-[#202c33] hover:bg-[#374248] text-[#8696a0] hover:text-[#00a884] border border-[#2a3942] shadow-md transition-all cursor-pointer active:scale-95"
+                          title="React with Emoji"
+                        >
+                          <Smile className="w-3.5 h-3.5" />
+                        </button>
+                        
                         {isMe && (
                           <button
+                            type="button"
                             onClick={() => handleDeletePublicMessage(msg.id)}
-                            className="absolute -bottom-2 -left-2 p-1 rounded-md bg-slate-900 border border-rose-500/30 text-rose-400 opacity-0 group-hover:opacity-100 hover:bg-rose-500/20 transition-all cursor-pointer shadow"
+                            className="p-1.5 rounded-full bg-[#202c33] hover:bg-rose-500/20 text-[#8696a0] hover:text-rose-400 border border-[#2a3942] shadow-md transition-all cursor-pointer"
                             title="Delete message"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
+                      </div>
+
+                      {/* Reaction Picker Popup */}
+                      {isPickerOpen && (
+                        <div className={`reaction-picker-container absolute -top-11 z-40 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1.5 p-1.5 rounded-full bg-[#202c33] border border-[#2a3942] shadow-2xl animate-fade-in`}>
+                          {REACTION_EMOJIS.map((emoji) => (
+                            <button
+                              key={emoji}
+                              onClick={() => handlePublicReaction(msg.id, emoji)}
+                              className="text-lg sm:text-xl p-1 rounded-full hover:bg-[#374248] hover:scale-125 transition-all cursor-pointer active:scale-95"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Speech Bubble */}
+                      <div
+                        className={`relative px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-md ${
+                          isMe
+                            ? 'bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none'
+                            : 'bg-[#202c33] text-[#e9edef] border border-[#2a3942]/60 rounded-2xl rounded-tl-none'
+                        }`}
+                      >
+                        {/* Author Header */}
+                        {!isMe && (
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-[#53bdeb]">
+                              {msg.userName}
+                            </span>
+                            {msg.subjectTag && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#111b21] text-[#8696a0] border border-[#2a3942]">
+                                {msg.subjectTag}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Message content */}
+                        <div className="text-sm leading-relaxed">
+                          <MathText content={msg.message} />
+                        </div>
+
+                        {/* WhatsApp Time & Status */}
+                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-[#8696a0] select-none font-mono">
+                          <span>{istTime}</span>
+                          {isMe && (
+                            <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                          )}
+                        </div>
+
+                        {/* Attached WhatsApp Reaction Badges */}
+                        {hasReactions && (
+                          <div className={`absolute -bottom-3 ${isMe ? 'right-2' : 'left-2'} flex items-center gap-1 z-10`}>
+                            {Object.entries(reactions).map(([emoji, usersArr]) => {
+                              const userReacted = user ? usersArr.includes(user.uid) : false;
+                              return (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handlePublicReaction(msg.id, emoji)}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs shadow-md transition-all cursor-pointer active:scale-95 ${
+                                    userReacted
+                                      ? 'bg-[#00a884]/20 border-[#00a884]/40 text-[#25d366]'
+                                      : 'bg-[#182229] border-[#222e35] text-[#8696a0] hover:bg-[#222e35]'
+                                  }`}
+                                  title={`${usersArr.length} scholars reacted`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span className="text-[10px] font-mono font-bold">{usersArr.length}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
                       </div>
                     </div>
                   </div>
@@ -607,7 +802,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
             {showScrollBottomPublic && (
               <button
                 onClick={() => publicMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                className="sticky bottom-4 right-4 ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-teal-500 text-slate-950 font-bold text-xs shadow-xl hover:bg-teal-400 transition-all cursor-pointer animate-bounce"
+                className="sticky bottom-2 right-2 ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#00a884] text-slate-950 font-bold text-xs shadow-2xl hover:bg-[#02906f] transition-all cursor-pointer animate-bounce"
               >
                 <ArrowDown className="w-3.5 h-3.5" />
                 <span>Jump to latest</span>
@@ -616,95 +811,132 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
           </div>
         )}
 
-        {/* ===================== CHAT INPUT BAR ===================== */}
-        <div className="p-3 sm:p-4 bg-slate-950 border-t border-slate-800 shrink-0">
-          {activeTab === 'gemini' ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendGemini();
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                type="text"
-                value={geminiInput}
-                onChange={(e) => setGeminiInput(e.target.value)}
-                placeholder={`Ask Gemini Tutor about ${selectedClass} ${selectedSubject}... (Press Enter)`}
-                disabled={isGeneratingAi}
-                className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50"
-              />
+      </main>
 
+      {/* ===================== WHATSAPP BOTTOM CHAT INPUT BAR ===================== */}
+      <footer className="p-2.5 sm:p-3 bg-[#202c33] border-t border-[#2a3942] shrink-0 sticky bottom-0 z-30 shadow-2xl pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))]">
+        {activeTab === 'gemini' ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSendGemini();
+            }}
+            className="flex items-center gap-2 max-w-5xl mx-auto"
+          >
+            {/* Quick Emoji / Quick Reaction Trigger */}
+            <div className="relative">
               <button
-                type="submit"
-                disabled={!geminiInput.trim() || isGeneratingAi}
-                className="px-4 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 transition-all cursor-pointer"
+                type="button"
+                onClick={() => setActiveReactionPickerId(activeReactionPickerId === 'input_ai' ? null : 'input_ai')}
+                className="p-2.5 rounded-full hover:bg-[#374248] text-[#8696a0] hover:text-[#00a884] transition-colors cursor-pointer"
+                title="Quick Emojis"
               >
-                <Send className="w-4 h-4" />
-                <span className="hidden sm:inline">Send</span>
+                <Smile className="w-5 h-5" />
               </button>
-            </form>
-          ) : (
-            <div>
-              {publicError && (
-                <div className="text-xs text-rose-400 px-2 pb-1.5 flex items-center justify-between">
-                  <span>{publicError}</span>
-                  <button onClick={() => setPublicError(null)} className="underline cursor-pointer">dismiss</button>
-                </div>
-              )}
 
-              {user ? (
-                <form onSubmit={handleSendPublic} className="flex items-center gap-2">
-                  <div className="relative shrink-0">
-                    <select
-                      value={publicTag}
-                      onChange={(e) => setPublicTag(e.target.value)}
-                      className="appearance-none bg-slate-900 border border-slate-800 text-xs text-teal-400 font-semibold pl-3 pr-7 py-3 rounded-2xl focus:outline-none focus:border-teal-500 cursor-pointer"
+              {activeReactionPickerId === 'input_ai' && (
+                <div className="reaction-picker-container absolute bottom-12 left-0 z-50 p-2 rounded-2xl bg-[#202c33] border border-[#2a3942] shadow-2xl flex flex-wrap gap-1.5 w-60">
+                  {['👍', '❤️', '🔥', '💡', '🧪', '📐', '⚡', '🌿', '🎯', '🙏', '🤯', '👏'].map(emoji => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        setGeminiInput(prev => prev + emoji);
+                        setActiveReactionPickerId(null);
+                      }}
+                      className="text-xl p-1.5 rounded-xl hover:bg-[#374248] hover:scale-125 transition-all cursor-pointer"
                     >
-                      {SUBJECT_OPTIONS.map(s => (
-                        <option key={s} value={s} className="bg-slate-900 text-slate-200">{s}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-2 top-4 pointer-events-none" />
-                  </div>
-
-                  <input
-                    type="text"
-                    value={publicInput}
-                    onChange={(e) => setPublicInput(e.target.value)}
-                    placeholder={`Message scholars in Public Room...`}
-                    maxLength={1000}
-                    className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={!publicInput.trim() || isSendingPublic}
-                    className="px-4 py-3 rounded-2xl bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-md shadow-teal-500/20 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 transition-all cursor-pointer"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span className="hidden sm:inline">Send</span>
-                  </button>
-                </form>
-              ) : (
-                <div className="flex items-center justify-between p-2 sm:p-2.5 rounded-2xl bg-slate-900 border border-slate-800">
-                  <div className="flex items-center gap-2 text-xs text-slate-300 pl-2">
-                    <GraduationCap className="w-4 h-4 text-teal-400 shrink-0" />
-                    <span>Sign in with Google to post questions and chat with fellow scholars.</span>
-                  </div>
-                  <button
-                    onClick={onSignIn}
-                    className="px-4 py-2 rounded-xl bg-teal-500 text-slate-950 font-bold text-xs hover:bg-teal-400 transition-colors shrink-0 cursor-pointer"
-                  >
-                    Sign In
-                  </button>
+                      {emoji}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-          )}
-        </div>
 
-      </div>
+            {/* Input Box */}
+            <input
+              type="text"
+              value={geminiInput}
+              onChange={(e) => setGeminiInput(e.target.value)}
+              placeholder={`Ask Gemini Tutor about ${selectedClass} ${selectedSubject}...`}
+              disabled={isGeneratingAi}
+              className="flex-1 bg-[#2a3942] border-none rounded-2xl px-4 py-3 text-sm text-[#e9edef] placeholder:text-[#8696a0] focus:outline-none focus:ring-1 focus:ring-[#00a884] disabled:opacity-50"
+            />
+
+            {/* WhatsApp Send Button */}
+            <button
+              type="submit"
+              disabled={!geminiInput.trim() || isGeneratingAi}
+              className="p-3 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 font-bold shadow-md shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition-all cursor-pointer shrink-0"
+              title="Send Message"
+            >
+              <Send className="w-5 h-5 text-slate-950" />
+            </button>
+          </form>
+        ) : (
+          <div className="max-w-5xl mx-auto">
+            {publicError && (
+              <div className="text-xs text-rose-400 px-3 pb-1.5 flex items-center justify-between">
+                <span>{publicError}</span>
+                <button onClick={() => setPublicError(null)} className="underline cursor-pointer">dismiss</button>
+              </div>
+            )}
+
+            {user ? (
+              <form onSubmit={handleSendPublic} className="flex items-center gap-2">
+                
+                {/* Subject Tag Selector */}
+                <div className="relative shrink-0">
+                  <select
+                    value={publicTag}
+                    onChange={(e) => setPublicTag(e.target.value)}
+                    className="appearance-none bg-[#2a3942] border-none text-xs text-[#00a884] font-semibold pl-3 pr-7 py-3 rounded-2xl focus:outline-none focus:ring-1 focus:ring-[#00a884] cursor-pointer"
+                  >
+                    {SUBJECT_OPTIONS.map(s => (
+                      <option key={s} value={s} className="bg-[#202c33] text-white">{s}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-2 top-4 pointer-events-none" />
+                </div>
+
+                {/* Input Field */}
+                <input
+                  type="text"
+                  value={publicInput}
+                  onChange={(e) => setPublicInput(e.target.value)}
+                  placeholder={`Message scholars in Public Room...`}
+                  maxLength={1000}
+                  className="flex-1 bg-[#2a3942] border-none rounded-2xl px-4 py-3 text-sm text-[#e9edef] placeholder:text-[#8696a0] focus:outline-none focus:ring-1 focus:ring-[#00a884]"
+                />
+
+                {/* WhatsApp Send Button */}
+                <button
+                  type="submit"
+                  disabled={!publicInput.trim() || isSendingPublic}
+                  className="p-3 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 font-bold shadow-md shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition-all cursor-pointer shrink-0"
+                  title="Send Message"
+                >
+                  <Send className="w-5 h-5 text-slate-950" />
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#2a3942] border border-[#374248]">
+                <div className="flex items-center gap-2 text-xs text-[#d1d7db] pl-2">
+                  <GraduationCap className="w-4 h-4 text-[#00a884] shrink-0" />
+                  <span>Sign in with Google to post questions and chat with fellow scholars.</span>
+                </div>
+                <button
+                  onClick={onSignIn}
+                  className="px-4 py-2 rounded-xl bg-[#00a884] text-slate-950 font-bold text-xs hover:bg-[#02906f] transition-colors shrink-0 cursor-pointer"
+                >
+                  Sign In
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </footer>
+
     </div>
   );
 };

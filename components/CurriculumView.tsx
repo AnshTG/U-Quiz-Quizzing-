@@ -19,17 +19,20 @@ import {
   Info,
   CheckCircle2,
   Bookmark,
-  BookMarked
+  BookMarked,
+  ArrowLeft
 } from 'lucide-react';
 
 interface CurriculumViewProps {
   onStartChapterQuiz: (config: QuizConfig) => void;
   onOpenCustomSetup: (cls?: string, sub?: string, year?: SyllabusYear) => void;
+  onBackHome?: () => void;
 }
 
 export const CurriculumView: React.FC<CurriculumViewProps> = ({
   onStartChapterQuiz,
   onOpenCustomSetup,
+  onBackHome,
 }) => {
   const [selectedYear, setSelectedYear] = useState<SyllabusYear>('2026-27');
   const [selectedClass, setSelectedClass] = useState<string>('Class 10');
@@ -87,14 +90,28 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
+          {onBackHome && (
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                type="button"
+                onClick={onBackHome}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Dashboard</span>
+              </button>
+              <span className="text-slate-600">•</span>
+              <span className="text-xs text-slate-400">Class 1 to 12 Directory</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">
             <BookOpen className="w-3.5 h-3.5" />
             <span>Official NCERT Curriculum Repository</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold font-display text-white tracking-tight">
+          <h1 className="text-2xl sm:text-4xl font-extrabold font-display text-white tracking-tight">
             NCERT Syllabus Directory
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
             Explore the official NCERT curriculum for academic sessions 2025–26 & 2026–27 across Classes 1–12
           </p>
         </div>

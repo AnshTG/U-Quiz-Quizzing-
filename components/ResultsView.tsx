@@ -5,6 +5,7 @@ import { MathText } from './MathText';
 import { ScorecardExportModal } from './ScorecardExportModal';
 import { ShareQuizModal } from './ShareQuizModal';
 import { SaveQuizModal } from './SaveQuizModal';
+import { ShareReminderModal } from './ShareReminderModal';
 import { PerformanceTrendChart } from './PerformanceTrendChart';
 import { 
   Trophy, 
@@ -19,14 +20,16 @@ import {
   BookOpen, 
   Printer, 
   Share2, 
-  Filter,
-  Flame,
-  Image,
-  Globe,
-  CloudCheck,
-  Cloud,
-  Database,
-  Bookmark
+  Filter, 
+  Flame, 
+  Image, 
+  Globe, 
+  CloudCheck, 
+  Cloud, 
+  Database, 
+  Bookmark, 
+  ArrowLeft,
+  Bell
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -42,6 +45,7 @@ interface ResultsViewProps {
   onNavigateCurriculum: () => void;
   onNavigateLeaderboard?: () => void;
   onSignIn?: () => void;
+  onBackHome?: () => void;
 }
 
 export const ResultsView: React.FC<ResultsViewProps> = ({
@@ -57,12 +61,14 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   onNavigateCurriculum,
   onNavigateLeaderboard,
   onSignIn,
+  onBackHome,
 }) => {
   const [filterMode, setFilterMode] = useState<'all' | 'incorrect' | 'correct'>('all');
   const [copied, setCopied] = useState(false);
   const [isExportImageModalOpen, setIsExportImageModalOpen] = useState(false);
   const [isShareQuizModalOpen, setIsShareQuizModalOpen] = useState(false);
   const [isSaveQuizModalOpen, setIsSaveQuizModalOpen] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [savedSuccessMessage, setSavedSuccessMessage] = useState<string | null>(null);
 
   // Compute results
@@ -136,6 +142,29 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8">
       
+      {/* Top Navigation Bar */}
+      <div className="flex items-center justify-between gap-4">
+        {onBackHome && (
+          <button
+            type="button"
+            onClick={onBackHome}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to Dashboard</span>
+          </button>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onNewQuiz}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer"
+          >
+            <span>Start New Quiz</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
       {/* Cloud Sync Status Indicator */}
       {user ? (
         <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
@@ -270,11 +299,20 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
             <span>Share Quiz Link</span>
           </button>
 
+          {/* Share Text Reminder / Challenge */}
+          <button
+            onClick={() => setIsReminderModalOpen(true)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold text-xs transition-all hover:scale-[1.02] cursor-pointer"
+          >
+            <Bell className="w-4 h-4 text-amber-400" />
+            <span>Send Reminder / Challenge</span>
+          </button>
+
           {/* View Leaderboard Ranking */}
           {onNavigateLeaderboard && (
             <button
               onClick={onNavigateLeaderboard}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold text-xs transition-all hover:scale-[1.02] cursor-pointer"
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs transition-all hover:scale-[1.02] cursor-pointer"
             >
               <Trophy className="w-4 h-4 text-amber-400" />
               <span>Leaderboard Standings</span>
@@ -525,6 +563,16 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
           questions={questions}
           user={user}
           onClose={() => setIsShareQuizModalOpen(false)}
+        />
+      )}
+
+      {/* Share Reminder Modal */}
+      {isReminderModalOpen && (
+        <ShareReminderModal
+          quizTitle={`${config.class} ${config.subject}`}
+          config={config}
+          myScore={{ score: correctCount, total: questions.length }}
+          onClose={() => setIsReminderModalOpen(false)}
         />
       )}
 

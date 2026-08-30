@@ -14,6 +14,7 @@ import {
   MAX_CLOUD_QUIZZES_LIMIT 
 } from '../services/firebase';
 import { PRE_SAVED_BENCHMARK_QUIZZES } from '../data/presavedQuizzes';
+import { ShareReminderModal } from './ShareReminderModal';
 import { 
   Database, 
   Play, 
@@ -31,10 +32,12 @@ import {
   Search, 
   Filter,
   ArrowRight,
+  ArrowLeft,
   ShieldCheck,
   Zap,
   BookmarkCheck,
-  FolderOpen
+  FolderOpen,
+  Bell
 } from 'lucide-react';
 
 interface SavedQuizzesViewProps {
@@ -42,13 +45,15 @@ interface SavedQuizzesViewProps {
   onPlayQuiz: (config: QuizConfig, questions: Question[]) => void;
   onNewQuiz: () => void;
   onShareQuiz?: (config: QuizConfig, questions: Question[]) => void;
+  onBackHome?: () => void;
 }
 
 export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
   user,
   onPlayQuiz,
   onNewQuiz,
-  onShareQuiz
+  onShareQuiz,
+  onBackHome,
 }) => {
   const [cloudQuizzes, setCloudQuizzes] = useState<SavedQuizRecord[]>([]);
   const [preSavedQuizzes, setPreSavedQuizzes] = useState<Omit<SavedQuizRecord, 'userId'>[]>(() => {
@@ -68,6 +73,8 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
 
   // Question preview modal
   const [inspectingQuiz, setInspectingQuiz] = useState<SavedQuizRecord | Omit<SavedQuizRecord, 'userId'> | null>(null);
+  // Share reminder modal
+  const [reminderQuiz, setReminderQuiz] = useState<SavedQuizRecord | Omit<SavedQuizRecord, 'userId'> | null>(null);
 
   // Load user's saved quizzes from Cloud Firestore
   const loadCloudQuizzes = async () => {
@@ -213,6 +220,20 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div className="space-y-2">
+            {onBackHome && (
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={onBackHome}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-purple-400 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Dashboard</span>
+                </button>
+                <span className="text-slate-600">•</span>
+                <span className="text-xs text-slate-400 font-mono">Cloud Assessment Bank</span>
+              </div>
+            )}
             <div className="flex items-center gap-2.5">
               <div className="p-2.5 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 shadow-lg shadow-purple-500/10">
                 <Database className="w-6 h-6" />
@@ -484,6 +505,15 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
                     <span>Play Assessment</span>
                   </button>
 
+                  {/* Share Reminder Button */}
+                  <button
+                    onClick={() => setReminderQuiz(quiz)}
+                    className="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 transition-colors cursor-pointer"
+                    title="Send a study reminder with direct link"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                  </button>
+
                   {/* Question Inspection Eye */}
                   <button
                     onClick={() => setInspectingQuiz(quiz)}
@@ -529,6 +559,16 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Share Reminder Modal */}
+      {reminderQuiz && (
+        <ShareReminderModal
+          quizTitle={reminderQuiz.title}
+          config={reminderQuiz.config}
+          quizId={reminderQuiz.id}
+          onClose={() => setReminderQuiz(null)}
+        />
       )}
 
       {/* Quiz Questions Preview Modal */}

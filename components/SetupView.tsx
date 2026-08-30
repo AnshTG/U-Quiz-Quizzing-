@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { QuizConfig, SyllabusYear } from '../types';
+import { QuizConfig, SyllabusYear, QuestionFormat } from '../types';
 import { 
   CLASSES_2026_27, 
   CLASSES_2025_26, 
@@ -20,8 +20,16 @@ import {
   Flame,
   Calendar,
   Zap,
-  Bookmark
+  Bookmark,
+  Bell,
+  Share2,
+  CheckCircle2,
+  HelpCircle,
+  Layers,
+  GraduationCap,
+  ListFilter
 } from 'lucide-react';
+import { ShareReminderModal } from './ShareReminderModal';
 
 interface SetupViewProps {
   initialConfig?: Partial<QuizConfig>;
@@ -34,23 +42,44 @@ export const SetupView: React.FC<SetupViewProps> = ({
   onGenerateQuiz,
   onCancel,
 }) => {
-  const [selectedYear, setSelectedYear] = useState<SyllabusYear>(initialConfig?.syllabusYear || '2026-27');
-  const [selectedClass, setSelectedClass] = useState<string>(initialConfig?.class || 'Class 10');
-  const [selectedSubject, setSelectedSubject] = useState<string>(initialConfig?.subject || '');
-  const [selectedTopics, setSelectedTopics] = useState<string[]>(initialConfig?.topics || []);
-  const [strength, setStrength] = useState<'Easy' | 'Medium' | 'Hard'>(initialConfig?.strength || 'Medium');
-  const [quantity, setQuantity] = useState<number>(initialConfig?.quantity || 10);
-  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number>(initialConfig?.timeLimitMinutes || 0);
+  // STRICT REQUIREMENT: Do not preselect options anywhere unless explicitly provided in initialConfig
+  const [selectedYear, setSelectedYear] = useState<SyllabusYear | null>(
+    initialConfig?.syllabusYear || null
+  );
+  const [selectedClass, setSelectedClass] = useState<string | null>(
+    initialConfig?.class || null
+  );
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(
+    initialConfig?.subject || null
+  );
+  const [selectedTopics, setSelectedTopics] = useState<string[]>(
+    initialConfig?.topics || []
+  );
+  const [strength, setStrength] = useState<'Easy' | 'Medium' | 'Hard' | null>(
+    initialConfig?.strength || null
+  );
+  const [quantity, setQuantity] = useState<number | null>(
+    initialConfig?.quantity || null
+  );
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(
+    initialConfig?.timeLimitMinutes !== undefined ? initialConfig.timeLimitMinutes : null
+  );
+  const [questionFormat, setQuestionFormat] = useState<QuestionFormat>(
+    initialConfig?.questionFormat || 'single'
+  );
+
   const [topicSearch, setTopicSearch] = useState<string>('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState<boolean>(false);
 
-  // Active dataset based on syllabus year
+  // Active dataset based on syllabus year (or fallback to 2026-27 for lookup if year is null)
   const activeSyllabusData = useMemo(() => {
-    return getSyllabusData(selectedYear);
+    return getSyllabusData(selectedYear || '2026-27');
   }, [selectedYear]);
 
   // Available classes for selected year
   const availableClasses = useMemo(() => {
+    if (!selectedYear) return [];
     return selectedYear === '2026-27' ? CLASSES_2026_27 : CLASSES_2025_26;
   }, [selectedYear]);
 
@@ -64,13 +93,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
     );
   }, [activeSyllabusData, selectedClass]);
 
-  // Set default subject when class or year changes
-  React.useEffect(() => {
-    if (availableSubjects.length > 0 && (!selectedSubject || !availableSubjects.includes(selectedSubject))) {
-      setSelectedSubject(availableSubjects[0]);
-    }
-  }, [selectedClass, availableSubjects, selectedSubject]);
-
   // Available topics for selected class + subject
   const availableTopics = useMemo(() => {
     if (!selectedClass || !selectedSubject) return [];
@@ -83,20 +105,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
     );
   }, [activeSyllabusData, selectedClass, selectedSubject]);
 
-  // When subject changes, default select first 3 topics if none selected
-  React.useEffect(() => {
-    if (availableTopics.length > 0) {
-      const validSelected = selectedTopics.filter(t => availableTopics.includes(t));
-      if (validSelected.length === 0) {
-        setSelectedTopics(availableTopics.slice(0, Math.min(4, availableTopics.length)));
-      } else {
-        setSelectedTopics(validSelected);
-      }
-    } else {
-      setSelectedTopics([]);
-    }
-  }, [selectedSubject, availableTopics]);
-
   // Filtered topics by search
   const filteredTopics = useMemo(() => {
     if (!topicSearch.trim()) return availableTopics;
@@ -104,6 +112,30 @@ export const SetupView: React.FC<SetupViewProps> = ({
       t.toLowerCase().includes(topicSearch.toLowerCase())
     );
   }, [availableTopics, topicSearch]);
+
+  const handleYearChange = (year: SyllabusYear) => {
+    setSelectedYear(year);
+    // Reset lower dependencies only if invalid
+    if (selectedClass && !((year === '2026-27' ? CLASSES_2026_27 : CLASSES_2025_26).includes(selectedClass))) {
+      setSelectedClass(null);
+      setSelectedSubject(null);
+      setSelectedTopics([]);
+    }
+    setValidationError(null);
+  };
+
+  const handleClassChange = (cls: string) => {
+    setSelectedClass(cls);
+    setSelectedSubject(null);
+    setSelectedTopics([]);
+    setValidationError(null);
+  };
+
+  const handleSubjectChange = (subj: string) => {
+    setSelectedSubject(subj);
+    setSelectedTopics([]);
+    setValidationError(null);
+  };
 
   const toggleTopic = (topic: string) => {
     setSelectedTopics(prev => 
@@ -123,16 +155,33 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!selectedYear) {
+      setValidationError('Please select the Academic Syllabus Year (2026-27 or 2025-26).');
+      return;
+    }
     if (!selectedClass) {
-      setValidationError('Please select a grade level.');
+      setValidationError('Please select a Grade Level / Class.');
       return;
     }
     if (!selectedSubject) {
-      setValidationError('Please select a subject.');
+      setValidationError('Please select a Subject.');
       return;
     }
     if (selectedTopics.length === 0) {
-      setValidationError('Please select at least one chapter or topic.');
+      setValidationError('Please select at least one Chapter or Topic to generate questions.');
+      return;
+    }
+    if (!strength) {
+      setValidationError('Please choose a Difficulty Level (Easy, Medium, or Hard).');
+      return;
+    }
+    if (!quantity) {
+      setValidationError('Please choose the Number of Questions (5, 10, 15, 20, or 25).');
+      return;
+    }
+    if (timeLimitMinutes === null) {
+      setValidationError('Please select a Timer mode (Untimed or timed test).');
       return;
     }
 
@@ -144,435 +193,671 @@ export const SetupView: React.FC<SetupViewProps> = ({
       quantity,
       timeLimitMinutes,
       syllabusYear: selectedYear,
+      questionFormat,
     });
   };
 
+  // Check how many configuration steps are completed
+  const completedSteps = [
+    !!selectedYear,
+    !!selectedClass,
+    !!selectedSubject,
+    selectedTopics.length > 0,
+    !!strength,
+    !!quantity,
+    timeLimitMinutes !== null,
+    !!questionFormat,
+  ].filter(Boolean).length;
+
+  const totalSteps = 8;
+  const isFormComplete = completedSteps === totalSteps;
+
   const quantityOptions = [5, 10, 15, 20, 25];
   const timeLimitOptions = [
-    { value: 0, label: 'Untimed (Self-paced)' },
+    { value: 0, label: 'Untimed (Self-Paced Practice)' },
     { value: 5, label: '5 Mins (Fast Sprint)' },
-    { value: 10, label: '10 Mins (Standard)' },
+    { value: 10, label: '10 Mins (Standard Assessment)' },
     { value: 15, label: '15 Mins (Comprehensive)' },
-    { value: 20, label: '20 Mins (Deep Exam)' },
+    { value: 20, label: '20 Mins (Board Exam Simulation)' },
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in duration-200">
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <button
-            onClick={onCancel}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-emerald-400 font-medium mb-2 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Home</span>
-          </button>
-          <h1 className="text-3xl font-extrabold font-display text-white tracking-tight">
-            Custom Assessment Configurator
+          <div className="flex items-center gap-2 mb-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Home</span>
+            </button>
+            <span className="text-slate-600">•</span>
+            <span className="text-xs text-slate-400 font-medium">New Quiz Configurator</span>
+          </div>
+
+          <h1 className="text-2xl sm:text-3xl font-extrabold font-display text-white tracking-tight flex items-center gap-3">
+            <span>Create Custom Assessment</span>
+            <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold">
+              {completedSteps}/{totalSteps} Steps
+            </span>
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Tailor syllabus edition, scope, cognitive demand, and testing parameters for your NCERT quiz
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            Choose your academic session, grade, chapters, and test conditions. No options are preselected.
           </p>
         </div>
+
+        {/* Share Reminder Quick Button */}
+        <button
+          type="button"
+          onClick={() => setIsReminderModalOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-emerald-400 text-xs font-bold transition-all cursor-pointer shadow-md active:scale-95 shrink-0 self-start sm:self-center"
+        >
+          <Bell className="w-4 h-4 text-amber-400" />
+          <span>Share Quiz Reminder</span>
+        </button>
       </div>
+
+      {/* Global Validation Banner */}
+      {validationError && (
+        <div className="mb-6 p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-center justify-between gap-3 shadow-lg animate-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+            <span className="text-xs sm:text-sm font-medium">{validationError}</span>
+          </div>
+          <button
+            onClick={() => setValidationError(null)}
+            className="text-xs font-bold text-rose-400 hover:underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Left 2 Columns: Options Form */}
-        <div className="lg:col-span-2 space-y-8">
+        {/* Left 2 Columns: Main Form Steps */}
+        <div className="lg:col-span-2 space-y-6">
           
-          {/* Step 0: Academic Session / Syllabus Year Selector */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
+          {/* STEP 1: Academic Year Session */}
+          <div className={`p-6 rounded-3xl border transition-all ${selectedYear ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedYear ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
                   1
                 </span>
                 <div>
-                  <h3 className="text-lg font-bold font-display text-white">Syllabus Academic Year</h3>
-                  <p className="text-xs text-slate-400">Choose between latest updated 2026-27 or 2025-26 edition</p>
+                  <h3 className="text-base font-bold text-white font-display">Academic Syllabus Session</h3>
+                  <p className="text-xs text-slate-400">Select which NCERT curriculum syllabus edition to follow</p>
                 </div>
               </div>
-              <span className="text-xs font-mono text-emerald-400 font-semibold">{selectedYear}</span>
+              {selectedYear && (
+                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> Selected
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setSelectedYear('2026-27')}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  selectedYear === '2026-27'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-md'
-                    : 'bg-slate-950/60 hover:bg-slate-900 border-slate-800 text-slate-400'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    Latest Updated 2026–27
-                  </span>
-                  {selectedYear === '2026-27' && <Check className="w-4 h-4 text-emerald-400" />}
-                </div>
-                <h4 className="text-sm font-bold text-white">NCF-SE Unified Curriculum</h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  New textbooks (Curiosity, Ganita Prakash, Exploring Society, Poorvi, Mridang) & latest modules.
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedYear('2025-26')}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  selectedYear === '2025-26'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-md'
-                    : 'bg-slate-950/60 hover:bg-slate-900 border-slate-800 text-slate-400'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                    2025–26 Standard
-                  </span>
-                  {selectedYear === '2025-26' && <Check className="w-4 h-4 text-emerald-400" />}
-                </div>
-                <h4 className="text-sm font-bold text-white">Rationalized Edition</h4>
-                <p className="text-xs text-slate-400 mt-1">
-                  Standard rationalized textbook series across Classes 1–12.
-                </p>
-              </button>
-            </div>
-          </div>
-
-          {/* Step 1: Grade / Class Selector */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
-                  2
-                </span>
-                <h3 className="text-lg font-bold font-display text-white">Select Grade / Class</h3>
-              </div>
-              <span className="text-xs font-mono text-emerald-400">{selectedClass}</span>
-            </div>
-
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
-              {availableClasses.map(cls => (
-                <button
-                  type="button"
-                  key={cls}
-                  onClick={() => {
-                    setSelectedClass(cls);
-                    setValidationError(null);
-                  }}
-                  className={`py-3 px-2 rounded-xl text-xs font-semibold font-display transition-all text-center border ${
-                    selectedClass === cls
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold shadow-md shadow-emerald-500/20 scale-[1.02]'
-                      : 'bg-slate-950/60 hover:bg-slate-800 border-slate-800 text-slate-300'
-                  }`}
-                >
-                  {cls}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Step 2: Subject Selector */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
-                  3
-                </span>
-                <h3 className="text-lg font-bold font-display text-white">Select Subject</h3>
-              </div>
-              <span className="text-xs font-mono text-emerald-400">{selectedSubject || 'None'}</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {availableSubjects.map(sub => {
-                const isSelected = selectedSubject === sub;
+              {(['2026-27', '2025-26'] as SyllabusYear[]).map((yr) => {
+                const isSelected = selectedYear === yr;
                 return (
                   <button
+                    key={yr}
                     type="button"
-                    key={sub}
-                    onClick={() => {
-                      setSelectedSubject(sub);
-                      setValidationError(null);
-                    }}
-                    className={`p-4 rounded-xl border text-left transition-all flex items-center justify-between ${
+                    onClick={() => handleYearChange(yr)}
+                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                       isSelected
-                        ? 'bg-emerald-500/15 border-emerald-500 text-white font-bold shadow-md'
-                        : 'bg-slate-950/60 hover:bg-slate-800 border-slate-800 text-slate-300'
+                        ? 'bg-emerald-500/15 border-emerald-500/50 text-white ring-1 ring-emerald-500/30'
+                        : 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:border-slate-700 hover:bg-slate-900/50'
                     }`}
                   >
-                    <span className="text-xs sm:text-sm font-semibold truncate pr-1">{sub}</span>
-                    {isSelected && <Check className="w-4 h-4 text-emerald-400 shrink-0 ml-2" />}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Calendar className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span className="font-bold text-sm">Session {yr}</span>
+                        {yr === '2026-27' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 uppercase">
+                            Latest
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        {yr === '2026-27' ? 'Updated rationalized syllabus & latest textbook patterns' : 'Standard academic year curriculum'}
+                      </p>
+                    </div>
+
+                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-700'}`}>
+                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                    </div>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Step 3: Chapter / Topic Selector */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
+          {/* STEP 2: Grade Level / Class */}
+          <div className={`p-6 rounded-3xl border transition-all ${!selectedYear ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedClass ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedClass ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                  2
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-white font-display">Grade / Class Level</h3>
+                  <p className="text-xs text-slate-400">Choose the class for standard NCERT syllabus content</p>
+                </div>
+              </div>
+              {selectedClass && (
+                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> Selected
+                </span>
+              )}
+            </div>
+
+            {!selectedYear ? (
+              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
+                Please select the Academic Session (Step 1) to view available classes.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                {availableClasses.map((cls) => {
+                  const isSelected = selectedClass === cls;
+                  return (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => handleClassChange(cls)}
+                      className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20 scale-105'
+                          : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      {cls}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* STEP 3: Subject Selection */}
+          <div className={`p-6 rounded-3xl border transition-all ${!selectedClass ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedSubject ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedSubject ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                  3
+                </span>
+                <div>
+                  <h3 className="text-base font-bold text-white font-display">Subject</h3>
+                  <p className="text-xs text-slate-400">Select which subject you would like to test</p>
+                </div>
+              </div>
+              {selectedSubject && (
+                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> Selected
+                </span>
+              )}
+            </div>
+
+            {!selectedClass ? (
+              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
+                Please select a Grade / Class above (Step 2) to unlock subjects.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {availableSubjects.map((subj) => {
+                  const isSelected = selectedSubject === subj;
+                  const chaptersCount = activeSyllabusData.filter(d => d.className === selectedClass && d.subjectName === subj).length;
+                  return (
+                    <button
+                      key={subj}
+                      type="button"
+                      onClick={() => handleSubjectChange(subj)}
+                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
+                        isSelected
+                          ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30 shadow-sm'
+                          : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
+                          <span className="font-bold text-sm text-white">{subj}</span>
+                        </div>
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-700'}`}>
+                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                        </div>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {chaptersCount} NCERT Chapters Available
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* STEP 4: Chapter & Topics Selection */}
+          <div className={`p-6 rounded-3xl border transition-all ${!selectedSubject ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedTopics.length > 0 ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedTopics.length > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
                   4
                 </span>
                 <div>
-                  <h3 className="text-lg font-bold font-display text-white">Select Chapters / Topics</h3>
-                  <p className="text-xs text-slate-400">Choose one or multiple units from the {selectedYear} syllabus</p>
+                  <h3 className="text-base font-bold text-white font-display">
+                    Chapters & Topics ({selectedTopics.length}/{availableTopics.length} Picked)
+                  </h3>
+                  <p className="text-xs text-slate-400">Select single or multiple chapters to include in the quiz</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors"
-                >
-                  Select All
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeselectAll}
-                  className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors"
-                >
-                  Clear All
-                </button>
-                <span className="px-2.5 py-1 text-xs rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono font-bold">
-                  {selectedTopics.length} selected
-                </span>
-              </div>
-            </div>
-
-            {/* Search Filter for Topics */}
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder={`Search chapters in ${selectedSubject || 'curriculum'}...`}
-                value={topicSearch}
-                onChange={e => setTopicSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-              />
-            </div>
-
-            {/* Topics Scrollable List */}
-            <div className="max-h-64 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-              {filteredTopics.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-sm">
-                  No chapters found matching "{topicSearch}".
+              {selectedSubject && availableTopics.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeselectAll}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Clear
+                  </button>
                 </div>
-              ) : (
-                filteredTopics.map((topic) => {
-                  const isChecked = selectedTopics.includes(topic);
-                  return (
-                    <div
-                      key={topic}
-                      onClick={() => toggleTopic(topic)}
-                      className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer select-none transition-all ${
-                        isChecked
-                          ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-100'
-                          : 'bg-slate-950/40 hover:bg-slate-900 border-slate-800/80 text-slate-300'
-                      }`}
-                    >
-                      <div className={`w-4 h-4 rounded flex items-center justify-center transition-colors ${
-                        isChecked ? 'bg-emerald-500 text-slate-950' : 'border border-slate-600'
-                      }`}>
-                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                      </div>
-                      <span className="text-xs sm:text-sm font-medium leading-tight">
-                        {topic}
-                      </span>
-                    </div>
-                  );
-                })
               )}
             </div>
-          </div>
 
-          {/* Step 4 & 5: Cognitive Strength & Quantity */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            
-            {/* Cognitive Demand */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-              <div className="flex items-center gap-2.5">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
-                  5
-                </span>
-                <div>
-                  <h3 className="text-base font-bold font-display text-white">Cognitive Demand</h3>
-                  <p className="text-xs text-slate-400">Calibrate depth of questions</p>
+            {!selectedSubject ? (
+              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
+                Please select a Subject (Step 3) to view chapters and topics.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Search Bar for chapters */}
+                {availableTopics.length > 6 && (
+                  <div className="relative">
+                    <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={topicSearch}
+                      onChange={(e) => setTopicSearch(e.target.value)}
+                      placeholder="Search chapters or concepts..."
+                      className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                    />
+                  </div>
+                )}
+
+                {/* Topics Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                  {filteredTopics.map((top) => {
+                    const isSelected = selectedTopics.includes(top);
+                    return (
+                      <button
+                        key={top}
+                        type="button"
+                        onClick={() => toggleTopic(top)}
+                        className={`p-3 rounded-xl border text-left text-xs font-medium transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                          isSelected
+                            ? 'bg-emerald-500/20 border-emerald-500 text-white'
+                            : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                        }`}
+                      >
+                        <span className="truncate">{top}</span>
+                        <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-700'}`}>
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+            )}
+          </div>
 
-              <div className="grid grid-cols-3 gap-2">
-                {(['Easy', 'Medium', 'Hard'] as const).map(lvl => {
-                  const isSel = strength === lvl;
+          {/* STEP 5, 6, 7: Assessment Parameters */}
+          <div className="p-6 rounded-3xl border bg-slate-900/60 border-slate-800 space-y-6">
+            
+            {/* Step 5: Difficulty */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${strength ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                    5
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-display">Cognitive Demand / Difficulty</h3>
+                    <p className="text-xs text-slate-400">Choose question depth from direct recall to analytical NCERT questions</p>
+                  </div>
+                </div>
+                {strength && (
+                  <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> {strength}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                {(['Easy', 'Medium', 'Hard'] as ('Easy' | 'Medium' | 'Hard')[]).map((lvl) => {
+                  const isSelected = strength === lvl;
+                  const desc = lvl === 'Easy' 
+                    ? 'Direct definitions & fundamental concepts'
+                    : lvl === 'Medium'
+                    ? 'Standard NCERT exam questions & problem solving'
+                    : 'Application, numericals, assertions & case reasoning';
+
                   return (
                     <button
-                      type="button"
                       key={lvl}
+                      type="button"
                       onClick={() => setStrength(lvl)}
-                      className={`py-3 px-2 rounded-xl text-center border transition-all ${
-                        isSel
-                          ? lvl === 'Hard'
-                            ? 'bg-rose-500/20 border-rose-500 text-rose-300 font-bold'
+                      className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                        isSelected
+                          ? lvl === 'Easy'
+                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/30'
                             : lvl === 'Medium'
-                            ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                            : 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                          : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-1 ring-amber-500/30'
+                            : 'bg-rose-500/20 border-rose-500 text-rose-300 ring-1 ring-rose-500/30'
+                          : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
                       }`}
                     >
-                      <span className="block text-xs font-bold">{lvl}</span>
-                      <span className="text-[10px] opacity-75 font-mono">
-                        {lvl === 'Easy' ? 'Recall' : lvl === 'Medium' ? 'Apply' : 'Analyze'}
-                      </span>
+                      <span className="font-bold text-sm">{lvl}</span>
+                      <span className="text-[10px] text-slate-400 line-clamp-2 leading-tight">{desc}</span>
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Question Quantity */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-              <div className="flex items-center gap-2.5">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
-                  6
-                </span>
-                <div>
-                  <h3 className="text-base font-bold font-display text-white">Item Count</h3>
-                  <p className="text-xs text-slate-400">Total questions in assessment</p>
+            {/* Step 6: Question Quantity */}
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${quantity ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                    6
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-display">Number of Questions</h3>
+                    <p className="text-xs text-slate-400">Select the size of your assessment batch</p>
+                  </div>
                 </div>
+                {quantity && (
+                  <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> {quantity} Questions
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-5 gap-2">
-                {quantityOptions.map(cnt => (
-                  <button
-                    type="button"
-                    key={cnt}
-                    onClick={() => setQuantity(cnt)}
-                    className={`py-3 rounded-xl text-xs font-bold font-mono border transition-all ${
-                      quantity === cnt
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
-                        : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {cnt}
-                  </button>
-                ))}
+                {quantityOptions.map((qty) => {
+                  const isSelected = quantity === qty;
+                  return (
+                    <button
+                      key={qty}
+                      type="button"
+                      onClick={() => setQuantity(qty)}
+                      className={`p-3 rounded-2xl border text-center font-mono font-bold text-xs transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      {qty} Qs
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-          </div>
-
-          {/* Step 6: Assessment Mode / Timer */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <span className="w-6 h-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-xs font-bold flex items-center justify-center">
-                7
-              </span>
-              <div>
-                <h3 className="text-base font-bold font-display text-white">Time Limit / Pacing</h3>
-                <p className="text-xs text-slate-400">Select test duration or practice at your own pace</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-              {timeLimitOptions.map(opt => (
-                <button
-                  type="button"
-                  key={opt.value}
-                  onClick={() => setTimeLimitMinutes(opt.value)}
-                  className={`p-3 rounded-xl border text-left text-xs font-medium transition-all flex items-center justify-between ${
-                    timeLimitMinutes === opt.value
-                      ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-300 font-bold'
-                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                    <span>{opt.label}</span>
+            {/* Step 7: Timer Mode */}
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${timeLimitMinutes !== null ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                    7
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-display">Time Allocation</h3>
+                    <p className="text-xs text-slate-400">Untimed practice or timed countdown exam simulation</p>
                   </div>
-                  {timeLimitMinutes === opt.value && (
-                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  )}
-                </button>
-              ))}
+                </div>
+                {timeLimitMinutes !== null && (
+                  <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> {timeLimitMinutes === 0 ? 'Untimed' : `${timeLimitMinutes} Mins`}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {timeLimitOptions.map((opt) => {
+                  const isSelected = timeLimitMinutes === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setTimeLimitMinutes(opt.value)}
+                      className={`p-3 rounded-xl border text-left text-xs font-semibold transition-all cursor-pointer flex items-center justify-between ${
+                        isSelected
+                          ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Clock className={`w-3.5 h-3.5 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
+                        <span>{opt.label}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Step 8: Question Format (Single, Multiple, Mixed) */}
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${questionFormat ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                    8
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-display">Question Response Style</h3>
+                    <p className="text-xs text-slate-400">Single choice (1 correct), Multiple choice (multi-select), or Mixed</p>
+                  </div>
+                </div>
+                {questionFormat && (
+                  <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> {
+                      questionFormat === 'single' 
+                        ? 'Single Choice' 
+                        : questionFormat === 'multiple' 
+                        ? 'Multiple Choice' 
+                        : 'Mixed (Both)'
+                    }
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {[
+                  {
+                    id: 'single' as QuestionFormat,
+                    title: 'Single Choice',
+                    badge: '1 Correct',
+                    desc: 'Standard 4 options with exactly one correct answer'
+                  },
+                  {
+                    id: 'multiple' as QuestionFormat,
+                    title: 'Multiple Choice',
+                    badge: 'Multi-Select',
+                    desc: 'Questions with multiple correct answers (Select all that apply)'
+                  },
+                  {
+                    id: 'mixed' as QuestionFormat,
+                    title: 'Both (Mixed)',
+                    badge: 'Comprehensive',
+                    desc: 'Realistic blend of single and multi-response questions'
+                  }
+                ].map((fmt) => {
+                  const isSelected = questionFormat === fmt.id;
+                  return (
+                    <button
+                      key={fmt.id}
+                      type="button"
+                      onClick={() => setQuestionFormat(fmt.id)}
+                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                        isSelected
+                          ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white">{fmt.title}</span>
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                          isSelected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                        }`}>
+                          {fmt.badge}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 leading-tight">{fmt.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
           </div>
 
         </div>
 
-        {/* Right 1 Column: Live Summary Dock */}
-        <div className="space-y-6">
-          <div className="sticky top-24 rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur-md p-6 space-y-6 shadow-xl">
+        {/* Right 1 Column: Live Summary, Share Reminder & Launch Action */}
+        <div className="lg:col-span-1 space-y-6">
+          
+          <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/80 sticky top-6 space-y-6 shadow-xl backdrop-blur-md">
             
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-4">
-              <Sliders className="w-5 h-5 text-emerald-400" />
-              <h3 className="text-lg font-bold font-display text-white">Assessment Summary</h3>
+            <div className="border-b border-slate-800 pb-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Configuration Summary
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  {completedSteps}/{totalSteps} Ready
+                </span>
+              </div>
+              <h2 className="text-lg font-bold text-white font-display mt-1">
+                {selectedClass && selectedSubject ? `${selectedClass} ${selectedSubject}` : 'Configure Your Quiz'}
+              </h2>
             </div>
 
-            <div className="space-y-3.5 text-xs">
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Syllabus Edition</span>
-                <span className="font-semibold text-emerald-400 font-mono">{selectedYear}</span>
+            {/* Checklist */}
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Academic Session:</span>
+                <span className={selectedYear ? 'text-slate-200 font-semibold font-mono' : 'text-slate-600 italic'}>
+                  {selectedYear || 'Unselected'}
+                </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Target Grade</span>
-                <span className="font-semibold text-white font-mono">{selectedClass}</span>
+
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Class Level:</span>
+                <span className={selectedClass ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>
+                  {selectedClass || 'Unselected'}
+                </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Subject</span>
-                <span className="font-semibold text-emerald-400 font-mono truncate max-w-[130px]">{selectedSubject || 'None'}</span>
+
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Subject:</span>
+                <span className={selectedSubject ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>
+                  {selectedSubject || 'Unselected'}
+                </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Selected Chapters</span>
-                <span className="font-semibold text-white font-mono">{selectedTopics.length} Units</span>
+
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Chapters Selected:</span>
+                <span className={selectedTopics.length > 0 ? 'text-emerald-400 font-semibold font-mono' : 'text-slate-600 italic'}>
+                  {selectedTopics.length > 0 ? `${selectedTopics.length} Chapters` : 'None Selected'}
+                </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Cognitive Demand</span>
-                <span className="font-semibold text-amber-400 font-mono">{strength}</span>
+
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Difficulty:</span>
+                <span className={strength ? 'text-amber-400 font-semibold font-mono' : 'text-slate-600 italic'}>
+                  {strength || 'Unselected'}
+                </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Total Items</span>
-                <span className="font-semibold text-white font-mono">{quantity} Questions</span>
+
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Questions Count:</span>
+                <span className={quantity ? 'text-sky-400 font-semibold font-mono' : 'text-slate-600 italic'}>
+                  {quantity ? `${quantity} Questions` : 'Unselected'}
+                </span>
               </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-800/60">
-                <span className="text-slate-400">Timer Mode</span>
-                <span className="font-semibold text-cyan-400 font-mono">
-                  {timeLimitMinutes === 0 ? 'Untimed Practice' : `${timeLimitMinutes} Minutes`}
+
+              <div className="flex items-center justify-between py-1">
+                <span className="text-slate-400">Time Limit:</span>
+                <span className={timeLimitMinutes !== null ? 'text-purple-400 font-semibold font-mono' : 'text-slate-600 italic'}>
+                  {timeLimitMinutes === null ? 'Unselected' : timeLimitMinutes === 0 ? 'Untimed' : `${timeLimitMinutes} Mins`}
                 </span>
               </div>
             </div>
 
-            {/* Validation Error Alert */}
-            {validationError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{validationError}</span>
-              </div>
-            )}
+            {/* Launch Assessment Button */}
+            <div className="space-y-3 pt-2">
+              <button
+                type="submit"
+                className={`w-full py-3.5 px-6 rounded-2xl font-display font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg active:scale-98 ${
+                  isFormComplete
+                    ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/25'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-750'
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{isFormComplete ? 'Generate & Begin Quiz' : 'Complete All Options Above'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-emerald-400 via-emerald-500 to-lime-400 text-slate-950 font-bold text-base shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 group"
-            >
-              <Sparkles className="w-5 h-5 group-hover:rotate-12 transition-transform" />
-              <span>Generate NCERT Quiz</span>
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </button>
+              {/* Share Reminder Button */}
+              <button
+                type="button"
+                onClick={() => setIsReminderModalOpen(true)}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-emerald-400 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5 text-amber-400" />
+                <span>Share Quiz Reminder with Friends</span>
+              </button>
+            </div>
 
-            <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-              Dynamically generated in real-time by Gemini 2.5 Flash grounded in official NCERT {selectedYear} syllabus matrices.
-            </p>
           </div>
+
         </div>
 
       </form>
+
+      {/* Share Reminder Modal */}
+      {isReminderModalOpen && (
+        <ShareReminderModal
+          config={{
+            class: selectedClass || undefined,
+            subject: selectedSubject || undefined,
+            topics: selectedTopics,
+            quantity: quantity || undefined,
+            strength: strength || undefined,
+            timeLimitMinutes: timeLimitMinutes !== null ? timeLimitMinutes : undefined,
+          }}
+          onClose={() => setIsReminderModalOpen(false)}
+        />
+      )}
 
     </div>
   );

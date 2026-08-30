@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { AppState, QuizConfig, Question, QuizResultRecord, SyllabusYear, UserProfile } from './types';
+import { AppState, QuizConfig, Question, QuizResultRecord, SyllabusYear, UserProfile, MaintenanceConfig } from './types';
 import { generateQuestions } from './services/geminiService';
 import { 
   listenToAuthChanges, 
   signInWithGoogle, 
   signOutUser, 
   saveQuizResultToCloud,
-  fetchUserSavedQuizzes 
+  fetchUserSavedQuizzes,
+  listenToMaintenanceMode
 } from './services/firebase';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -25,7 +26,8 @@ import { AdminView } from './components/AdminView';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { LoginView } from './components/LoginView';
 import { JoinQuizModal } from './components/JoinQuizModal';
-import { AlertCircle, X } from 'lucide-react';
+import { MaintenanceView } from './components/MaintenanceView';
+import { AlertCircle, X, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 const STORAGE_KEY = 'uquiz_ncert_history_v1';
 
@@ -69,6 +71,17 @@ export default function App() {
       return [];
     }
   });
+
+  // Maintenance mode state
+  const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
+
+  // Listen to Maintenance mode
+  useEffect(() => {
+    const unsubscribe = listenToMaintenanceMode((config) => {
+      setMaintenanceConfig(config);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Track online/offline status
   useEffect(() => {
@@ -327,159 +340,197 @@ export default function App() {
   const isViewingAdmin = view === AppState.ADMIN;
 
   return (
-    <div className="min-h-screen bg-[#090d14] text-slate-100 flex flex-col justify-between selection:bg-emerald-500/20 selection:text-emerald-400">
+    <div className={view === AppState.CHAT ? "h-screen h-[100dvh] bg-[#0b141a] text-slate-100 flex flex-col overflow-hidden selection:bg-emerald-500/20 selection:text-emerald-400" : "min-h-screen bg-[#090d14] text-slate-100 flex flex-col justify-between selection:bg-emerald-500/20 selection:text-emerald-400"}>
       
-      {/* Top Navigation */}
-      <Navbar
-        currentView={view}
-        onNavigate={navigateTo}
-        isOnline={isOnline}
-        historyCount={history.length}
-        savedQuizzesCount={savedQuizzesCount}
-        user={user}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
-        onOpenJoinModal={() => setIsJoinModalOpen(true)}
-        onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
-        isAdminUnlocked={isAdminUnlocked}
-      />
-
-      {/* Dismissable Global Error Toast */}
-      {error && (
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 w-full">
-          <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-center justify-between gap-3 shadow-lg">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-              <span className="text-xs sm:text-sm font-medium">{error}</span>
-            </div>
-            <button
-              onClick={() => setError(null)}
-              className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+      {/* Top Banner when Maintenance Mode is active and Admin is in bypass mode */}
+      {maintenanceConfig.isActive && isAdminUnlocked && (
+        <div className="bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 px-4 py-2 text-white text-xs font-bold flex items-center justify-between shadow-lg sticky top-0 z-50">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-white animate-pulse" />
+            <span>MAINTENANCE MODE IS ACTIVE &bull; Public access is blocked. You are viewing in Admin Bypass Mode.</span>
           </div>
+          <button
+            onClick={() => setView(AppState.ADMIN)}
+            className="px-2.5 py-1 rounded-md bg-black/40 hover:bg-black/60 text-white text-[11px] font-mono transition-colors cursor-pointer border border-white/20"
+          >
+            Open Admin Dashboard
+          </button>
         </div>
       )}
 
-      {/* Main View Router */}
-      <main className="flex-1">
-        
-        {/* Admin View is accessible when unlocked */}
-        {isViewingAdmin ? (
-          <AdminView onExitAdmin={() => setView(AppState.HOME)} />
-        ) : !user && !isAuthChecking ? (
-          /* Mandatory Google Sign-in Gate */
-          <LoginView
-            onSignIn={handleSignIn}
-            onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
-            error={error}
-          />
-        ) : (
-          <>
-            {view === AppState.HOME && (
-              <HomeView
-                onStartQuizConfig={handleStartQuiz}
-                onNavigate={navigateTo}
-                recentHistory={history}
-              />
-            )}
+      {/* If Maintenance mode is active and user is NOT an unlocked admin, show Maintenance screen */}
+      {maintenanceConfig.isActive && !isAdminUnlocked ? (
+        <MaintenanceView
+          config={maintenanceConfig}
+          onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+        />
+      ) : (
+        <>
+          {/* Top Navigation - Hidden in Chat view for immersive WhatsApp layout */}
+          {view !== AppState.CHAT && (
+            <Navbar
+              currentView={view}
+              onNavigate={navigateTo}
+              isOnline={isOnline}
+              historyCount={history.length}
+              savedQuizzesCount={savedQuizzesCount}
+              user={user}
+              onSignIn={handleSignIn}
+              onSignOut={handleSignOut}
+              onOpenJoinModal={() => setIsJoinModalOpen(true)}
+              onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+              isAdminUnlocked={isAdminUnlocked}
+            />
+          )}
 
-            {view === AppState.SETUP && (
-              <SetupView
-                initialConfig={currentConfig}
-                onGenerateQuiz={handleStartQuiz}
-                onCancel={() => navigateTo(AppState.HOME)}
-              />
-            )}
+          {/* Dismissable Global Error Toast */}
+          {error && (
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 w-full">
+              <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                  <span className="text-xs sm:text-sm font-medium">{error}</span>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
-            {view === AppState.SAVED_QUIZZES && (
-              <SavedQuizzesView
-                user={user}
-                onPlayQuiz={handlePlaySavedQuiz}
-                onNewQuiz={() => navigateTo(AppState.SETUP)}
-              />
-            )}
-
-            {view === AppState.LOADING && (
-              <LoadingView
-                config={currentConfig}
-                onCancel={() => navigateTo(AppState.SETUP)}
-              />
-            )}
-
-            {view === AppState.QUIZ && questions.length > 0 && (
-              <QuizView
-                config={currentConfig}
-                questions={questions}
-                onSubmitQuiz={handleSubmitQuiz}
-                onQuitQuiz={() => navigateTo(AppState.HOME)}
-              />
-            )}
-
-            {view === AppState.RESULTS && questions.length > 0 && (
-              <ResultsView
-                config={currentConfig}
-                questions={questions}
-                userAnswers={userAnswers}
-                timeSpentSeconds={timeSpentSeconds}
-                user={user}
-                history={history}
-                onRetakeSame={handleRetakeSame}
-                onRetakeMissed={handleRetakeMissed}
-                onNewQuiz={() => navigateTo(AppState.SETUP)}
-                onNavigateCurriculum={() => navigateTo(AppState.CURRICULUM)}
-                onNavigateLeaderboard={() => navigateTo(AppState.LEADERBOARD)}
+          {/* Main View Router */}
+          <main className={view === AppState.CHAT ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "flex-1"}>
+            
+            {/* Admin View is accessible when unlocked */}
+            {isViewingAdmin ? (
+              <AdminView onExitAdmin={() => setView(AppState.HOME)} />
+            ) : !user && !isAuthChecking ? (
+              /* Mandatory Google Sign-in Gate */
+              <LoginView
                 onSignIn={handleSignIn}
+                onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+                error={error}
               />
+            ) : (
+              <>
+                {view === AppState.HOME && (
+                  <HomeView
+                    onStartQuizConfig={handleStartQuiz}
+                    onNavigate={navigateTo}
+                    recentHistory={history}
+                  />
+                )}
+
+                {view === AppState.SETUP && (
+                  <SetupView
+                    initialConfig={currentConfig}
+                    onGenerateQuiz={handleStartQuiz}
+                    onCancel={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.SAVED_QUIZZES && (
+                  <SavedQuizzesView
+                    user={user}
+                    onPlayQuiz={handlePlaySavedQuiz}
+                    onNewQuiz={() => navigateTo(AppState.SETUP)}
+                    onBackHome={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.LOADING && (
+                  <LoadingView
+                    config={currentConfig}
+                    onCancel={() => navigateTo(AppState.SETUP)}
+                  />
+                )}
+
+                {view === AppState.QUIZ && questions.length > 0 && (
+                  <QuizView
+                    config={currentConfig}
+                    questions={questions}
+                    onSubmitQuiz={handleSubmitQuiz}
+                    onQuitQuiz={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.RESULTS && questions.length > 0 && (
+                  <ResultsView
+                    config={currentConfig}
+                    questions={questions}
+                    userAnswers={userAnswers}
+                    timeSpentSeconds={timeSpentSeconds}
+                    user={user}
+                    history={history}
+                    onRetakeSame={handleRetakeSame}
+                    onRetakeMissed={handleRetakeMissed}
+                    onNewQuiz={() => navigateTo(AppState.SETUP)}
+                    onNavigateCurriculum={() => navigateTo(AppState.CURRICULUM)}
+                    onNavigateLeaderboard={() => navigateTo(AppState.LEADERBOARD)}
+                    onSignIn={handleSignIn}
+                    onBackHome={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.CURRICULUM && (
+                  <CurriculumView
+                    onStartChapterQuiz={handleStartQuiz}
+                    onOpenCustomSetup={handleOpenCustomSetup}
+                    onBackHome={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.HISTORY && (
+                  <HistoryView
+                    history={history}
+                    user={user}
+                    onReviewRecord={handleReviewRecord}
+                    onRetakeRecord={handleRetakeRecord}
+                    onClearHistory={handleClearHistory}
+                    onNewQuiz={() => navigateTo(AppState.SETUP)}
+                    onSignIn={handleSignIn}
+                    onBackHome={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.LEADERBOARD && (
+                  <LeaderboardView
+                    user={user}
+                    onNavigate={navigateTo}
+                    onStartQuiz={() => navigateTo(AppState.SETUP)}
+                    onSignIn={handleSignIn}
+                  />
+                )}
+
+                {view === AppState.CHAT && (
+                  <ChatView
+                    user={user}
+                    onSignIn={handleSignIn}
+                    onBackHome={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+
+                {view === AppState.SHARED_PREVIEW && sharedQuizId && (
+                  <SharedPreviewView
+                    quizId={sharedQuizId}
+                    onPlayQuiz={handlePlaySharedQuiz}
+                    onBackHome={() => navigateTo(AppState.HOME)}
+                  />
+                )}
+              </>
             )}
 
-            {view === AppState.CURRICULUM && (
-              <CurriculumView
-                onStartChapterQuiz={handleStartQuiz}
-                onOpenCustomSetup={handleOpenCustomSetup}
-              />
-            )}
+          </main>
 
-            {view === AppState.HISTORY && (
-              <HistoryView
-                history={history}
-                user={user}
-                onReviewRecord={handleReviewRecord}
-                onRetakeRecord={handleRetakeRecord}
-                onClearHistory={handleClearHistory}
-                onNewQuiz={() => navigateTo(AppState.SETUP)}
-                onSignIn={handleSignIn}
-              />
-            )}
-
-            {view === AppState.LEADERBOARD && (
-              <LeaderboardView
-                user={user}
-                onNavigate={navigateTo}
-                onStartQuiz={() => navigateTo(AppState.SETUP)}
-                onSignIn={handleSignIn}
-              />
-            )}
-
-            {view === AppState.CHAT && (
-              <ChatView
-                user={user}
-                onSignIn={handleSignIn}
-              />
-            )}
-
-            {view === AppState.SHARED_PREVIEW && sharedQuizId && (
-              <SharedPreviewView
-                quizId={sharedQuizId}
-                onPlayQuiz={handlePlaySharedQuiz}
-                onBackHome={() => navigateTo(AppState.HOME)}
-              />
-            )}
-          </>
-        )}
-
-      </main>
+          {/* Global Footer - Rendered strictly on the Home screen per user preference */}
+          {view === AppState.HOME && (
+            <Footer onNavigate={navigateTo} />
+          )}
+        </>
+      )}
 
       {/* Join Quiz Challenge Modal */}
       {isJoinModalOpen && (
@@ -496,9 +547,6 @@ export default function App() {
           onClose={() => setIsAdminAuthModalOpen(false)}
         />
       )}
-
-      {/* Global Footer */}
-      <Footer onNavigate={navigateTo} />
 
     </div>
   );

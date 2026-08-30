@@ -1,40 +1,84 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import rehypeRaw from 'rehype-raw';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 interface MathTextProps {
   content: string;
   className?: string;
 }
 
-export const MathText: React.FC<MathTextProps> = ({ content, className = '' }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+/**
+ * Preprocesses mathematical strings to ensure KaTeX & Markdown render seamlessly
+ * without leaving raw dollar signs ($), raw slashes, or unrendered LaTeX commands.
+ */
+function sanitizeAndFormatMath(rawContent: string): string {
+  if (!rawContent) return '';
 
-  useEffect(() => {
-    if (containerRef.current && (window as any).renderMathInElement) {
-      try {
-        (window as any).renderMathInElement(containerRef.current, {
-          delimiters: [
-            { left: '$$', right: '$$', display: true },
-            { left: '$', right: '$', display: false },
-            { left: '\\(', right: '\\)', display: false },
-            { left: '\\[', right: '\\]', display: true },
-          ],
-          throwOnError: false,
-          output: 'html',
-        });
-      } catch (e) {
-        console.warn('KaTeX rendering error', e);
-      }
-    }
+  let text = rawContent;
+
+  // 1. Normalize line endings
+  text = text.replace(/\r\n/g, '\n');
+
+  // 2. Fix form-feed + rac or orphan rac{...}{...} caused by unescaped \frac
+  text = text.replace(/[\x0c]rac\{/g, '\\frac{');
+  text = text.replace(/(^|[^a-zA-Z0-9\\])rac\{([^{}]+)\}\{([^{}]+)\}/g, '$1\\frac{$2}{$3}');
+
+  // 3. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
+  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|le|ge|neq|cdot|sin|cos|tan|log|ln|int|sum|prod|circ|angle)/g, '\\$1');
+
+  // 4. Handle \degree and degree symbols
+  text = text.replace(/\\degree/g, '^{\\circ}');
+  text = text.replace(/(\d+)\s*°(?!\$)/g, '$1^{\\circ}');
+
+  // 5. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
+  text = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$1$$$');
+  text = text.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
+
+  // 6. Handle standalone un-delimited LaTeX fractions like \frac{1}{2} -> $\frac{1}{2}$
+  text = text.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, '$\\frac{$1}{$2}$');
+
+  // 7. Handle standalone square roots like \sqrt{50} or \sqrt{x+1} -> $\sqrt{50}$
+  text = text.replace(/(?<!\$)\\sqrt(?:\[([^\]]+)\])?\{([^{}]+)\}(?!\$)/g, (_m, root, val) => {
+    return root ? `$\\sqrt[${root}]{${val}}$` : `$\\sqrt{${val}}$`;
+  });
+
+  // 8. Handle standalone Greek / math symbols like \theta, \pi, \Delta -> $\theta$
+  text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|le|ge|neq|cdot|circ|angle)(?!\$)/g, '$\\$1$');
+
+  // 9. Handle simple inline exponents like x^2, y^3 when not inside $
+  text = text.replace(/(?<!\$)\b([a-zA-Z])\^([0-9]+)\b(?!\$)/g, '$$$1^{$2}$$');
+
+  return text;
+}
+
+export const MathText: React.FC<MathTextProps> = ({ content, className = '' }) => {
+  const processedContent = useMemo(() => {
+    return sanitizeAndFormatMath(content);
   }, [content]);
 
   if (!content) return null;
 
   return (
-    <div ref={containerRef} className={`markdown-body text-slate-200 text-sm leading-relaxed space-y-2.5 ${className}`}>
+    <div className={`markdown-body text-slate-200 text-sm leading-relaxed space-y-2.5 ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[
+          [rehypeKatex, { 
+            throwOnError: false, 
+            strict: false,
+            macros: {
+              "\\degree": "^\\circ",
+              "\\deg": "^\\circ",
+              "\\celsius": "^\\circ\\text{C}"
+            }
+          }],
+          rehypeRaw
+        ]}
         components={{
           h1: ({ children }) => (
             <h1 className="text-base sm:text-lg font-bold font-display text-white mt-3 mb-1.5 pb-1 border-b border-slate-800 first:mt-0">
@@ -151,7 +195,7 @@ export const MathText: React.FC<MathTextProps> = ({ content, className = '' }) =
           hr: () => <hr className="border-slate-800 my-3" />
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );

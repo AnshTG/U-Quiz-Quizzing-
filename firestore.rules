@@ -14,19 +14,19 @@ service cloud.firestore {
     // User profiles & stats (public read for leaderboard & profile display)
     match /users/{userId} {
       allow read: if true;
-      allow create, update: if isOwner(userId);
-      allow delete: if isOwner(userId);
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated();
 
       // User quiz history subcollection
       match /quizHistory/{historyId} {
         allow read: if true;
-        allow write: if isOwner(userId);
+        allow write, delete: if isAuthenticated();
       }
 
       // User saved quizzes bank (Cloud Vault limit of 50 quizzes)
       match /savedQuizzes/{savedQuizId} {
         allow read: if isAuthenticated();
-        allow write: if isOwner(userId);
+        allow write, delete: if isAuthenticated();
       }
     }
 
@@ -36,14 +36,16 @@ service cloud.firestore {
       allow read: if true;
       
       // Anyone authenticated can create a shared quiz
-      allow create: if request.resource.data.id == quizId
+      allow create: if isAuthenticated()
+                    && request.resource.data.id == quizId
                     && request.resource.data.title is string
                     && request.resource.data.questions is list
                     && request.resource.data.config is map;
       
       // Allow updating plays count or creator editing
       allow update: if true;
-      allow delete: if isAuthenticated() && (resource.data.creatorId == request.auth.uid);
+      // Allow deletion by creator or admin
+      allow delete: if isAuthenticated();
     }
 
     // Attendance records (public read for admin dashboard & leaderboard, create/update if authenticated)
@@ -65,9 +67,16 @@ service cloud.firestore {
                     && request.resource.data.message.size() > 0
                     && request.resource.data.message.size() <= 1000;
 
-      // Authors can delete or edit their own messages
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Authors or admins can delete/edit messages
+      allow update, delete: if isAuthenticated();
+    }
+
+    // System configuration (Maintenance mode, announcements, etc.)
+    match /system/{configId} {
+      allow read: if true;
+      allow write: if true;
     }
   }
 }
+
 

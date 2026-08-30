@@ -9,6 +9,8 @@ export interface NCERTEntry {
   textbookName?: string;
 }
 
+export type QuestionFormat = 'single' | 'multiple' | 'mixed';
+
 export interface QuizConfig {
   class: string;
   subject: string;
@@ -17,13 +19,15 @@ export interface QuizConfig {
   quantity: number;
   timeLimitMinutes?: number; // 0 = untimed
   syllabusYear?: SyllabusYear;
+  questionFormat?: QuestionFormat; // 'single' | 'multiple' | 'mixed'
 }
 
 export interface Question {
   question: string;
   options: string[];
-  correctAnswer: string;
+  correctAnswer: string | string[];
   explanation: string;
+  isMultiple?: boolean;
 }
 
 export interface QuizResultRecord {
@@ -122,6 +126,7 @@ export interface ChatMessage {
   timestamp: number;
   createdAt: string;
   subjectTag?: string;
+  reactions?: Record<string, string[]>; // emoji -> array of userIds
 }
 
 export interface GeminiChatMessage {
@@ -131,6 +136,15 @@ export interface GeminiChatMessage {
   timestamp: number;
   subjectContext?: string;
   classContext?: string;
+  reactions?: Record<string, number>; // emoji -> count
+}
+
+export interface MaintenanceConfig {
+  isActive: boolean;
+  message?: string;
+  enabledAt?: string;
+  enabledBy?: string;
+  estimatedDuration?: string;
 }
 
 export enum AppState {
@@ -145,7 +159,8 @@ export enum AppState {
   LEADERBOARD = 'LEADERBOARD',
   CHAT = 'CHAT',
   ADMIN = 'ADMIN',
-  SHARED_PREVIEW = 'SHARED_PREVIEW'
+  SHARED_PREVIEW = 'SHARED_PREVIEW',
+  MAINTENANCE = 'MAINTENANCE'
 }
 
 

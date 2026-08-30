@@ -49,8 +49,15 @@ async function startServer() {
       const topicsList = config.topics.join(", ");
       const quantity = typeof config.quantity === "number" && config.quantity > 0 ? config.quantity : 10;
       const strength = config.strength || "Medium";
-
       const syllabusYear = config.syllabusYear || "2026-27";
+      const questionFormat = config.questionFormat || "single"; // 'single' | 'multiple' | 'mixed'
+
+      let formatInstruction = "All questions must be standard Single Choice Questions (exactly 1 correct option).";
+      if (questionFormat === "multiple") {
+        formatInstruction = "All questions must be Multiple Choice Questions with multiple correct options (2 or 3 correct answers out of 4). Clearly add '(Select all that apply)' in the question stem. Set isMultiple to true.";
+      } else if (questionFormat === "mixed") {
+        formatInstruction = "Include a realistic blend of Single Choice Questions (1 correct answer, isMultiple: false) and Multiple Choice Questions with 2-3 correct answers (Select all that apply, isMultiple: true).";
+      }
 
       const prompt = `
         Act as a senior NCERT Subject Matter Expert.
@@ -62,19 +69,21 @@ async function startServer() {
         - Subject: ${config.subject}
         - Scope / Chapters: ${topicsList}
         - Cognitive Demand: ${strength} (Easy=Recall, Medium=Application, Hard=Analysis)
+        - Question Style Requirement: ${formatInstruction}
 
         OUTPUT FORMAT RULES (MANDATORY):
         1. Language: Use professional, academic English/Hindi as per the subject.
         2. Options: Exactly 4 distinct options per question.
-        3. Explanation: Provide a "Rationale" citing the official NCERT concept from the ${syllabusYear} textbook.
+        3. Correct Answer: For single choice, provide the exact option string. For multiple choice (when isMultiple is true), provide the correct options joined by semicolons (e.g. "Option A; Option C") or the exact matching string.
+        4. Explanation: Provide a comprehensive "Rationale" citing the official NCERT concept from the ${syllabusYear} textbook.
+        5. isMultiple: Boolean (true for multi-select questions, false for single choice).
         
         TEXT & MATH RENDERING RULES (CRITICAL):
-        - Fractions: DO NOT USE LaTeX \\frac. ALWAYS use horizontal "p/q" style (e.g., 5/8, 1/2).
-        - Decimals: Use standard notation (e.g., 0.75, 12.5). 
-        - Exponents: Use standard caret notation (e.g., x^2, 10^3).
-        - Symbols: Only use LaTeX $ delimiters for complex symbols like square roots ($ \\sqrt{x} $) or Greek letters ($ \\theta $).
-        - Currency: Use "₹" symbol directly.
-        - Encoding: Ensure no non-standard control characters are in the string.
+        - Double escape all backslashes in JSON output so LaTeX is preserved cleanly. For example, write "\\\\frac{1}{2}", "\\\\sqrt{50}", "30^\\\\circ", "\\\\pm", "\\\\times", "\\\\div", "\\\\theta", "\\\\pi", "\\\\Delta". NEVER emit bare "rac{1}{2}" or unescaped control characters!
+        - Wrap mathematical formulas and equations in single dollar signs ($...$).
+        - Currency: Always use "₹" for Indian Rupee (e.g. ₹500, never $500).
+        - Plain text & Units: DO NOT wrap plain words, units, or plain numbers in dollar signs (e.g., write 50 cm, not $50\\text{ cm}$).
+        - Clean Formatting: Ensure all opening dollar signs have matching closing dollar signs.
       `;
 
       const generateWithFallback = async (modelName: string) => {
@@ -95,6 +104,7 @@ async function startServer() {
                   },
                   correctAnswer: { type: Type.STRING },
                   explanation: { type: Type.STRING },
+                  isMultiple: { type: Type.BOOLEAN },
                 },
                 required: ["question", "options", "correctAnswer", "explanation"],
               },
@@ -125,10 +135,10 @@ async function startServer() {
       const parsed = JSON.parse(jsonText);
       const sanitized = parsed.map((q: any) => ({
         ...q,
-        options: (q.options || []).slice(0, 4),
-        question: (q.question || "").replace(/\\frac\{(\d+)\}\{(\d+)\}/g, "$1/$2"),
-        correctAnswer: (q.correctAnswer || "").replace(/\\frac\{(\d+)\}\{(\d+)\}/g, "$1/$2"),
-        explanation: (q.explanation || "").replace(/\\frac\{(\d+)\}\{(\d+)\}/g, "$1/$2"),
+        options: (q.options || []).slice(0, 4).map((opt: string) => (opt || "").trim()),
+        question: (q.question || "").trim(),
+        correctAnswer: (q.correctAnswer || "").trim(),
+        explanation: (q.explanation || "").trim(),
       }));
 
       return res.json({ questions: sanitized });
