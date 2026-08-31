@@ -22,16 +22,25 @@ app.use((_req, res, next) => {
 
 let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  const possibleKeys = [
+    process.env.GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.GOOGLE_GENAI_API_KEY,
+    process.env.GEMINI_KEY,
+  ];
+  const apiKey = possibleKeys.find((k) => k && k.trim().length > 0)?.trim();
+
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is required');
+    throw new Error('GEMINI_API_KEY environment variable is not configured on Vercel. Please add GEMINI_API_KEY in your Vercel Project Settings > Environment Variables.');
   }
   if (!aiClient) {
     aiClient = new GoogleGenAI({
       apiKey,
       httpOptions: {
         headers: {
-          'User-Agent': 'aistudio-build',
+          'User-Agent': 'aistudio-build-vercel',
         },
       },
     });

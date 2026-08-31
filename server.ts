@@ -9,7 +9,16 @@ const __dirname = path.dirname(__filename);
 
 let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  const possibleKeys = [
+    process.env.GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.GOOGLE_GENAI_API_KEY,
+    process.env.GEMINI_KEY,
+  ];
+  const apiKey = possibleKeys.find((k) => k && k.trim().length > 0)?.trim();
+
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY environment variable is required");
   }
@@ -38,7 +47,7 @@ async function startServer() {
   });
 
   // Server-side Gemini Quiz Generation API
-  app.post("/api/generate-quiz", async (req, res) => {
+  app.post(["/api/generate-quiz", "/generate-quiz"], async (req, res) => {
     try {
       const { config } = req.body;
       if (!config || !config.class || !config.subject || !Array.isArray(config.topics) || config.topics.length === 0) {
@@ -183,7 +192,7 @@ async function startServer() {
   });
 
   // Server-side Gemini AI Study Tutor Chat API
-  app.post("/api/gemini/chat", async (req, res) => {
+  app.post(["/api/gemini/chat", "/api/chat", "/gemini/chat", "/chat"], async (req, res) => {
     try {
       const { messages, classContext, subjectContext, syllabusYear = "2026-27" } = req.body;
 

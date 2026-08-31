@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { QuizConfig } from '../types';
-import { Sparkles, BrainCircuit, BookOpen, CheckCircle2, ShieldCheck, Atom } from 'lucide-react';
+import { Sparkles, Atom, CheckCircle2, XCircle, Clock } from 'lucide-react';
 
 interface LoadingViewProps {
   config: QuizConfig;
@@ -9,13 +9,14 @@ interface LoadingViewProps {
 
 export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) => {
   const [stage, setStage] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const stages = [
     'Connecting to NCERT Unified Knowledge Matrix...',
     `Scanning ${config.class} • ${config.subject} Syllabus...`,
     `Synthesizing ${config.quantity} items for [${config.topics.slice(0, 2).join(', ')}${config.topics.length > 2 ? ` +${config.topics.length - 2} more` : ''}]...`,
-    `Calibrating ${config.strength} Cognitive Demand & Question Rationales...`,
-    'Validating KaTeX Mathematical & Scientific Notations...',
+    `Calibrating ${config.strength} Cognitive Demand & Rationales...`,
+    'Finalizing KaTeX Mathematical Formulas & Response Verification...',
   ];
 
   const quotes = [
@@ -30,7 +31,11 @@ export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) =>
   useEffect(() => {
     const stageTimer = setInterval(() => {
       setStage(s => (s < stages.length - 1 ? s + 1 : s));
-    }, 2200);
+    }, 2400);
+
+    const timer = setInterval(() => {
+      setElapsedSeconds(s => s + 1);
+    }, 1000);
 
     const quoteTimer = setInterval(() => {
       setActiveQuoteIdx(q => (q + 1) % quotes.length);
@@ -38,9 +43,16 @@ export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) =>
 
     return () => {
       clearInterval(stageTimer);
+      clearInterval(timer);
       clearInterval(quoteTimer);
     };
   }, []);
+
+  const formatElapsed = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   return (
     <div className="min-h-[75vh] flex items-center justify-center px-4 py-12">
@@ -57,16 +69,29 @@ export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) =>
 
         {/* Title & Stage */}
         <div className="space-y-3">
-          <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-white">
-            Drafting Your NCERT Assessment
-          </h2>
-          <p className="text-sm font-mono text-emerald-400 font-semibold h-6 transition-all duration-300">
+          <div className="flex items-center justify-center gap-2">
+            <h2 className="text-2xl sm:text-3xl font-extrabold font-display text-white">
+              Drafting NCERT Assessment
+            </h2>
+            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono text-xs font-semibold">
+              <Clock className="w-3 h-3 text-emerald-400" />
+              <span>{formatElapsed(elapsedSeconds)}</span>
+            </div>
+          </div>
+          
+          <p className="text-sm font-mono text-emerald-400 font-semibold min-h-[24px] transition-all duration-300">
             {stages[stage]}
           </p>
+
+          {elapsedSeconds > 15 && (
+            <p className="text-xs text-amber-300/80 font-mono animate-pulse">
+              ⚡ Serverless AI is parsing textbook concepts and formatting equations...
+            </p>
+          )}
         </div>
 
         {/* Progress Stages Checkpoints */}
-        <div className="space-y-2 bg-slate-900/60 p-4 rounded-2xl border border-slate-800 text-left">
+        <div className="space-y-2 bg-slate-900/70 p-4 rounded-2xl border border-slate-800 text-left backdrop-blur-sm">
           {stages.map((stgText, idx) => {
             const isDone = idx < stage;
             const isCurrent = idx === stage;
@@ -104,9 +129,10 @@ export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) =>
         <div>
           <button
             onClick={onCancel}
-            className="text-xs text-slate-500 hover:text-slate-300 font-mono underline transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-rose-400 font-mono transition-colors cursor-pointer"
           >
-            Cancel Generation
+            <XCircle className="w-3.5 h-3.5" />
+            <span>Cancel Generation</span>
           </button>
         </div>
 

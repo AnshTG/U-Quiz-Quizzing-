@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppState, QuizConfig, Question, QuizResultRecord, SyllabusYear, UserProfile, MaintenanceConfig } from './types';
 import { generateQuestions } from './services/geminiService';
 import { 
@@ -63,6 +63,7 @@ export default function App() {
   const [userAnswers, setUserAnswers] = useState<(string | null)[]>([]);
   const [timeSpentSeconds, setTimeSpentSeconds] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const generationAbortRef = useRef<AbortController | null>(null);
 
   // Local storage history
   const [history, setHistory] = useState<QuizResultRecord[]>(() => {
@@ -195,24 +196,46 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Cancel ongoing generation
+  const handleCancelGeneration = () => {
+    if (generationAbortRef.current) {
+      generationAbortRef.current.abort();
+      generationAbortRef.current = null;
+    }
+    navigateTo(AppState.SETUP);
+  };
+
   // Start generating customized quiz questions
   const handleStartQuiz = async (config: QuizConfig) => {
     setCurrentConfig(config);
     setError(null);
     navigateTo(AppState.LOADING);
 
+    if (generationAbortRef.current) {
+      generationAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    generationAbortRef.current = abortController;
+
     try {
-      const generated = await generateQuestions(config);
+      const generated = await generateQuestions(config, abortController.signal);
       if (!generated || generated.length === 0) {
         throw new Error('No questions generated. Please try selecting different topics or check your network.');
       }
+      generationAbortRef.current = null;
       setQuestions(generated);
       setUserAnswers(new Array(generated.length).fill(null));
       setTimeSpentSeconds(0);
       setView(AppState.QUIZ);
     } catch (err: any) {
+      generationAbortRef.current = null;
+      if (err.name === 'AbortError' || err.message?.includes('cancelled')) {
+        console.log('Quiz generation cancelled by scholar');
+        setView(AppState.SETUP);
+        return;
+      }
       console.error('Quiz Generation Error:', err);
-      setError(err.message || 'Failed to generate assessment. Please try again.');
+      setError(err.message || 'Failed to generate assessment. Please check your API key configuration and try again.');
       setView(AppState.SETUP);
     }
   };
@@ -457,7 +480,7 @@ export default function App() {
                 {view === AppState.LOADING && (
                   <LoadingView
                     config={currentConfig}
-                    onCancel={() => navigateTo(AppState.SETUP)}
+                    onCancel={handleCancelGeneration}
                   />
                 )}
 
