@@ -54,8 +54,15 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
     }
   }, [config, questions, user, quizId]);
 
+  const getBaseUrl = () => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('localhost')) {
+      return window.location.origin;
+    }
+    return 'https://uquizzes.vercel.app';
+  };
+
   const shareUrl = quizId 
-    ? `${window.location.origin}${window.location.pathname}?quizId=${quizId}`
+    ? `${getBaseUrl()}?quizId=${quizId}`
     : '';
 
   const handleCopyLink = async () => {

@@ -137,7 +137,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         {/* Footer info & Admin Panel Gateway */}
         <div className="flex items-center justify-between text-xs text-slate-500 px-2">
-          <span>Protected with Firebase Security</span>
+          <span>Secured with Enterprise Cloud Encryption</span>
           <button
             onClick={onOpenAdminAuth}
             className="flex items-center gap-1 text-slate-400 hover:text-emerald-400 transition-colors font-medium cursor-pointer"

@@ -81,19 +81,20 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               Security Password / Passcode
             </label>
             <div className="relative">
+              <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="password"
-                maxLength={12}
+                maxLength={32}
                 value={passcode}
                 onChange={(e) => {
                   setPasscode(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="Enter administrator password"
+                placeholder="Enter admin password"
                 autoFocus
-                className="w-full px-4 py-3.5 bg-slate-950 border border-slate-700 rounded-xl text-center text-xl font-mono tracking-widest text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-colors"
+                autoComplete="new-password"
+                className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-center text-base font-mono tracking-widest text-white placeholder:text-slate-600 placeholder:text-xs placeholder:tracking-normal focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-colors"
               />
-              <KeyRound className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
             </div>
             <p className="text-[11px] text-slate-500 text-center font-mono">
               Authorized personnel only

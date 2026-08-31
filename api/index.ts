@@ -5,6 +5,21 @@ import { GoogleGenAI, Type } from '@google/genai';
 const app = express();
 app.use(express.json());
 
+// Enable full CORS & Preflight handling for Vercel
+app.use((_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+  );
+  if (_req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
@@ -24,13 +39,13 @@ function getAIClient(): GoogleGenAI {
   return aiClient;
 }
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok' });
+// Health check endpoint (handles both /api/health and /health)
+app.get(['/api/health', '/health'], (_req, res) => {
+  res.json({ status: 'ok', domain: 'uquizzes.vercel.app', timestamp: Date.now() });
 });
 
-// Server-side Gemini Quiz Generation API
-app.post('/api/generate-quiz', async (req, res) => {
+// Server-side Gemini Quiz Generation API (handles all route aliases)
+app.post(['/api/generate-quiz', '/generate-quiz', '/api/quiz/generate', '/quiz/generate'], async (req, res) => {
   try {
     const { config } = req.body;
     if (!config || !config.class || !config.subject || !Array.isArray(config.topics) || config.topics.length === 0) {
@@ -172,8 +187,8 @@ app.post('/api/generate-quiz', async (req, res) => {
   }
 });
 
-// Gemini Chat Endpoint
-app.post('/api/gemini/chat', async (req, res) => {
+// Gemini Chat Endpoint (handles all route aliases)
+app.post(['/api/gemini/chat', '/gemini/chat', '/api/ai/chat', '/ai/chat'], async (req, res) => {
   try {
     const { messages, classContext, subjectContext, syllabusYear = '2026-27' } = req.body;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -220,8 +235,8 @@ app.post('/api/gemini/chat', async (req, res) => {
   }
 });
 
-// Admin Password Verification
-app.post('/api/admin/verify', (req, res) => {
+// Admin Password Verification (handles all route aliases)
+app.post(['/api/admin/verify', '/admin/verify'], (req, res) => {
   try {
     const { password } = req.body || {};
     if (!password || typeof password !== 'string') {

@@ -109,7 +109,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
   const [publicMessages, setPublicMessages] = useState<ChatMessage[]>([]);
   const [publicInput, setPublicInput] = useState('');
   const [publicTag, setPublicTag] = useState('General');
-  const [filterTag, setFilterTag] = useState('All');
   const [isSendingPublic, setIsSendingPublic] = useState(false);
   const [publicError, setPublicError] = useState<string | null>(null);
   const [showScrollBottomPublic, setShowScrollBottomPublic] = useState(false);
@@ -308,9 +307,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     }
   };
 
-  const filteredPublicMessages = filterTag === 'All'
-    ? publicMessages
-    : publicMessages.filter(m => m.subjectTag === filterTag);
+  const filteredPublicMessages = publicMessages;
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0b141a] text-[#e9edef] select-text overflow-hidden">
@@ -342,10 +339,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5 truncate">
                   <span className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
-                    Gemini AI NCERT Tutor
+                    AI NCERT Study Mentor
                   </span>
                   <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-[#00a884]/20 text-[#25d366] border border-[#00a884]/30 shrink-0">
-                    AI Mentor
+                    24/7 AI
                   </span>
                 </div>
                 <span className="text-xs text-[#00a884] font-medium flex items-center gap-1 truncate">
@@ -365,11 +362,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
               <div className="flex flex-col min-w-0">
                 <div className="flex items-center gap-1.5 truncate">
                   <span className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
-                    NCERT Scholar Public Room
+                    Scholar Public Study Room
                   </span>
                 </div>
                 <span className="text-xs text-[#8696a0] truncate">
-                  {publicMessages.length} messages • Real-time peer discussions
+                  Real-time peer discussions & questions
                 </span>
               </div>
             </div>
@@ -405,43 +402,12 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
             >
               <Users className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Public Room</span>
-              {publicMessages.length > 0 && (
-                <span className="text-[10px] px-1 rounded-full bg-slate-950/40 text-white font-mono">
-                  {publicMessages.length}
-                </span>
-              )}
             </button>
           </div>
 
-          {/* Context Selectors */}
-          {activeTab === 'gemini' ? (
+          {/* Context Selectors for AI Chat */}
+          {activeTab === 'gemini' && (
             <div className="hidden lg:flex items-center gap-1.5">
-              <div className="relative">
-                <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  className="appearance-none bg-[#111b21] border border-[#2a3942] text-xs text-[#00a884] font-semibold pl-2.5 pr-6 py-1.5 rounded-xl focus:outline-none focus:border-[#00a884] cursor-pointer"
-                >
-                  {CLASS_OPTIONS.map(c => (
-                    <option key={c} value={c} className="bg-[#202c33] text-white">{c}</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-1.5 top-2.5 pointer-events-none" />
-              </div>
-
-              <div className="relative">
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="appearance-none bg-[#111b21] border border-[#2a3942] text-xs text-[#00a884] font-semibold pl-2.5 pr-6 py-1.5 rounded-xl focus:outline-none focus:border-[#00a884] cursor-pointer"
-                >
-                  {SUBJECT_OPTIONS.map(s => (
-                    <option key={s} value={s} className="bg-[#202c33] text-white">{s}</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-1.5 top-2.5 pointer-events-none" />
-              </div>
-
               <button
                 onClick={handleResetAiChat}
                 className="p-2 rounded-xl bg-[#111b21] hover:bg-[#374248] border border-[#2a3942] text-[#8696a0] hover:text-white transition-colors cursor-pointer"
@@ -449,22 +415,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
-            </div>
-          ) : (
-            <div className="hidden sm:flex items-center gap-1.5">
-              <div className="relative">
-                <select
-                  value={filterTag}
-                  onChange={(e) => setFilterTag(e.target.value)}
-                  className="appearance-none bg-[#111b21] border border-[#2a3942] text-xs text-[#00a884] font-semibold pl-2.5 pr-6 py-1.5 rounded-xl focus:outline-none focus:border-[#00a884] cursor-pointer"
-                >
-                  <option value="All" className="bg-[#202c33] text-white">All Subjects</option>
-                  {SUBJECT_OPTIONS.map(s => (
-                    <option key={s} value={s} className="bg-[#202c33] text-white">{s}</option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-1.5 top-2.5 pointer-events-none" />
-              </div>
             </div>
           )}
 
@@ -673,7 +623,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                 <div className="w-12 h-12 rounded-2xl bg-[#202c33] border border-[#2a3942] flex items-center justify-center mb-3 text-[#00a884]">
                   <Users className="w-6 h-6" />
                 </div>
-                <h3 className="text-sm font-bold text-[#e9edef]">No Messages in {filterTag} Stream</h3>
+                <h3 className="text-sm font-bold text-[#e9edef]">No Messages in Study Stream</h3>
                 <p className="text-xs text-[#8696a0] max-w-sm mt-1">
                   Be the first scholar to post a doubt, study tip, or NCERT question!
                 </p>
@@ -884,21 +834,6 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
 
             {user ? (
               <form onSubmit={handleSendPublic} className="flex items-center gap-2">
-                
-                {/* Subject Tag Selector */}
-                <div className="relative shrink-0">
-                  <select
-                    value={publicTag}
-                    onChange={(e) => setPublicTag(e.target.value)}
-                    className="appearance-none bg-[#2a3942] border-none text-xs text-[#00a884] font-semibold pl-3 pr-7 py-3 rounded-2xl focus:outline-none focus:ring-1 focus:ring-[#00a884] cursor-pointer"
-                  >
-                    {SUBJECT_OPTIONS.map(s => (
-                      <option key={s} value={s} className="bg-[#202c33] text-white">{s}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-3 h-3 text-[#8696a0] absolute right-2 top-4 pointer-events-none" />
-                </div>
-
                 {/* Input Field */}
                 <input
                   type="text"

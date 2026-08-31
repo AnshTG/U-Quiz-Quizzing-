@@ -57,6 +57,9 @@ export interface UserProfile {
   currentStreak?: number;
   lastCheckInDate?: string;
   attendanceDaysCount?: number;
+  isBanned?: boolean;
+  banReason?: string;
+  bannedAt?: string;
 }
 
 export interface AttendanceRecord {

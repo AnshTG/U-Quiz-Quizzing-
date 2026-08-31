@@ -20,49 +20,52 @@ interface MathTextProps {
 function sanitizeAndFormatMath(rawContent: string): string {
   if (!rawContent) return '';
 
-  let text = rawContent;
+  let text = String(rawContent);
 
   // 1. Normalize line endings
   text = text.replace(/\r\n/g, '\n');
 
   // 2. Fix form feed characters (\f or \x0c) which cause \frac to become rac{...}{...}
-  text = text.replace(/\x0c/g, '\\f');
-  text = text.replace(/[\u000c]/g, '\\f');
-  // If \f was completely stripped and left rac{...}{...} or \frac was malformed
-  text = text.replace(/(^|[^\\])rac\{/g, '$1\\frac{');
+  text = text.replace(/[\u000c\x0c]/g, '');
   text = text.replace(/\\f\s*rac\{/g, '\\frac{');
+  text = text.replace(/(^|[^\\])rac\{/g, '$1\\frac{');
+  text = text.replace(/\\+rac\{/g, '\\frac{');
 
   // 3. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$1$$$');
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
   // 4. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
-  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|le|ge|leq|geq|neq|ne|cdot|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ)/g, '\\$1');
+  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|le|ge|leq|geq|neq|ne|cdot|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ|infty|partial|nabla)/g, '\\$1');
 
   // 5. Handle degree representations (e.g., 90\degree, 90^\circ, 90^o, 90°, 45°C, 37 °C)
   text = text.replace(/\\degree/g, '^{\\circ}');
-  text = text.replace(/(\d+)\s*°\s*C\b/g, '$$$1^{\\circ}\\text{C}$$');
-  text = text.replace(/(\d+)\s*°\s*F\b/g, '$$$1^{\\circ}\\text{F}$$');
-  text = text.replace(/(\d+)\s*°/g, '$$$1^{\\circ}$$');
-  text = text.replace(/(?<!\$)\b(\d+)\^\{\\circ\}(?!\$)/g, '$$$1^{\\circ}$$');
-  text = text.replace(/(?<!\$)\b(\d+)\^\\circ(?!\$)/g, '$$$1^{\\circ}$$');
+  text = text.replace(/(\d+(?:\.\d+)?)\s*°\s*C\b/g, '$$$1^{\\circ}\\text{C}$$');
+  text = text.replace(/(\d+(?:\.\d+)?)\s*°\s*F\b/g, '$$$1^{\\circ}\\text{F}$$');
+  text = text.replace(/(\d+(?:\.\d+)?)\s*°/g, '$$$1^{\\circ}$$');
+  text = text.replace(/(?<!\$)\b(\d+(?:\.\d+)?)\^\{\\circ\}(?!\$)/g, '$$$1^{\\circ}$$');
+  text = text.replace(/(?<!\$)\b(\d+(?:\.\d+)?)\^\\circ(?!\$)/g, '$$$1^{\\circ}$$');
 
-  // 6. Handle standalone un-delimited LaTeX fractions like \frac{1}{2} -> $\frac{1}{2}$
+  // 6. Wrap bare \frac{...}{...} in $...$ if not already in math block
   text = text.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, '$\\frac{$1}{$2}$');
 
-  // 7. Handle standalone square roots like \sqrt{50}, \sqrt{x}, \sqrt[3]{8} -> $\sqrt{50}$
+  // 7. Wrap bare \sqrt{...} or \sqrt[n]{...} in $...$ if not already in math block
   text = text.replace(/(?<!\$)\\sqrt\[([^\]]+)\]\{([^{}]+)\}(?!\$)/g, '$\\sqrt[$1]{$2}$');
   text = text.replace(/(?<!\$)\\sqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
-  text = text.replace(/(?<!\$)\bsqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
+  text = text.replace(/(?<![\$\\])\bsqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
 
-  // 8. Handle standalone Greek / math symbols like \theta, \pi, \Delta -> $\theta$
-  text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|leq|geq|le|ge|neq|ne|cdot|perp|parallel|angle|triangle)(?!\$)/g, '$\\$1$');
+  // 8. Wrap standalone math symbols like \pi, \theta, \pm, \approx, \le, \ge, \times
+  text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|leq|geq|le|ge|neq|ne|cdot|perp|parallel|angle|triangle|infty)(?!\$)/g, '$\\$1$');
 
   // 9. Handle standalone superscripts like x^2, y^3, 10^5 outside dollars
   text = text.replace(/(?<![\$\w])([a-zA-Z0-9]+)\^(\d+)(?![\$\w])/g, '$$$1^{$2}$$');
 
-  // 10. Clean up double $$ wrapping e.g. $$...$$ inside $...$
+  // 10. Clean up double nested $ ($$ inside $)
   text = text.replace(/\$\$(\$[^$]+\$)\$\$/g, '$1');
+  text = text.replace(/\$([^\$]+)\$/g, (match, inner) => {
+    const cleanInner = inner.replace(/\$/g, '');
+    return `$${cleanInner}$`;
+  });
 
   return text;
 }

@@ -29,6 +29,7 @@ import {
   adminDeleteAllSharedQuizzes,
   adminDeleteAllPublicChatMessages,
   adminResetAllLeaderboards,
+  adminBanUser,
   listenToPublicChat,
   deletePublicChatMessage,
   listenToMaintenanceMode,
@@ -317,6 +318,36 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       showToast(`Successfully purged all ${count} scholar accounts.`);
     } catch (err) {
       alert('Failed to delete all users.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Ban or Unban Scholar
+  const handleBanToggle = async (userId: string, currentBanned: boolean, userName: string) => {
+    let reason: string | undefined;
+    if (!currentBanned) {
+      const inputReason = window.prompt(`Enter ban reason for scholar "${userName}":`, 'Violating academic code / spam');
+      if (inputReason === null) return;
+      reason = inputReason.trim() || 'Administrative suspension';
+    } else {
+      if (!window.confirm(`Are you sure you want to UNBAN scholar "${userName}"?`)) return;
+    }
+
+    setActionLoading(`ban_${userId}`);
+    try {
+      await adminBanUser(userId, !currentBanned, reason);
+      showToast(`Scholar "${userName}" was ${currentBanned ? 'UNBANNED' : 'BANNED'}.`);
+      if (selectedUser?.uid === userId) {
+        setSelectedUser(prev => prev ? { 
+          ...prev, 
+          isBanned: !currentBanned, 
+          banReason: reason, 
+          bannedAt: !currentBanned ? new Date().toISOString() : undefined 
+        } : null);
+      }
+    } catch (e) {
+      alert('Failed to update ban status.');
     } finally {
       setActionLoading(null);
     }
@@ -883,8 +914,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                   <thead className="bg-slate-950/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
                     <tr>
                       <th className="px-4 py-3">Scholar & Avatar</th>
-                      <th className="px-4 py-3">Google Email Address</th>
-                      <th className="px-4 py-3">UID</th>
+                      <th className="px-4 py-3">Email Address</th>
+                      <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Score & Quizzes</th>
                       <th className="px-4 py-3">Streak</th>
                       <th className="px-4 py-3">Last Active</th>
@@ -893,7 +924,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
                     {filteredUsers.map((u) => (
-                      <tr key={u.uid} className="hover:bg-slate-800/40 transition-colors">
+                      <tr key={u.uid} className={`hover:bg-slate-800/40 transition-colors ${u.isBanned ? 'bg-rose-950/20' : ''}`}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             {u.photoURL ? (
@@ -901,26 +932,41 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                                 src={u.photoURL} 
                                 alt={u.displayName || ''} 
                                 referrerPolicy="no-referrer"
-                                className="w-8 h-8 rounded-full object-cover border border-emerald-400/30 shrink-0" 
+                                className={`w-8 h-8 rounded-full object-cover border shrink-0 ${u.isBanned ? 'border-rose-500' : 'border-emerald-400/30'}`} 
                               />
                             ) : (
-                              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-emerald-400 font-bold shrink-0">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0 ${u.isBanned ? 'bg-rose-900/50 text-rose-300' : 'bg-slate-800 text-emerald-400'}`}>
                                 {u.displayName ? u.displayName.charAt(0) : 'U'}
                               </div>
                             )}
                             <div className="min-w-0">
-                              <div className="font-bold text-white truncate">{u.displayName || 'Google Scholar'}</div>
-                              <span className="text-[10px] text-slate-500 font-mono">Joined {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Active'}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-white truncate">{u.displayName || 'Google Scholar'}</span>
+                                {u.isBanned && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                                    BANNED
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-mono">UID: {u.uid.substring(0, 8)}...</span>
                             </div>
                           </div>
                         </td>
 
-                        <td className="px-4 py-3 font-mono text-emerald-400">
+                        <td className="px-4 py-3 font-mono text-emerald-400 font-medium">
                           {u.email || 'No email attached'}
                         </td>
 
-                        <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
-                          {u.uid.substring(0, 10)}...
+                        <td className="px-4 py-3">
+                          {u.isBanned ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                              Suspended
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              Active
+                            </span>
+                          )}
                         </td>
 
                         <td className="px-4 py-3">
@@ -936,12 +982,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                           {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Recent'}
                         </td>
 
-                        <td className="px-4 py-3 text-right space-x-1.5">
+                        <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
+                          {/* Ban / Unban Button */}
+                          <button
+                            onClick={() => handleBanToggle(u.uid, !!u.isBanned, u.displayName || 'Scholar')}
+                            disabled={actionLoading === `ban_${u.uid}`}
+                            className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+                              u.isBanned
+                                ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30'
+                            }`}
+                            title={u.isBanned ? 'Lift Ban' : 'Ban User'}
+                          >
+                            {u.isBanned ? 'Unban' : 'Ban'}
+                          </button>
+
                           <button
                             onClick={() => handleInspectUser(u)}
                             className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-colors cursor-pointer"
                           >
-                            Inspect & Edit
+                            Inspect
                           </button>
 
                           <button

@@ -1370,6 +1370,29 @@ export const adminResetAllLeaderboards = async (): Promise<number> => {
   }
 };
 
+/**
+ * Admin: Ban or Unban a user
+ */
+export const adminBanUser = async (
+  userId: string,
+  isBanned: boolean,
+  banReason?: string
+): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      isBanned,
+      banReason: isBanned ? (banReason || 'Administrative suspension') : null,
+      bannedAt: isBanned ? new Date().toISOString() : null,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Admin ban user error:', error);
+    throw error;
+  }
+};
+
+
 
 
 
