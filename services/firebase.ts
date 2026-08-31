@@ -22,6 +22,7 @@ import {
   increment,
   onSnapshot,
   where,
+  writeBatch,
   Unsubscribe
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -268,15 +269,25 @@ export const subscribeToAttendance = (
 ): Unsubscribe => {
   try {
     const attendanceCol = collection(db, 'attendance');
-    const q = dateFilter 
-      ? query(attendanceCol, where('date', '==', dateFilter), orderBy('timestamp', 'desc'))
-      : query(attendanceCol, orderBy('timestamp', 'desc'), limit(100));
+    const q = query(attendanceCol, limit(1000));
 
     return onSnapshot(q, (snapshot) => {
-      const records: AttendanceRecord[] = [];
+      let records: AttendanceRecord[] = [];
       snapshot.forEach(docSnap => {
-        records.push(docSnap.data() as AttendanceRecord);
+        const data = docSnap.data() as AttendanceRecord;
+        records.push({
+          ...data,
+          id: docSnap.id
+        });
       });
+      // Sort newest first
+      records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+      if (dateFilter && dateFilter.trim() !== '') {
+        const targetDate = dateFilter.trim();
+        records = records.filter(r => r.date === targetDate);
+      }
+
       callback(records);
     }, (error) => {
       console.warn('Attendance onSnapshot error:', error);
@@ -286,6 +297,32 @@ export const subscribeToAttendance = (
     console.error('Error setting up attendance subscription:', error);
     callback([]);
     return () => {};
+  }
+};
+
+/**
+ * Fetch personal attendance history for a single user
+ */
+export const fetchUserAttendance = async (userId: string): Promise<AttendanceRecord[]> => {
+  try {
+    const attendanceCol = collection(db, 'attendance');
+    const q = query(attendanceCol, limit(1000));
+    const snapshot = await getDocs(q);
+    const records: AttendanceRecord[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as AttendanceRecord;
+      if (data.userId === userId) {
+        records.push({
+          ...data,
+          id: docSnap.id
+        });
+      }
+    });
+    records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return records;
+  } catch (error) {
+    console.error('Error fetching user attendance:', error);
+    return [];
   }
 };
 
@@ -1157,6 +1194,178 @@ export const updateMaintenanceMode = async (
     }, { merge: true });
   } catch (error) {
     console.error('Update maintenance mode error:', error);
+    throw error;
+  }
+};
+
+// ==========================================
+// ADMIN GOD-MODE CONTROLS & MANAGEMENT
+// ==========================================
+
+/**
+ * Admin: Delete a single user and their subcollections
+ */
+export const adminDeleteUser = async (userId: string): Promise<void> => {
+  try {
+    // Delete user doc
+    const userRef = doc(db, 'users', userId);
+    await deleteDoc(userRef);
+
+    // Delete attendance records for this user
+    const attCol = collection(db, 'attendance');
+    const q = query(attCol, where('userId', '==', userId));
+    const attSnap = await getDocs(q);
+    const batch = writeBatch(db);
+    attSnap.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  } catch (error) {
+    console.error('Admin delete user error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete ALL users across the platform
+ */
+export const adminDeleteAllUsers = async (): Promise<number> => {
+  try {
+    const usersCol = collection(db, 'users');
+    const snap = await getDocs(usersCol);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.delete(d.ref);
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Admin delete all users error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete a single attendance record
+ */
+export const adminDeleteAttendanceRecord = async (recordId: string): Promise<void> => {
+  try {
+    const ref = doc(db, 'attendance', recordId);
+    await deleteDoc(ref);
+  } catch (error) {
+    console.error('Admin delete attendance record error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete ALL attendance records
+ */
+export const adminDeleteAllAttendanceRecords = async (): Promise<number> => {
+  try {
+    const col = collection(db, 'attendance');
+    const snap = await getDocs(col);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.delete(d.ref);
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Admin delete all attendance error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete a shared challenge quiz
+ */
+export const adminDeleteSharedQuiz = async (quizId: string): Promise<void> => {
+  try {
+    const ref = doc(db, 'sharedQuizzes', quizId);
+    await deleteDoc(ref);
+  } catch (error) {
+    console.error('Admin delete shared quiz error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete ALL shared challenge quizzes
+ */
+export const adminDeleteAllSharedQuizzes = async (): Promise<number> => {
+  try {
+    const col = collection(db, 'sharedQuizzes');
+    const snap = await getDocs(col);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.delete(d.ref);
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Admin delete all shared quizzes error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete ALL public chat messages
+ */
+export const adminDeleteAllPublicChatMessages = async (): Promise<number> => {
+  try {
+    const col = collection(db, 'publicChat');
+    const snap = await getDocs(col);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.delete(d.ref);
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Admin delete all public chat error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Reset all scholar statistics and leaderboard scores
+ */
+export const adminResetAllLeaderboards = async (): Promise<number> => {
+  try {
+    const usersCol = collection(db, 'users');
+    const snap = await getDocs(usersCol);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.update(d.ref, {
+        totalScore: 0,
+        quizzesCompleted: 0,
+        totalQuestionsAnswered: 0,
+        currentStreak: 0
+      });
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Admin reset leaderboards error:', error);
     throw error;
   }
 };

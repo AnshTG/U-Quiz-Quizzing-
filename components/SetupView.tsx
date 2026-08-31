@@ -63,6 +63,9 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(
     initialConfig?.timeLimitMinutes !== undefined ? initialConfig.timeLimitMinutes : null
   );
+  const [questionType, setQuestionType] = useState<'single' | 'multiple' | 'both'>(
+    initialConfig?.questionType || 'single'
+  );
 
   const [topicSearch, setTopicSearch] = useState<string>('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -189,6 +192,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
       quantity,
       timeLimitMinutes,
       syllabusYear: selectedYear,
+      questionType,
     });
   };
 
@@ -201,9 +205,10 @@ export const SetupView: React.FC<SetupViewProps> = ({
     !!strength,
     !!quantity,
     timeLimitMinutes !== null,
+    !!questionType,
   ].filter(Boolean).length;
 
-  const totalSteps = 7;
+  const totalSteps = 8;
   const isFormComplete = completedSteps === totalSteps;
 
   const quantityOptions = [5, 10, 15, 20, 25];
@@ -213,6 +218,24 @@ export const SetupView: React.FC<SetupViewProps> = ({
     { value: 10, label: '10 Mins (Standard Assessment)' },
     { value: 15, label: '15 Mins (Comprehensive)' },
     { value: 20, label: '20 Mins (Board Exam Simulation)' },
+  ];
+
+  const questionTypeOptions: { value: 'single' | 'multiple' | 'both'; title: string; desc: string }[] = [
+    {
+      value: 'single',
+      title: 'Single Choice Only',
+      desc: 'Standard MCQs with exactly 1 correct option.',
+    },
+    {
+      value: 'multiple',
+      title: 'Multiple Choice Only',
+      desc: 'Advanced MCQs where more than 1 option is correct.',
+    },
+    {
+      value: 'both',
+      title: 'Mixed Format (Both)',
+      desc: 'Combination of single and multi-correct questions.',
+    },
   ];
 
   return (
@@ -614,12 +637,54 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
 
-            {/* Step 7: Timer Mode */}
+            {/* Step 7: Question Format (Single, Multiple, or Both) */}
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    7
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-display">Question Format</h3>
+                    <p className="text-xs text-slate-400">Choose single choice, multiple choice, or a mixed combination</p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> {questionType === 'single' ? 'Single Choice' : questionType === 'multiple' ? 'Multiple Choice' : 'Mixed (Both)'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {questionTypeOptions.map((opt) => {
+                  const isSelected = questionType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setQuestionType(opt.value)}
+                      className={`p-3.5 rounded-2xl border text-left text-xs transition-all cursor-pointer flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-white text-xs">{opt.title}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                      </div>
+                      <span className="text-[11px] text-slate-400 leading-tight">{opt.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Step 8: Timer Mode */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${timeLimitMinutes !== null ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    7
+                    8
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Time Allocation</h3>
@@ -722,6 +787,13 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 <span className="text-slate-400">Questions Count:</span>
                 <span className={quantity ? 'text-sky-400 font-semibold font-mono' : 'text-slate-600 italic'}>
                   {quantity ? `${quantity} Questions` : 'Unselected'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Format:</span>
+                <span className="text-teal-400 font-semibold font-mono">
+                  {questionType === 'single' ? 'Single Choice' : questionType === 'multiple' ? 'Multiple Choice' : 'Mixed (Both)'}
                 </span>
               </div>
 

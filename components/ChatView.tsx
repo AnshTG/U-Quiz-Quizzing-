@@ -350,7 +350,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                 </div>
                 <span className="text-xs text-[#00a884] font-medium flex items-center gap-1 truncate">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#00a884] animate-pulse" />
-                  Online • {selectedClass} • {selectedSubject}
+                  Online • AI Study Mentor & Doubt Solver
                 </span>
               </div>
             </div>

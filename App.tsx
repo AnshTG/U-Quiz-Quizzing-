@@ -24,6 +24,7 @@ import { SharedPreviewView } from './components/SharedPreviewView';
 import { SavedQuizzesView } from './components/SavedQuizzesView';
 import { AdminView } from './components/AdminView';
 import { AdminAuthModal } from './components/AdminAuthModal';
+import { AttendanceModal } from './components/AttendanceModal';
 import { LoginView } from './components/LoginView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
@@ -41,6 +42,7 @@ export default function App() {
   // Admin authentication state
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
+  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState<boolean>(false);
 
   // Shared challenge state
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -370,7 +372,12 @@ export default function App() {
           {view !== AppState.CHAT && (
             <Navbar
               currentView={view}
-              onNavigate={navigateTo}
+              onNavigate={(targetView) => {
+                if (targetView !== AppState.ADMIN) {
+                  setIsAdminUnlocked(false);
+                }
+                navigateTo(targetView);
+              }}
               isOnline={isOnline}
               historyCount={history.length}
               savedQuizzesCount={savedQuizzesCount}
@@ -379,6 +386,7 @@ export default function App() {
               onSignOut={handleSignOut}
               onOpenJoinModal={() => setIsJoinModalOpen(true)}
               onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+              onOpenAttendance={() => setIsAttendanceModalOpen(true)}
               isAdminUnlocked={isAdminUnlocked}
             />
           )}
@@ -404,9 +412,14 @@ export default function App() {
           {/* Main View Router */}
           <main className={view === AppState.CHAT ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "flex-1"}>
             
-            {/* Admin View is accessible when unlocked */}
+            {/* Admin View is accessible ONLY when unlocked via fresh PIN */}
             {isViewingAdmin ? (
-              <AdminView onExitAdmin={() => setView(AppState.HOME)} />
+              <AdminView 
+                onExitAdmin={() => {
+                  setIsAdminUnlocked(false);
+                  setView(AppState.HOME);
+                }} 
+              />
             ) : !user && !isAuthChecking ? (
               /* Mandatory Google Sign-in Gate */
               <LoginView
@@ -545,6 +558,16 @@ export default function App() {
         <AdminAuthModal
           onSuccess={handleAdminAuthSuccess}
           onClose={() => setIsAdminAuthModalOpen(false)}
+        />
+      )}
+
+      {/* User Attendance & Streak Modal */}
+      {isAttendanceModalOpen && (
+        <AttendanceModal
+          user={user}
+          isOpen={isAttendanceModalOpen}
+          onClose={() => setIsAttendanceModalOpen(false)}
+          onSignIn={handleSignIn}
         />
       )}
 

@@ -17,6 +17,7 @@ export interface QuizConfig {
   quantity: number;
   timeLimitMinutes?: number; // 0 = untimed
   syllabusYear?: SyllabusYear;
+  questionType?: 'single' | 'multiple' | 'both';
 }
 
 export interface Question {
@@ -24,6 +25,7 @@ export interface Question {
   options: string[];
   correctAnswer: string;
   explanation: string;
+  isMultiple?: boolean;
 }
 
 export interface QuizResultRecord {

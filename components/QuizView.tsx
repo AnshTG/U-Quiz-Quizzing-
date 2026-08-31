@@ -72,19 +72,40 @@ export const QuizView: React.FC<QuizViewProps> = ({
   const currentQ = questions[currentIndex];
   const currentAnswer = userAnswers[currentIndex];
   const isFlagged = flaggedQuestions[currentIndex];
+  const isMultiple = !!currentQ.isMultiple;
+
+  // Selected options array for current question
+  const currentSelectedOptions = React.useMemo(() => {
+    if (!currentAnswer) return [];
+    if (isMultiple) {
+      return currentAnswer.split(' | ').map(s => s.trim()).filter(Boolean);
+    }
+    return [currentAnswer];
+  }, [currentAnswer, isMultiple]);
 
   const handleSelectOption = (option: string) => {
     setUserAnswers(prev => {
       const updated = [...prev];
-      updated[currentIndex] = option;
-      return updated;
-    });
-  };
+      const existing = updated[currentIndex];
 
-  const handleClearAnswer = () => {
-    setUserAnswers(prev => {
-      const updated = [...prev];
-      updated[currentIndex] = null;
+      if (isMultiple) {
+        let currentList = existing ? existing.split(' | ').map(s => s.trim()).filter(Boolean) : [];
+        if (currentList.includes(option)) {
+          // Deselect
+          currentList = currentList.filter(o => o !== option);
+        } else {
+          // Select
+          currentList = [...currentList, option];
+        }
+        updated[currentIndex] = currentList.length > 0 ? currentList.join(' | ') : null;
+      } else {
+        // Single choice: Clicking already selected option deselects it!
+        if (existing === option) {
+          updated[currentIndex] = null;
+        } else {
+          updated[currentIndex] = option;
+        }
+      }
       return updated;
     });
   };
@@ -131,12 +152,13 @@ export const QuizView: React.FC<QuizViewProps> = ({
         {/* Meta badges & Exit Button */}
         <div className="flex items-center gap-2.5">
           <button
+            type="button"
             onClick={() => setIsQuitModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/90 hover:bg-rose-500/20 hover:text-rose-400 border border-slate-800 text-slate-300 text-xs font-semibold transition-all cursor-pointer shadow-sm active:scale-95"
-            title="Exit Assessment & Return to Dashboard"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+            title="Leave this quiz"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Exit</span>
+            <span>Leave Quiz</span>
           </button>
           <div>
             <div className="flex items-center gap-2">
@@ -207,7 +229,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
               Q{currentIndex + 1}
             </span>
             <span className="text-xs text-slate-400 font-mono">
-              Multiple Choice (Single Option)
+              {isMultiple ? 'Multiple Choice (Select all that apply)' : 'Single Choice (Click to select/deselect)'}
             </span>
           </div>
 
@@ -232,7 +254,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
         {/* 4 Options Grid */}
         <div className="space-y-3 pt-2">
           {currentQ.options.map((option, optIdx) => {
-            const isSelected = currentAnswer === option;
+            const isSelected = currentSelectedOptions.includes(option);
             const letter = optionLetters[optIdx];
 
             return (
@@ -240,7 +262,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
                 key={optIdx}
                 type="button"
                 onClick={() => handleSelectOption(option)}
-                className={`w-full p-4 sm:p-5 rounded-2xl border text-left transition-all duration-150 flex items-center gap-4 group ${
+                className={`w-full p-4 sm:p-5 rounded-2xl border text-left transition-all duration-150 flex items-center gap-4 group cursor-pointer ${
                   isSelected
                     ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-lg shadow-emerald-500/10 scale-[1.005]'
                     : 'bg-slate-950/50 hover:bg-slate-900 border-slate-800/80 text-slate-200 hover:border-slate-700'
@@ -249,7 +271,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
                 {/* Option Badge (A/B/C/D) */}
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-mono font-bold text-sm shrink-0 transition-all ${
                   isSelected
-                    ? 'bg-emerald-500 text-slate-950 shadow-md'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-extrabold'
                     : 'bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white'
                 }`}>
                   {letter}
@@ -260,13 +282,19 @@ export const QuizView: React.FC<QuizViewProps> = ({
                   <MathText content={option} />
                 </div>
 
-                {/* Selection Radio Icon */}
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                {/* Selection Icon (Checkbox for multiple, radio for single) */}
+                <div className={`w-5 h-5 ${isMultiple ? 'rounded-lg' : 'rounded-full'} border flex items-center justify-center shrink-0 transition-colors ${
                   isSelected
                     ? 'border-emerald-400 bg-emerald-400 text-slate-950'
                     : 'border-slate-700 group-hover:border-slate-500'
                 }`}>
-                  {isSelected && <div className="w-2 h-2 rounded-full bg-slate-950" />}
+                  {isSelected && (
+                    isMultiple ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-950" />
+                    ) : (
+                      <div className="w-2 h-2 rounded-full bg-slate-950" />
+                    )
+                  )}
                 </div>
               </button>
             );
@@ -278,28 +306,17 @@ export const QuizView: React.FC<QuizViewProps> = ({
       {/* Bottom Action Controls */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur-md p-4 flex flex-wrap items-center justify-between gap-3">
         
-        {/* Left: Previous & Clear */}
+        {/* Left: Previous */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={currentIndex === 0}
             onClick={() => setCurrentIndex(c => c - 1)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none text-slate-200 text-xs font-semibold transition-all"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none text-slate-200 text-xs font-semibold transition-all cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
             <span>Previous</span>
           </button>
-
-          {currentAnswer !== null && (
-            <button
-              type="button"
-              onClick={handleClearAnswer}
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Clear</span>
-            </button>
-          )}
         </div>
 
         {/* Center shortcuts tip */}

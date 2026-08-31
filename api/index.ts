@@ -42,6 +42,31 @@ app.post('/api/generate-quiz', async (req, res) => {
     const quantity = typeof config.quantity === 'number' && config.quantity > 0 ? config.quantity : 10;
     const strength = config.strength || 'Medium';
     const syllabusYear = config.syllabusYear || '2026-27';
+    const questionType = config.questionType || 'single';
+
+    let questionTypeInstruction = '';
+    if (questionType === 'multiple') {
+      questionTypeInstruction = `
+      QUESTION FORMAT: MULTIPLE CHOICE (MORE THAN ONE CORRECT ANSWER).
+      - Every question MUST have 2 or 3 correct answers out of 4 options.
+      - In the question statement, add "(Select all that apply)" or "(Choose all correct options)".
+      - Set "isMultiple": true.
+      - In "correctAnswer", provide all correct option strings separated by " | " (e.g. "Option A text | Option C text").
+      `;
+    } else if (questionType === 'both') {
+      questionTypeInstruction = `
+      QUESTION FORMAT: MIXED (COMBINATION OF SINGLE AND MULTIPLE CHOICE).
+      - Include some single-choice questions (1 correct option, set "isMultiple": false) and some multiple-choice questions (2 or 3 correct options, set "isMultiple": true, and add "(Select all that apply)" in the question text).
+      - For multiple-choice questions, provide all correct options separated by " | " in "correctAnswer".
+      `;
+    } else {
+      questionTypeInstruction = `
+      QUESTION FORMAT: SINGLE CHOICE ONLY (EXACTLY 1 CORRECT ANSWER).
+      - Every question must have exactly ONE correct answer.
+      - Set "isMultiple": false.
+      - In "correctAnswer", provide the exact matching string of the single correct option.
+      `;
+    }
 
     const prompt = `
       Act as a senior NCERT Subject Matter Expert.
@@ -54,13 +79,18 @@ app.post('/api/generate-quiz', async (req, res) => {
       - Scope / Chapters: ${topicsList}
       - Cognitive Demand: ${strength} (Easy=Recall, Medium=Application, Hard=Analysis)
 
+      ${questionTypeInstruction}
+
       OUTPUT FORMAT RULES (MANDATORY):
       1. Language: Use professional, academic English as per the subject.
       2. Options: Exactly 4 distinct options per question.
       3. Explanation: Provide a "Rationale" citing the official NCERT concept from the ${syllabusYear} textbook.
       
       TEXT & MATH RENDERING RULES (CRITICAL):
-      - Mathematical formulas and equations: Write using clean LaTeX enclosed in single dollar signs ($...$) or standard notation (e.g., $x^2 + 5x + 6 = 0$, $\\sqrt{25} = 5$, $\\frac{3}{4}$).
+      - Mathematical formulas and equations: Write using clean LaTeX enclosed in single dollar signs ($...$) or standard notation (e.g., $x^2 + 5x + 6 = 0$, $\\sqrt{50}$, $\\frac{1}{2}$, $90^{\\circ}$, $\\pi$).
+      - Fractions: Always write fractions in LaTeX inside dollar signs: $\\frac{a}{b}$.
+      - Roots: Always write roots in LaTeX inside dollar signs: $\\sqrt{x}$ or $\\sqrt[3]{x}$.
+      - Degrees: Always format angles and temperatures as $90^{\\circ}$ or $37^{\\circ}\\text{C}$.
       - Currency: Always use "₹" for Indian Rupee (e.g. ₹500, never $500).
       - Plain text & Units: DO NOT wrap plain words, units, or plain numbers in dollar signs.
       - Clean Formatting: Ensure all opening dollar signs have matching closing dollar signs.
@@ -84,6 +114,7 @@ app.post('/api/generate-quiz', async (req, res) => {
                 },
                 correctAnswer: { type: Type.STRING },
                 explanation: { type: Type.STRING },
+                isMultiple: { type: Type.BOOLEAN },
               },
               required: ['question', 'options', 'correctAnswer', 'explanation'],
             },
@@ -110,8 +141,29 @@ app.post('/api/generate-quiz', async (req, res) => {
       return res.status(500).json({ error: 'Empty generation response from AI model' });
     }
 
-    const rawQuestions = JSON.parse(text);
-    return res.json({ questions: rawQuestions });
+    const cleanedJsonText = text
+      .replace(/[\u000c]/g, '\\f')
+      .replace(/\\f\s*rac\{/g, '\\frac{');
+
+    const rawQuestions = JSON.parse(cleanedJsonText);
+    const cleanMathString = (str: string) => {
+      if (!str) return '';
+      return str
+        .replace(/[\u000c]/g, '\\f')
+        .replace(/(^|[^\\])rac\{/g, '$1\\frac{')
+        .trim();
+    };
+
+    const sanitized = rawQuestions.map((q: any) => ({
+      ...q,
+      options: (q.options || []).slice(0, 4).map((opt: string) => cleanMathString(opt)),
+      question: cleanMathString(q.question || ''),
+      correctAnswer: cleanMathString(q.correctAnswer || ''),
+      explanation: cleanMathString(q.explanation || ''),
+      isMultiple: !!q.isMultiple,
+    }));
+
+    return res.json({ questions: sanitized });
   } catch (error: any) {
     console.error('Quiz Generation API error:', error);
     return res.status(500).json({

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   UserProfile, 
   QuizResultRecord, 
@@ -6,7 +6,8 @@ import {
   SharedQuiz,
   AttendanceRecord,
   AppState,
-  MaintenanceConfig 
+  MaintenanceConfig,
+  ChatMessage
 } from '../types';
 import { 
   fetchAllUsersForAdmin, 
@@ -21,6 +22,15 @@ import {
   adminUpdateUserQuizResult,
   adminDeleteAllUserQuizHistory,
   adminUpdateUserProfile,
+  adminDeleteUser,
+  adminDeleteAllUsers,
+  adminDeleteAttendanceRecord,
+  adminDeleteAllAttendanceRecords,
+  adminDeleteAllSharedQuizzes,
+  adminDeleteAllPublicChatMessages,
+  adminResetAllLeaderboards,
+  listenToPublicChat,
+  deletePublicChatMessage,
   listenToMaintenanceMode,
   updateMaintenanceMode,
   getISTDateString,
@@ -58,7 +68,13 @@ import {
   Check,
   AlertTriangle,
   Power,
-  Server
+  Server,
+  MessageSquare,
+  Mail,
+  ShieldAlert,
+  Sliders,
+  X,
+  Plus
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -66,15 +82,22 @@ interface AdminViewProps {
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
-  const [activeTab, setActiveTab] = useState<'attendance' | 'users' | 'shared'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'shared' | 'chat' | 'godmode'>('attendance');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [sharedQuizzes, setSharedQuizzes] = useState<SharedQuiz[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  
+  // Search & Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [attendanceDateFilter, setAttendanceDateFilter] = useState<string>(getISTDateString());
+  const [attendanceDateFilter, setAttendanceDateFilter] = useState<string>('');
   const [selectedActivityFilter, setSelectedActivityFilter] = useState<string>('all');
   
+  // Action Loading states
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
   // Selected user for deep dive modal
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [selectedUserHistory, setSelectedUserHistory] = useState<QuizResultRecord[]>([]);
@@ -92,6 +115,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
   // User stats editing state
   const [isEditingUserStats, setIsEditingUserStats] = useState<boolean>(false);
   const [editUserName, setEditUserName] = useState<string>('');
+  const [editUserEmail, setEditUserEmail] = useState<string>('');
   const [editTotalScore, setEditTotalScore] = useState<number>(0);
   const [editQuizzesCount, setEditQuizzesCount] = useState<number>(0);
   const [editQuestionsCount, setEditQuestionsCount] = useState<number>(0);
@@ -99,12 +123,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
 
   // Maintenance mode state
   const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
-  const [isUpdatingMaintenance, setIsUpdatingMaintenance] = useState<boolean>(false);
   const [customMaintenanceMsg, setCustomMaintenanceMsg] = useState<string>('');
   const [estimatedDuration, setEstimatedDuration] = useState<string>('');
-  const [showMaintenanceSettings, setShowMaintenanceSettings] = useState<boolean>(false);
 
-  // Real-time synchronization for users, shared quizzes, attendance, and maintenance
+  const todayIST = getISTDateString();
+
+  const showToast = (msg: string) => {
+    setActionSuccessMsg(msg);
+    setTimeout(() => setActionSuccessMsg(null), 3500);
+  };
+
+  // Real-time subscriptions
   useEffect(() => {
     setIsLoading(true);
 
@@ -121,6 +150,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       setAttendanceRecords(records);
     });
 
+    const unsubChat = listenToPublicChat((msgs) => {
+      setChatMessages(msgs);
+    });
+
     const unsubMaintenance = listenToMaintenanceMode((config) => {
       setMaintenanceConfig(config);
       if (config.message && !customMaintenanceMsg) setCustomMaintenanceMsg(config.message);
@@ -131,19 +164,80 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       unsubUsers();
       unsubShared();
       unsubAttendance();
+      unsubChat();
       unsubMaintenance();
     };
   }, []);
 
+  // Filtered Attendance List
+  const filteredAttendance = useMemo(() => {
+    return attendanceRecords.filter((record) => {
+      // Date filter
+      if (attendanceDateFilter && record.date !== attendanceDateFilter) {
+        return false;
+      }
+      // Activity filter
+      if (selectedActivityFilter !== 'all' && record.activityType !== selectedActivityFilter) {
+        return false;
+      }
+      // Search query (name, email, subject, user ID)
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesName = record.displayName?.toLowerCase().includes(q);
+        const matchesEmail = record.email?.toLowerCase().includes(q);
+        const matchesSubject = record.subjectAttempted?.toLowerCase().includes(q);
+        const matchesId = record.userId?.toLowerCase().includes(q);
+        if (!matchesName && !matchesEmail && !matchesSubject && !matchesId) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [attendanceRecords, attendanceDateFilter, selectedActivityFilter, searchQuery]);
+
+  // Filtered Scholars List
+  const filteredUsers = useMemo(() => {
+    if (!searchQuery.trim()) return users;
+    const q = searchQuery.toLowerCase();
+    return users.filter(u => 
+      u.displayName?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      u.uid.toLowerCase().includes(q)
+    );
+  }, [users, searchQuery]);
+
+  // Filtered Shared Quizzes
+  const filteredSharedQuizzes = useMemo(() => {
+    if (!searchQuery.trim()) return sharedQuizzes;
+    const q = searchQuery.toLowerCase();
+    return sharedQuizzes.filter(sq => 
+      sq.title?.toLowerCase().includes(q) ||
+      sq.id.toLowerCase().includes(q) ||
+      sq.creatorName?.toLowerCase().includes(q) ||
+      sq.config?.subject?.toLowerCase().includes(q)
+    );
+  }, [sharedQuizzes, searchQuery]);
+
+  // Filtered Chat Messages
+  const filteredChatMessages = useMemo(() => {
+    if (!searchQuery.trim()) return chatMessages;
+    const q = searchQuery.toLowerCase();
+    return chatMessages.filter(cm => 
+      cm.message?.toLowerCase().includes(q) ||
+      cm.userName?.toLowerCase().includes(q) ||
+      cm.subjectTag?.toLowerCase().includes(q)
+    );
+  }, [chatMessages, searchQuery]);
+
+  // Handle Maintenance Toggle
   const handleToggleMaintenance = async (targetActive: boolean) => {
-    const action = targetActive ? 'ACTIVATE' : 'DEACTIVATE';
     const confirmPrompt = targetActive 
-      ? 'Put website into MAINTENANCE MODE? All non-admin users will immediately be blocked from accessing quizzes, chat, and pages until deactivated.' 
-      : 'DEACTIVATE Maintenance Mode and restore public access for all students?';
+      ? '🚨 ACTIVATE Platform Maintenance Mode? All non-admin users will immediately be blocked from quizzes, chat, and assessment features.' 
+      : '✅ DEACTIVATE Maintenance Mode and restore full public access for all scholars?';
 
     if (!window.confirm(confirmPrompt)) return;
     
-    setIsUpdatingMaintenance(true);
+    setActionLoading('maintenance');
     try {
       await updateMaintenanceMode({
         isActive: targetActive,
@@ -152,45 +246,32 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
         enabledAt: new Date().toISOString(),
         enabledBy: 'Admin Portal'
       });
+      showToast(targetActive ? 'Platform Maintenance Mode ACTIVATED.' : 'Platform Maintenance Mode DEACTIVATED.');
     } catch (err) {
-      alert('Failed to update maintenance mode. Please try again.');
+      alert('Failed to update maintenance mode.');
     } finally {
-      setIsUpdatingMaintenance(false);
-    }
-  };
-
-  const handleSaveMaintenanceMessage = async () => {
-    setIsUpdatingMaintenance(true);
-    try {
-      await updateMaintenanceMode({
-        message: customMaintenanceMsg.trim(),
-        estimatedDuration: estimatedDuration.trim()
-      });
-      alert('Maintenance notice updated successfully!');
-    } catch (err) {
-      alert('Failed to save notice.');
-    } finally {
-      setIsUpdatingMaintenance(false);
+      setActionLoading(null);
     }
   };
 
   // Inspect single user progress & history
-  const handleInspectUser = async (user: UserProfile) => {
-    setSelectedUser(user);
+  const handleInspectUser = async (u: UserProfile) => {
+    setSelectedUser(u);
     setIsLoadingUserDetails(true);
     setInspectingQuizRecord(null);
     setEditingResult(null);
     setIsEditingUserStats(false);
-    setEditUserName(user.displayName || '');
-    setEditTotalScore(user.totalScore || 0);
-    setEditQuizzesCount(user.quizzesCompleted || 0);
-    setEditQuestionsCount(user.totalQuestionsAnswered || 0);
-    setEditStreak(user.currentStreak || 1);
+    setEditUserName(u.displayName || '');
+    setEditUserEmail(u.email || '');
+    setEditTotalScore(u.totalScore || 0);
+    setEditQuizzesCount(u.quizzesCompleted || 0);
+    setEditQuestionsCount(u.totalQuestionsAnswered || 0);
+    setEditStreak(u.currentStreak || 1);
 
     try {
       const [history, savedQuizzes] = await Promise.all([
-        fetchUserHistoryForAdmin(user.uid),
-        fetchUserSavedQuizzesForAdmin(user.uid)
+        fetchUserHistoryForAdmin(u.uid),
+        fetchUserSavedQuizzesForAdmin(u.uid)
       ]);
       setSelectedUserHistory(history);
       setSelectedUserSavedQuizzes(savedQuizzes);
@@ -201,1200 +282,1111 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     }
   };
 
-  // Admin delete specific quiz result
-  const handleDeleteUserResult = async (resultId: string) => {
-    if (!selectedUser) return;
-    if (!window.confirm('Delete this assessment result? User aggregate scores will be automatically recalculated.')) return;
-    try {
-      await adminDeleteUserQuizResult(selectedUser.uid, resultId);
-      setSelectedUserHistory(prev => prev.filter(r => r.id !== resultId));
-      if (inspectingQuizRecord?.id === resultId) setInspectingQuizRecord(null);
-      if (editingResult?.id === resultId) setEditingResult(null);
-    } catch (err) {
-      alert('Failed to delete quiz result.');
+  // Delete Individual User
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    if (!window.confirm(`Are you sure you want to PERMANENTLY DELETE scholar "${userName}" (${userId}) and all associated records?`)) {
+      return;
     }
-  };
-
-  // Admin start editing score
-  const handleStartEditScore = (rec: QuizResultRecord) => {
-    setEditingResult(rec);
-    setEditScoreVal(rec.score);
-    setEditTotalVal(rec.total);
-  };
-
-  // Admin save modified score
-  const handleSaveResultScore = async () => {
-    if (!selectedUser || !editingResult) return;
+    setActionLoading(`delete_user_${userId}`);
     try {
-      await adminUpdateUserQuizResult(selectedUser.uid, editingResult.id, {
-        score: Number(editScoreVal),
-        total: Number(editTotalVal),
-      });
-      setSelectedUserHistory(prev => prev.map(r => 
-        r.id === editingResult.id ? { ...r, score: Number(editScoreVal), total: Number(editTotalVal) } : r
-      ));
-      if (inspectingQuizRecord?.id === editingResult.id) {
-        setInspectingQuizRecord(prev => prev ? { ...prev, score: Number(editScoreVal), total: Number(editTotalVal) } : null);
+      await adminDeleteUser(userId);
+      if (selectedUser?.uid === userId) {
+        setSelectedUser(null);
       }
-      setEditingResult(null);
+      showToast(`Scholar "${userName}" was permanently removed.`);
     } catch (err) {
-      alert('Failed to update score.');
+      alert('Failed to delete scholar.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  // Admin save modified user profile stats
+  // Delete All Users
+  const handleDeleteAllUsers = async () => {
+    const confirmation = window.prompt(
+      '⚠️ DANGER: You are about to DELETE ALL REGISTERED USERS and their entire history across the system! Type "DELETE ALL USERS" to confirm:'
+    );
+    if (confirmation !== 'DELETE ALL USERS') {
+      alert('Action cancelled: Confirmation text did not match.');
+      return;
+    }
+    setActionLoading('delete_all_users');
+    try {
+      const count = await adminDeleteAllUsers();
+      setSelectedUser(null);
+      showToast(`Successfully purged all ${count} scholar accounts.`);
+    } catch (err) {
+      alert('Failed to delete all users.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Delete Individual Attendance Record
+  const handleDeleteAttendanceRecord = async (recordId: string) => {
+    if (!window.confirm('Delete this attendance entry?')) return;
+    try {
+      await adminDeleteAttendanceRecord(recordId);
+      showToast('Attendance record deleted.');
+    } catch (e) {
+      alert('Failed to delete attendance record.');
+    }
+  };
+
+  // Delete All Attendance Records
+  const handleDeleteAllAttendance = async () => {
+    const confirmation = window.prompt(
+      '⚠️ DANGER: Are you sure you want to PURGE ALL ATTENDANCE LOGS? Type "PURGE ATTENDANCE" to confirm:'
+    );
+    if (confirmation !== 'PURGE ATTENDANCE') {
+      alert('Action cancelled: Confirmation text did not match.');
+      return;
+    }
+    setActionLoading('delete_all_attendance');
+    try {
+      const count = await adminDeleteAllAttendanceRecords();
+      showToast(`Purged ${count} attendance records from database.`);
+    } catch (err) {
+      alert('Failed to delete all attendance records.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Delete Individual Shared Quiz
+  const handleDeleteSharedQuiz = async (quizId: string) => {
+    if (!window.confirm(`Delete shared challenge quiz #${quizId}?`)) return;
+    try {
+      await deleteSharedQuizByAdmin(quizId);
+      showToast(`Shared quiz #${quizId} deleted.`);
+    } catch (err) {
+      alert('Failed to delete shared quiz.');
+    }
+  };
+
+  // Delete All Shared Quizzes
+  const handleDeleteAllSharedQuizzes = async () => {
+    const confirmation = window.prompt(
+      '⚠️ DANGER: You are about to DELETE ALL COMMUNITY SHARED QUIZZES! Type "DELETE ALL SHARED" to confirm:'
+    );
+    if (confirmation !== 'DELETE ALL SHARED') {
+      alert('Action cancelled.');
+      return;
+    }
+    setActionLoading('delete_all_shared');
+    try {
+      const count = await adminDeleteAllSharedQuizzes();
+      showToast(`Purged ${count} shared challenge quizzes.`);
+    } catch (err) {
+      alert('Failed to delete all shared quizzes.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Delete Individual Chat Message
+  const handleDeleteChatMessage = async (msgId: string) => {
+    if (!window.confirm('Delete this chat message?')) return;
+    try {
+      await deletePublicChatMessage(msgId);
+      showToast('Chat message deleted.');
+    } catch (e) {
+      alert('Failed to delete message.');
+    }
+  };
+
+  // Delete All Chat Messages
+  const handleDeleteAllChatMessages = async () => {
+    const confirmation = window.prompt(
+      '⚠️ DANGER: You are about to PURGE ALL PUBLIC CHAT MESSAGES! Type "CLEAR ALL CHAT" to confirm:'
+    );
+    if (confirmation !== 'CLEAR ALL CHAT') {
+      alert('Action cancelled.');
+      return;
+    }
+    setActionLoading('delete_all_chat');
+    try {
+      const count = await adminDeleteAllPublicChatMessages();
+      showToast(`Cleared ${count} public chat messages.`);
+    } catch (err) {
+      alert('Failed to clear public chat.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Reset Leaderboards
+  const handleResetLeaderboards = async () => {
+    const confirmation = window.prompt(
+      '⚠️ Reset all leaderboard scores and statistics for all scholars to 0? Type "RESET LEADERBOARDS" to proceed:'
+    );
+    if (confirmation !== 'RESET LEADERBOARDS') {
+      alert('Action cancelled.');
+      return;
+    }
+    setActionLoading('reset_leaderboards');
+    try {
+      const count = await adminResetAllLeaderboards();
+      showToast(`Successfully reset leaderboard stats for ${count} scholars.`);
+    } catch (err) {
+      alert('Failed to reset leaderboards.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Save User Profile Stats (God-Mode Edit)
   const handleSaveUserStats = async () => {
     if (!selectedUser) return;
+    setActionLoading('save_user_stats');
     try {
       await adminUpdateUserProfile(selectedUser.uid, {
         displayName: editUserName.trim() || selectedUser.displayName,
         totalScore: Number(editTotalScore),
         quizzesCompleted: Number(editQuizzesCount),
         totalQuestionsAnswered: Number(editQuestionsCount),
-        currentStreak: Number(editStreak),
+        currentStreak: Number(editStreak)
       });
-      setSelectedUser(prev => prev ? {
-        ...prev,
-        displayName: editUserName.trim() || prev.displayName,
-        totalScore: Number(editTotalScore),
-        quizzesCompleted: Number(editQuizzesCount),
-        totalQuestionsAnswered: Number(editQuestionsCount),
-        currentStreak: Number(editStreak),
-      } : null);
       setIsEditingUserStats(false);
+      showToast(`Updated profile and statistics for ${editUserName || 'scholar'}.`);
     } catch (err) {
-      alert('Failed to update user profile stats.');
+      alert('Failed to update scholar stats.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  // Admin delete all results for user
-  const handleDeleteAllUserResults = async () => {
+  // Delete User Quiz Attempt
+  const handleDeleteUserAttempt = async (resultId: string) => {
     if (!selectedUser) return;
-    if (!window.confirm(`Are you sure you want to delete ALL quiz results for ${selectedUser.displayName || selectedUser.email}? This will reset their total scores.`)) return;
+    if (!window.confirm('Delete this quiz score record?')) return;
     try {
-      await adminDeleteAllUserQuizHistory(selectedUser.uid);
-      setSelectedUserHistory([]);
-      setInspectingQuizRecord(null);
+      await adminDeleteUserQuizResult(selectedUser.uid, resultId);
+      setSelectedUserHistory(prev => prev.filter(r => r.id !== resultId));
+      showToast('Quiz attempt record deleted.');
+    } catch (e) {
+      alert('Failed to delete attempt.');
+    }
+  };
+
+  // Edit Quiz Result Score
+  const handleSaveAttemptScore = async () => {
+    if (!selectedUser || !editingResult) return;
+    try {
+      await adminUpdateUserQuizResult(selectedUser.uid, editingResult.id, {
+        score: editScoreVal,
+        total: editTotalVal
+      });
+      setSelectedUserHistory(prev => prev.map(r => r.id === editingResult.id ? { ...r, score: editScoreVal, total: editTotalVal } : r));
       setEditingResult(null);
-    } catch (err) {
-      alert('Failed to delete all quiz history.');
+      showToast('Score updated successfully.');
+    } catch (e) {
+      alert('Failed to update score.');
     }
   };
 
-  // Delete shared quiz as admin
-  const handleDeleteSharedQuiz = async (quizId: string) => {
-    if (window.confirm('Are you sure you want to delete this shared public quiz challenge?')) {
-      try {
-        await deleteSharedQuizByAdmin(quizId);
-        setSharedQuizzes(prev => prev.filter(q => q.id !== quizId));
-      } catch (e) {
-        alert('Failed to delete shared quiz.');
-      }
+  // Delete All Quiz History for Selected User
+  const handleDeleteAllHistoryForUser = async () => {
+    if (!selectedUser) return;
+    if (!window.confirm(`Delete ALL quiz history records for ${selectedUser.displayName || 'this scholar'}?`)) return;
+    try {
+      const count = await adminDeleteAllUserQuizHistory(selectedUser.uid);
+      setSelectedUserHistory([]);
+      showToast(`Deleted ${count} quiz attempts.`);
+    } catch (e) {
+      alert('Failed to delete user quiz history.');
     }
   };
-
-  // System Metric Calculations
-  const totalUsers = users.length;
-  const totalQuizzesAttempted = users.reduce((acc, u) => acc + (u.quizzesCompleted || 0), 0);
-  const totalQuestionsAnswered = users.reduce((acc, u) => acc + (u.totalQuestionsAnswered || 0), 0);
-  const totalScorePoints = users.reduce((acc, u) => acc + (u.totalScore || 0), 0);
-  const platformAccuracy = totalQuestionsAnswered > 0 
-    ? Math.round((totalScorePoints / totalQuestionsAnswered) * 100) 
-    : 0;
-  const totalSavedQuizzes = users.reduce((acc, u) => acc + (u.savedQuizzesCount || 0), 0);
-
-  // Today's attendance stats
-  const todayIST = getISTDateString();
-  const todayAttendanceRecords = attendanceRecords.filter(r => r.date === todayIST);
-  const uniqueTodayAttendees = new Set(todayAttendanceRecords.map(r => r.userId)).size;
-
-  // Filtered users by search
-  const filteredUsers = users.filter(u => {
-    const q = searchQuery.toLowerCase();
-    return (
-      (u.displayName && u.displayName.toLowerCase().includes(q)) ||
-      (u.email && u.email.toLowerCase().includes(q)) ||
-      u.uid.toLowerCase().includes(q)
-    );
-  });
-
-  // Filtered attendance records
-  const filteredAttendance = attendanceRecords.filter(r => {
-    const matchesDate = !attendanceDateFilter || r.date === attendanceDateFilter;
-    const matchesActivity = selectedActivityFilter === 'all' || r.activityType === selectedActivityFilter;
-    const q = searchQuery.toLowerCase();
-    const matchesSearch = !q || 
-      (r.displayName && r.displayName.toLowerCase().includes(q)) ||
-      (r.email && r.email.toLowerCase().includes(q)) ||
-      (r.userId && r.userId.toLowerCase().includes(q)) ||
-      (r.subjectAttempted && r.subjectAttempted.toLowerCase().includes(q));
-
-    return matchesDate && matchesActivity && matchesSearch;
-  });
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-in fade-in duration-200">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 lg:p-8 space-y-6">
       
-      {/* Admin Top Header Banner */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-amber-500/10 via-slate-900 to-slate-900 border border-amber-500/30 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-2xl">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold font-display text-white">
-                Admin Control Dashboard
-              </h1>
-              <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-500 text-slate-950">
-                Admin Verified
-              </span>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse">
-                <Radio className="w-3 h-3 text-emerald-400" /> Live Sync Active
-              </span>
-            </div>
+      {/* Toast Notification */}
+      {actionSuccessMsg && (
+        <div className="fixed top-20 right-6 z-50 p-4 rounded-2xl bg-emerald-500 text-slate-950 font-bold text-xs shadow-2xl flex items-center gap-2 animate-in slide-in-from-top-4 duration-200">
+          <CheckCircle2 className="w-5 h-5 shrink-0" />
+          <span>{actionSuccessMsg}</span>
+        </div>
+      )}
+
+      {/* Top Header & Admin HUD */}
+      <div className="rounded-3xl border border-amber-500/30 bg-slate-900/90 backdrop-blur-xl p-5 sm:p-6 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/10">
+            <ShieldAlert className="w-6 h-6" />
           </div>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-2xl">
-            Live monitoring of student daily attendance logs, individual learning streaks, cloud database records, and system-wide curriculum analytics.
-          </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black font-display text-white tracking-tight">
+                Admin Control Center
+              </h1>
+              <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/40 text-[10px] font-mono font-bold uppercase tracking-wider">
+                Full Power Mode
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Live Cloud Database • Direct Scholar Management • Universal Delete Powers • No Stored Caching
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-right">
-            <span className="text-[10px] font-mono text-slate-400 block uppercase">IST Time</span>
-            <span className="text-xs font-mono font-bold text-amber-400">{getISTTimeString()}</span>
-          </div>
-          
+        {/* Top Action Buttons */}
+        <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
           <button
-            onClick={onExitAdmin}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/30 transition-colors cursor-pointer"
+            onClick={() => {
+              // Lock admin immediately on exit
+              onExitAdmin();
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 border border-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Exit Admin</span>
+            <LogOut className="w-4 h-4" />
+            <span>Lock & Exit Portal</span>
           </button>
         </div>
       </div>
 
-      {/* Real-time System Maintenance Mode Control Box */}
-      <div className={`p-6 rounded-3xl border transition-all duration-300 shadow-xl ${
-        maintenanceConfig.isActive 
-          ? 'bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border-rose-500/50 shadow-rose-950/30' 
-          : 'bg-slate-900/90 border-slate-800/90'
-      }`}>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="flex items-start gap-4">
-            <div className={`p-3 rounded-2xl border shrink-0 ${
-              maintenanceConfig.isActive 
-                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse' 
-                : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}>
-              {maintenanceConfig.isActive ? (
-                <AlertTriangle className="w-7 h-7 text-rose-400" />
-              ) : (
-                <Power className="w-7 h-7 text-emerald-400" />
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  System Maintenance Mode
-                </h2>
-                {maintenanceConfig.isActive ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-rose-500 text-white animate-pulse">
-                    ACTIVE (Public Blocked)
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                    LIVE (Normal Access)
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400 max-w-xl">
-                {maintenanceConfig.isActive 
-                  ? "The website is currently blocked for all students and public visitors. Only administrators with IST credentials can bypass this screen." 
-                  : "Turn on maintenance mode during critical curriculum updates or server maintenance to display a friendly maintenance notice."
-                }
-              </p>
-            </div>
+      {/* Quick Overview Metrics Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>Total Scholars</span>
+            <Users className="w-4 h-4 text-emerald-400" />
           </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={() => setShowMaintenanceSettings(!showMaintenanceSettings)}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
-            >
-              {showMaintenanceSettings ? "Hide Settings" : "Configure Notice"}
-            </button>
-
-            <button
-              onClick={() => handleToggleMaintenance(!maintenanceConfig.isActive)}
-              disabled={isUpdatingMaintenance}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all cursor-pointer disabled:opacity-50 ${
-                maintenanceConfig.isActive
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
-                  : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
-              }`}
-            >
-              <Power className="w-4 h-4" />
-              <span>
-                {isUpdatingMaintenance 
-                  ? 'Updating...' 
-                  : maintenanceConfig.isActive 
-                    ? 'Deactivate Maintenance (Go Live)' 
-                    : 'Put in Maintenance Mode'}
-              </span>
-            </button>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-white">
+            {users.length}
           </div>
+          <span className="text-[10px] text-slate-400 font-mono">Google Signed-in</span>
         </div>
 
-        {/* Expandable Maintenance Settings Form */}
-        {showMaintenanceSettings && (
-          <div className="mt-6 pt-6 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                Maintenance Notice for Students
-              </label>
-              <textarea
-                value={customMaintenanceMsg}
-                onChange={(e) => setCustomMaintenanceMsg(e.target.value)}
-                placeholder="e.g. U-Quiz is currently undergoing scheduled platform upgrades..."
-                rows={2}
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-amber-500 placeholder:text-slate-600 resize-none"
-              />
-            </div>
-
-            <div className="flex flex-col justify-between">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1.5">
-                  Estimated Duration Note (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={estimatedDuration}
-                  onChange={(e) => setEstimatedDuration(e.target.value)}
-                  placeholder="e.g. 15 minutes / Until 5:00 PM IST"
-                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 text-xs focus:outline-none focus:border-amber-500 placeholder:text-slate-600"
-                />
-              </div>
-
-              <div className="flex justify-end pt-3">
-                <button
-                  onClick={handleSaveMaintenanceMessage}
-                  disabled={isUpdatingMaintenance}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Save Notice Text</span>
-                </button>
-              </div>
-            </div>
+        <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>Attendance Today</span>
+            <CalendarCheck className="w-4 h-4 text-teal-400" />
           </div>
-        )}
+          <div className="text-xl sm:text-2xl font-bold font-mono text-teal-400">
+            {attendanceRecords.filter(r => r.date === todayIST).length}
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono">{attendanceRecords.length} Total Logs</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>Shared Quizzes</span>
+            <Database className="w-4 h-4 text-purple-400" />
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-purple-400">
+            {sharedQuizzes.length}
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono">Active Challenge Vault</span>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-slate-900/70 border border-slate-800/80 space-y-1">
+          <div className="flex items-center justify-between text-slate-400 text-xs">
+            <span>Maintenance Mode</span>
+            <Power className={`w-4 h-4 ${maintenanceConfig.isActive ? 'text-rose-400' : 'text-slate-400'}`} />
+          </div>
+          <div className={`text-xl sm:text-2xl font-bold font-mono ${maintenanceConfig.isActive ? 'text-rose-400' : 'text-emerald-400'}`}>
+            {maintenanceConfig.isActive ? 'ACTIVE' : 'OFF'}
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono">Global Gate State</span>
+        </div>
       </div>
 
-      {/* Aggregate System KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        
-        {/* Live Daily Attendance Card */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-slate-900 border border-emerald-500/30 space-y-1 shadow-lg">
-          <div className="flex items-center justify-between text-emerald-400 text-xs">
-            <span>Today's Attendance</span>
-            <CalendarCheck className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold font-display text-white">
-            {uniqueTodayAttendees}
-          </div>
-          <div className="text-[11px] text-emerald-400/90 font-mono font-medium flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-            {todayAttendanceRecords.length} Check-ins Today
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Total Students</span>
-            <Users className="w-4 h-4 text-sky-400" />
-          </div>
-          <div className="text-2xl font-bold font-display text-white">
-            {totalUsers}
-          </div>
-          <div className="text-[11px] text-sky-400 font-medium flex items-center gap-1">
-            <UserCheck className="w-3 h-3" /> Registered Accounts
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Quizzes Taken</span>
-            <BookOpen className="w-4 h-4 text-indigo-400" />
-          </div>
-          <div className="text-2xl font-bold font-display text-white">
-            {totalQuizzesAttempted}
-          </div>
-          <div className="text-[11px] text-slate-400">
-            Across all grades
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Questions Solved</span>
-            <TrendingUp className="w-4 h-4 text-purple-400" />
-          </div>
-          <div className="text-2xl font-bold font-display text-white">
-            {totalQuestionsAnswered}
-          </div>
-          <div className="text-[11px] text-slate-400">
-            NCERT drill attempts
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Platform Accuracy</span>
-            <Award className="w-4 h-4 text-amber-400" />
-          </div>
-          <div className="text-2xl font-bold font-display text-white">
-            {platformAccuracy}%
-          </div>
-          <div className="text-[11px] text-amber-400/90 font-medium">
-            Overall accuracy
-          </div>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-          <div className="flex items-center justify-between text-slate-400 text-xs">
-            <span>Vault Quizzes</span>
-            <Database className="w-4 h-4 text-lime-400" />
-          </div>
-          <div className="text-2xl font-bold font-display text-white">
-            {totalSavedQuizzes}
-          </div>
-          <div className="text-[11px] text-lime-400 font-medium">
-            50-quota cloud banks
-          </div>
-        </div>
-
-      </div>
-
-      {/* Navigation Tabs & Filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-        
-        {/* Navigation Tabs */}
-        <div className="flex flex-wrap items-center gap-2">
-          
+      {/* Main Tabs Navigation */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
           <button
             onClick={() => setActiveTab('attendance')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'attendance'
-                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <CalendarCheck className="w-4 h-4" />
-            <span>Attendance & Streak Log ({attendanceRecords.length})</span>
+            <span>Attendance Logs</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {attendanceRecords.length}
+            </span>
           </button>
 
           <button
-            onClick={() => setActiveTab('users')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'users'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+            onClick={() => setActiveTab('scholars')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'scholars'
+                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Registered Users ({users.length})</span>
+            <span>Scholars & Accounts</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {users.length}
+            </span>
           </button>
 
           <button
             onClick={() => setActiveTab('shared')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'shared'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Shared Challenges ({sharedQuizzes.length})</span>
+            <Database className="w-4 h-4" />
+            <span>Shared Challenges</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {sharedQuizzes.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'chat'
+                ? 'bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Public Chat</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {chatMessages.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('godmode')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'godmode'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            <span>God-Mode Controls</span>
           </button>
         </div>
 
-        {/* Universal Search Input */}
+        {/* Global Search Input */}
         <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={activeTab === 'attendance' ? "Search student or subject..." : "Search user or email..."}
+            placeholder={`Search ${activeTab}...`}
             className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
           />
+          <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="p-1 rounded hover:bg-slate-800 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
         </div>
-
       </div>
 
-      {/* Main Tab Content */}
-      {isLoading ? (
-        <div className="p-12 text-center space-y-3">
-          <div className="w-8 h-8 border-3 border-amber-500/30 border-t-amber-400 rounded-full animate-spin mx-auto" />
-          <p className="text-xs text-slate-400 font-mono">Syncing real-time database records from Firestore...</p>
-        </div>
-      ) : activeTab === 'attendance' ? (
-
-        /* ====================================================
-           REAL-TIME ATTENDANCE LOG FOR ADMIN
-           ==================================================== */
+      {/* ===================== TAB 1: ATTENDANCE LOGS ===================== */}
+      {activeTab === 'attendance' && (
         <div className="space-y-4">
           
-          {/* Filter Bar for Attendance */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-900/60 rounded-2xl border border-slate-800">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <Calendar className="w-4 h-4 text-emerald-400" />
+          {/* Attendance Filters Bar */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-teal-400" />
                 <span>Date Filter:</span>
-              </div>
+              </span>
+
+              <button
+                onClick={() => setAttendanceDateFilter('')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  attendanceDateFilter === ''
+                    ? 'bg-teal-500 text-slate-950 font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                All Dates
+              </button>
+
+              <button
+                onClick={() => setAttendanceDateFilter(todayIST)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  attendanceDateFilter === todayIST
+                    ? 'bg-teal-500 text-slate-950 font-bold'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                Today ({todayIST})
+              </button>
+
               <input
                 type="date"
                 value={attendanceDateFilter}
                 onChange={(e) => setAttendanceDateFilter(e.target.value)}
-                className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-400 font-mono"
+                className="px-3 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-400"
               />
-              {attendanceDateFilter && (
-                <button
-                  onClick={() => setAttendanceDateFilter('')}
-                  className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
-                >
-                  Show All Dates
-                </button>
-              )}
-            </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400">Activity:</span>
+              <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
+
+              {/* Activity Type Filter */}
               <select
                 value={selectedActivityFilter}
                 onChange={(e) => setSelectedActivityFilter(e.target.value)}
-                className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-400"
+                className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-teal-400"
               >
                 <option value="all">All Activities</option>
+                <option value="manual_checkin">Manual Check-in</option>
                 <option value="quiz_completion">Quiz Completion</option>
                 <option value="daily_login">Daily Login</option>
-                <option value="manual_checkin">Manual Check-In</option>
               </select>
             </div>
+
+            {/* Delete All Attendance Button */}
+            <button
+              onClick={handleDeleteAllAttendance}
+              disabled={actionLoading === 'delete_all_attendance' || attendanceRecords.length === 0}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete All Attendance</span>
+            </button>
           </div>
 
-          {filteredAttendance.length === 0 ? (
-            <div className="p-12 text-center bg-slate-900/40 rounded-3xl border border-slate-800/80 space-y-2">
-              <CalendarCheck className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-sm font-semibold text-slate-300">No attendance entries found</p>
-              <p className="text-xs text-slate-500">
-                {attendanceDateFilter 
-                  ? `No student check-ins recorded for ${attendanceDateFilter}. Try showing all dates.`
-                  : 'Students will automatically appear here upon sign-in or quiz completion.'}
-              </p>
+          {/* Records Table */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xl">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span className="font-semibold">Showing {filteredAttendance.length} of {attendanceRecords.length} Attendance Records</span>
+              {attendanceDateFilter && (
+                <span className="px-2 py-0.5 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20 font-mono">
+                  Filtered by Date: {attendanceDateFilter}
+                </span>
+              )}
             </div>
-          ) : (
-            <div className="bg-slate-900/60 rounded-3xl border border-slate-800 overflow-hidden shadow-xl">
+
+            {filteredAttendance.length === 0 ? (
+              <div className="p-12 text-center space-y-2">
+                <CalendarCheck className="w-10 h-10 text-slate-600 mx-auto" />
+                <p className="text-sm font-semibold text-slate-300">No attendance entries match this filter</p>
+                <p className="text-xs text-slate-500">Try clearing the date filter or searching for another student.</p>
+              </div>
+            ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
+                  <thead className="bg-slate-950/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
                     <tr>
-                      <th className="py-3.5 px-4">Student</th>
-                      <th className="py-3.5 px-4">Date & Time (IST)</th>
-                      <th className="py-3.5 px-4 text-center">Activity Trigger</th>
-                      <th className="py-3.5 px-4 text-center">Day Streak</th>
-                      <th className="py-3.5 px-4 text-center">Subject Attempted</th>
-                      <th className="py-3.5 px-4 text-right">Status</th>
+                      <th className="px-4 py-3">Scholar & Email</th>
+                      <th className="px-4 py-3">Date (IST)</th>
+                      <th className="px-4 py-3">Time</th>
+                      <th className="px-4 py-3">Activity Type</th>
+                      <th className="px-4 py-3">Streak</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-200">
-                    {filteredAttendance.map((record) => {
-                      const isToday = record.date === todayIST;
-                      
-                      return (
-                        <tr key={record.id} className="hover:bg-slate-800/40 transition-colors">
-                          
-                          {/* Student Info */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              {record.photoURL ? (
-                                <img
-                                  src={record.photoURL}
-                                  alt={record.displayName}
-                                  className="w-8 h-8 rounded-full border border-slate-700 object-cover shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs shrink-0 border border-emerald-500/30">
-                                  {record.displayName.substring(0, 2).toUpperCase()}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="font-bold text-white truncate flex items-center gap-1.5">
-                                  <span>{record.displayName}</span>
-                                </div>
-                                <div className="text-[11px] text-slate-400 truncate">
-                                  {record.email || record.userId}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Date & Time */}
-                          <td className="py-3 px-4 font-mono text-[11px]">
-                            <div className="text-white font-semibold flex items-center gap-1.5">
-                              <Calendar className="w-3 h-3 text-slate-400" />
-                              <span>{record.date}</span>
-                            </div>
-                            <div className="text-slate-400 flex items-center gap-1 mt-0.5">
-                              <Clock className="w-3 h-3 text-cyan-400" />
-                              <span>{record.timeStr || new Date(record.timestamp).toLocaleTimeString()}</span>
-                            </div>
-                          </td>
-
-                          {/* Activity Trigger */}
-                          <td className="py-3 px-4 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              record.activityType === 'quiz_completion'
-                                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                                : record.activityType === 'daily_login'
-                                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                            }`}>
-                              {record.activityType === 'quiz_completion' ? 'Quiz Solved' : record.activityType === 'daily_login' ? 'Daily Login' : 'Check-In'}
-                            </span>
-                          </td>
-
-                          {/* Streak */}
-                          <td className="py-3 px-4 text-center">
-                            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 font-mono font-black text-xs">
-                              <Flame className="w-3.5 h-3.5 fill-amber-400" />
-                              <span>{record.currentStreak || 1}d Streak</span>
-                            </div>
-                          </td>
-
-                          {/* Subject Attempted */}
-                          <td className="py-3 px-4 text-center font-medium">
-                            {record.subjectAttempted ? (
-                              <span className="text-slate-200 text-xs">
-                                {record.subjectAttempted}
-                                {record.scoreGained !== undefined && (
-                                  <span className="ml-1 text-emerald-400 font-mono text-[11px] font-bold">
-                                    (+{record.scoreGained} pts)
-                                  </span>
-                                )}
-                              </span>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredAttendance.map((rec) => (
+                      <tr key={rec.id} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            {rec.photoURL ? (
+                              <img 
+                                src={rec.photoURL} 
+                                alt={rec.displayName}
+                                referrerPolicy="no-referrer"
+                                className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0" 
+                              />
                             ) : (
-                              <span className="text-slate-500 text-xs">—</span>
-                            )}
-                          </td>
-
-                          {/* Status */}
-                          <td className="py-3 px-4 text-right">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                              isToday 
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-slate-800 text-slate-400'
-                            }`}>
-                              <CheckCircle2 className="w-3 h-3" />
-                              {isToday ? 'Present Today' : 'Logged'}
-                            </span>
-                          </td>
-
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-        </div>
-
-      ) : activeTab === 'users' ? (
-        
-        /* ====================================================
-           REGISTERED USERS DIRECTORY TAB
-           ==================================================== */
-        <div className="space-y-4">
-          {filteredUsers.length === 0 ? (
-            <div className="p-12 text-center bg-slate-900/40 rounded-3xl border border-slate-800/80 space-y-2">
-              <Users className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-sm font-semibold text-slate-300">No users found</p>
-              <p className="text-xs text-slate-500">Try adjusting your search criteria or sign in to populate records.</p>
-            </div>
-          ) : (
-            <div className="bg-slate-900/60 rounded-3xl border border-slate-800 overflow-hidden shadow-xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                    <tr>
-                      <th className="py-3.5 px-4">User Details</th>
-                      <th className="py-3.5 px-4">Daily Streak</th>
-                      <th className="py-3.5 px-4">Last Active</th>
-                      <th className="py-3.5 px-4 text-center">Quizzes</th>
-                      <th className="py-3.5 px-4 text-center">Questions</th>
-                      <th className="py-3.5 px-4 text-center">Accuracy</th>
-                      <th className="py-3.5 px-4 text-center">Cloud Vault</th>
-                      <th className="py-3.5 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-200">
-                    {filteredUsers.map((u) => {
-                      const questionsTotal = u.totalQuestionsAnswered || 0;
-                      const accuracy = questionsTotal > 0 
-                        ? Math.round(((u.totalScore || 0) / questionsTotal) * 100)
-                        : 0;
-
-                      let accuracyColor = 'text-slate-400 bg-slate-800/60 border-slate-700';
-                      if (questionsTotal > 0) {
-                        if (accuracy >= 80) accuracyColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-                        else if (accuracy >= 50) accuracyColor = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
-                        else accuracyColor = 'text-rose-400 bg-rose-500/10 border-rose-500/30';
-                      }
-
-                      return (
-                        <tr key={u.uid} className="hover:bg-slate-800/40 transition-colors">
-                          
-                          {/* User Avatar & Name */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-3">
-                              {u.photoURL ? (
-                                <img
-                                  src={u.photoURL}
-                                  alt={u.displayName || 'User'}
-                                  className="w-8 h-8 rounded-full border border-slate-700 object-cover shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-xs shrink-0 border border-amber-500/30">
-                                  {(u.displayName || 'U').substring(0, 2).toUpperCase()}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="font-bold text-white truncate flex items-center gap-1.5">
-                                  <span>{u.displayName || 'Anonymous'}</span>
-                                </div>
-                                <div className="text-[11px] text-slate-400 truncate">
-                                  {u.email || u.uid}
-                                </div>
+                              <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold shrink-0">
+                                {rec.displayName ? rec.displayName.charAt(0) : 'U'}
                               </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-bold text-white truncate">{rec.displayName || 'Scholar'}</div>
+                              <div className="text-[11px] text-slate-400 font-mono truncate">{rec.email || 'No email provided'}</div>
                             </div>
-                          </td>
-
-                          {/* Streak Badge */}
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 font-mono text-xs font-bold">
-                              <Flame className="w-3 h-3 fill-amber-400" />
-                              <span>{u.currentStreak || 1}d Streak</span>
-                            </span>
-                          </td>
-
-                          {/* Last Active */}
-                          <td className="py-3 px-4 text-slate-400 font-mono text-[11px]">
-                            {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            }) : 'Never'}
-                          </td>
-
-                          {/* Quizzes Completed */}
-                          <td className="py-3 px-4 text-center font-bold text-white font-mono">
-                            {u.quizzesCompleted || 0}
-                          </td>
-
-                          {/* Questions Solved */}
-                          <td className="py-3 px-4 text-center font-mono text-slate-300">
-                            {u.totalQuestionsAnswered || 0}
-                          </td>
-
-                          {/* Accuracy Badge */}
-                          <td className="py-3 px-4 text-center">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full font-mono text-xs font-bold border ${accuracyColor}`}>
-                              {questionsTotal > 0 ? `${accuracy}%` : 'N/A'}
-                            </span>
-                          </td>
-
-                          {/* Cloud Vault Stored Count */}
-                          <td className="py-3 px-4 text-center font-mono text-xs">
-                            <span className="text-purple-400 font-bold">
-                              {u.savedQuizzesCount || 0}
-                            </span>
-                            <span className="text-slate-500">/50</span>
-                          </td>
-
-                          {/* Inspect Action */}
-                          <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => handleInspectUser(u)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold transition-all cursor-pointer"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>Inspect Progress</span>
-                            </button>
-                          </td>
-
-                        </tr>
-                      );
-                    })}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-emerald-400 font-bold">
+                          {rec.date}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-slate-300">
+                          {rec.timeStr || new Date(rec.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                            rec.activityType === 'quiz_completion'
+                              ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                              : rec.activityType === 'manual_checkin'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                              : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                          }`}>
+                            {rec.activityType === 'quiz_completion' ? `Quiz: ${rec.subjectAttempted || 'Assessment'}` : rec.activityType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-orange-400 font-bold">
+                          🔥 {rec.currentStreak || 1}d
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleDeleteAttendanceRecord(rec.id)}
+                            className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Delete this record"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-      ) : (
-
-        /* ====================================================
-           SHARED PUBLIC CHALLENGES TAB
-           ==================================================== */
-        <div className="space-y-4">
-          {sharedQuizzes.length === 0 ? (
-            <div className="p-12 text-center bg-slate-900/40 rounded-3xl border border-slate-800/80 space-y-2">
-              <Sparkles className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-sm font-semibold text-slate-300">No active shared challenges</p>
-              <p className="text-xs text-slate-500">When users create public quiz challenge links, they will be listed here.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sharedQuizzes.map((quiz) => (
-                <div key={quiz.id} className="p-5 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-4 shadow-lg hover:border-slate-700 transition-all flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-lime-500/10 text-lime-400 border border-lime-500/30">
-                        {quiz.config.class}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {new Date(quiz.timestamp).toLocaleDateString()}
-                      </span>
-                    </div>
-
-                    <h3 className="text-sm font-bold text-white font-display line-clamp-2">
-                      {quiz.title}
-                    </h3>
-
-                    <div className="text-xs text-slate-400 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span>Subject:</span>
-                        <span className="text-slate-200 font-semibold">{quiz.config.subject}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Questions:</span>
-                        <span className="text-slate-200 font-mono">{quiz.questions.length} Items</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Plays Counter:</span>
-                        <span className="text-emerald-400 font-mono font-bold">{quiz.viewsCount || 0} times</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Created by:</span>
-                        <span className="text-amber-400 truncate max-w-[150px]">{quiz.creatorName}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                    <div className="text-[10px] font-mono text-slate-500 truncate">
-                      ID: {quiz.id}
-                    </div>
-                    <button
-                      onClick={() => handleDeleteSharedQuiz(quiz.id)}
-                      className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 
-      {/* User Progress Deep-Dive Inspector Modal */}
-      {selectedUser && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-150">
-            
-            {/* Modal Top Header */}
-            <div className="flex items-start justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                {selectedUser.photoURL ? (
-                  <img
-                    src={selectedUser.photoURL}
-                    alt={selectedUser.displayName || 'User'}
-                    className="w-12 h-12 rounded-full border-2 border-amber-500/50 object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-base border border-amber-500/40">
-                    {(selectedUser.displayName || 'U').substring(0, 2).toUpperCase()}
-                  </div>
-                )}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-white font-display">
-                      {selectedUser.displayName || 'Anonymous Learner'}
-                    </h2>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                      {selectedUser.currentStreak || 1}d Streak
+      {/* ===================== TAB 2: SCHOLARS & ACCOUNTS ===================== */}
+      {activeTab === 'scholars' && (
+        <div className="space-y-4">
+          
+          {/* Header Action Bar */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Registered Scholars Directory</h3>
+              <p className="text-xs text-slate-400">Total {users.length} verified accounts logged in via Google Auth</p>
+            </div>
+
+            <button
+              onClick={handleDeleteAllUsers}
+              disabled={actionLoading === 'delete_all_users' || users.length === 0}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete All Scholars</span>
+            </button>
+          </div>
+
+          {/* Scholars Table */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xl">
+            {filteredUsers.length === 0 ? (
+              <div className="p-12 text-center space-y-2">
+                <Users className="w-10 h-10 text-slate-600 mx-auto" />
+                <p className="text-sm font-semibold text-slate-300">No scholars found</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
+                    <tr>
+                      <th className="px-4 py-3">Scholar & Avatar</th>
+                      <th className="px-4 py-3">Google Email Address</th>
+                      <th className="px-4 py-3">UID</th>
+                      <th className="px-4 py-3">Score & Quizzes</th>
+                      <th className="px-4 py-3">Streak</th>
+                      <th className="px-4 py-3">Last Active</th>
+                      <th className="px-4 py-3 text-right">Admin Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {filteredUsers.map((u) => (
+                      <tr key={u.uid} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            {u.photoURL ? (
+                              <img 
+                                src={u.photoURL} 
+                                alt={u.displayName || ''} 
+                                referrerPolicy="no-referrer"
+                                className="w-8 h-8 rounded-full object-cover border border-emerald-400/30 shrink-0" 
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-emerald-400 font-bold shrink-0">
+                                {u.displayName ? u.displayName.charAt(0) : 'U'}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="font-bold text-white truncate">{u.displayName || 'Google Scholar'}</div>
+                              <span className="text-[10px] text-slate-500 font-mono">Joined {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'Active'}</span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3 font-mono text-emerald-400">
+                          {u.email || 'No email attached'}
+                        </td>
+
+                        <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
+                          {u.uid.substring(0, 10)}...
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="font-bold text-white font-mono">{u.totalScore || 0} pts</div>
+                          <div className="text-[10px] text-slate-400">{u.quizzesCompleted || 0} quizzes • {u.totalQuestionsAnswered || 0} Qs</div>
+                        </td>
+
+                        <td className="px-4 py-3 font-mono text-orange-400 font-bold">
+                          🔥 {u.currentStreak || 1}d
+                        </td>
+
+                        <td className="px-4 py-3 text-slate-400 text-[11px] font-mono">
+                          {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Recent'}
+                        </td>
+
+                        <td className="px-4 py-3 text-right space-x-1.5">
+                          <button
+                            onClick={() => handleInspectUser(u)}
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-colors cursor-pointer"
+                          >
+                            Inspect & Edit
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteUser(u.uid, u.displayName || 'Scholar')}
+                            className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Delete Scholar Account"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* ===================== TAB 3: SHARED CHALLENGES ===================== */}
+      {activeTab === 'shared' && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Community Challenge Vault</h3>
+              <p className="text-xs text-slate-400">Total {sharedQuizzes.length} public challenge quizzes created by scholars</p>
+            </div>
+
+            <button
+              onClick={handleDeleteAllSharedQuizzes}
+              disabled={actionLoading === 'delete_all_shared' || sharedQuizzes.length === 0}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete All Shared Quizzes</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredSharedQuizzes.map((quiz) => (
+              <div key={quiz.id} className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 shadow-lg">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 text-[10px] font-mono font-bold">
+                      Code: {quiz.id}
                     </span>
-                    <button
-                      onClick={() => setIsEditingUserStats(!isEditingUserStats)}
-                      className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1 border border-amber-500/40 cursor-pointer"
-                    >
-                      <Edit3 className="w-3 h-3" />
-                      <span>{isEditingUserStats ? 'Close Edit' : 'Edit Profile Stats & Score'}</span>
-                    </button>
+                    <h4 className="font-bold text-sm text-white mt-1.5">{quiz.title}</h4>
                   </div>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    {selectedUser.email || selectedUser.uid} • UID: {selectedUser.uid}
-                  </p>
+                  <button
+                    onClick={() => handleDeleteSharedQuiz(quiz.id)}
+                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="text-xs text-slate-400 space-y-1 font-mono">
+                  <div>{quiz.config.class} • {quiz.config.subject} • {quiz.config.strength}</div>
+                  <div>{quiz.questions?.length || 0} Questions • {quiz.playsCount || 0} Plays</div>
+                  <div className="text-slate-500 text-[10px]">Author: {quiz.creatorName || 'Anonymous Scholar'}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ===================== TAB 4: PUBLIC CHAT ===================== */}
+      {activeTab === 'chat' && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Public Study Chat Feed</h3>
+              <p className="text-xs text-slate-400">{chatMessages.length} real-time peer messages in database</p>
+            </div>
+
+            <button
+              onClick={handleDeleteAllChatMessages}
+              disabled={actionLoading === 'delete_all_chat' || chatMessages.length === 0}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete All Chat Messages</span>
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 divide-y divide-slate-800/60">
+            {filteredChatMessages.map((msg) => (
+              <div key={msg.id} className="p-4 flex items-center justify-between gap-4 hover:bg-slate-800/30 transition-colors">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-teal-400 font-bold shrink-0">
+                    {msg.userName ? msg.userName.charAt(0) : 'U'}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-white">{msg.userName}</span>
+                      <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400">{msg.subjectTag || 'General'}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">{msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ''}</span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-1 break-words">{msg.message}</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleDeleteChatMessage(msg.id)}
+                  className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ===================== TAB 5: GOD-MODE SYSTEM CONTROLS ===================== */}
+      {activeTab === 'godmode' && (
+        <div className="space-y-6">
+          
+          {/* Maintenance Killswitch Card */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${maintenanceConfig.isActive ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-400'}`}>
+                  <Power className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Platform Maintenance Mode</h3>
+                  <p className="text-xs text-slate-400">Lock the platform with custom notice for non-admin students.</p>
                 </div>
               </div>
 
               <button
-                onClick={() => setSelectedUser(null)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                onClick={() => handleToggleMaintenance(!maintenanceConfig.isActive)}
+                className={`px-6 py-3 rounded-2xl font-bold text-xs transition-all cursor-pointer ${
+                  maintenanceConfig.isActive
+                    ? 'bg-rose-500 hover:bg-rose-400 text-white shadow-lg shadow-rose-500/30'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20'
+                }`}
               >
-                ✕
+                {maintenanceConfig.isActive ? 'DEACTIVATE MAINTENANCE' : 'ACTIVATE MAINTENANCE'}
               </button>
             </div>
 
-            {/* Admin User Stats Editing Form (Toggled) */}
-            {isEditingUserStats && (
-              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-4 animate-in slide-in-from-top-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Admin Override: User Scores & Global Stats</span>
-                  </div>
-                  <span className="text-[11px] text-slate-400">
-                    Changes reflect on public leaderboards & user profile immediately
-                  </span>
-                </div>
+            <div className="space-y-3 pt-2">
+              <label className="block text-xs font-semibold text-slate-300">Custom Maintenance Notice Message</label>
+              <textarea
+                value={customMaintenanceMsg}
+                onChange={(e) => setCustomMaintenanceMsg(e.target.value)}
+                placeholder="Message displayed to users when maintenance is active..."
+                rows={2}
+                className="w-full p-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
+              />
+            </div>
+          </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+          {/* Universal Dangerous Actions Grid */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-rose-500/30 space-y-4">
+            <div className="flex items-center gap-2 text-rose-400 font-bold text-base">
+              <AlertTriangle className="w-5 h-5" />
+              <span>Universal Platform Reset & Purge Tools</span>
+            </div>
+            <p className="text-xs text-slate-400">
+              High-impact administrative commands. Use with extreme caution.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+              <button
+                onClick={handleResetLeaderboards}
+                className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 hover:bg-amber-500/10 text-left space-y-1 transition-all cursor-pointer"
+              >
+                <div className="font-bold text-xs text-amber-400 flex items-center gap-1.5">
+                  <Award className="w-4 h-4" />
+                  <span>Reset All Leaderboards</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Sets all scholars' scores, streaks, and quiz counts to 0.</p>
+              </button>
+
+              <button
+                onClick={handleDeleteAllAttendance}
+                className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 hover:bg-rose-500/10 text-left space-y-1 transition-all cursor-pointer"
+              >
+                <div className="font-bold text-xs text-rose-400 flex items-center gap-1.5">
+                  <CalendarCheck className="w-4 h-4" />
+                  <span>Purge All Attendance</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Clears all check-in logs and timestamps globally.</p>
+              </button>
+
+              <button
+                onClick={handleDeleteAllChatMessages}
+                className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 hover:bg-rose-500/10 text-left space-y-1 transition-all cursor-pointer"
+              >
+                <div className="font-bold text-xs text-rose-400 flex items-center gap-1.5">
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Purge All Public Chat</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Wipes all peer study messages from the database.</p>
+              </button>
+
+              <button
+                onClick={handleDeleteAllSharedQuizzes}
+                className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 hover:bg-rose-500/10 text-left space-y-1 transition-all cursor-pointer"
+              >
+                <div className="font-bold text-xs text-rose-400 flex items-center gap-1.5">
+                  <Database className="w-4 h-4" />
+                  <span>Purge All Shared Quizzes</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Deletes all community challenge links and codes.</p>
+              </button>
+
+              <button
+                onClick={handleDeleteAllUsers}
+                className="p-4 rounded-2xl bg-slate-950 border border-rose-500/50 hover:bg-rose-500/15 text-left space-y-1 transition-all cursor-pointer col-span-1 sm:col-span-2"
+              >
+                <div className="font-bold text-xs text-rose-400 flex items-center gap-1.5">
+                  <Trash2 className="w-4 h-4" />
+                  <span>Purge All Scholar Accounts</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Deletes all user accounts, quiz history, saved quizzes, and cloud records.</p>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ===================== USER INSPECTION & EDIT MODAL ===================== */}
+      {selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] flex flex-col">
+            
+            {/* Close Button */}
+            <button
+              onClick={() => setSelectedUser(null)}
+              className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-4 pr-8">
+              {selectedUser.photoURL ? (
+                <img 
+                  src={selectedUser.photoURL} 
+                  alt={selectedUser.displayName || ''} 
+                  referrerPolicy="no-referrer"
+                  className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-400 shrink-0" 
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center text-emerald-400 font-bold text-xl shrink-0">
+                  {selectedUser.displayName ? selectedUser.displayName.charAt(0) : 'U'}
+                </div>
+              )}
+              <div className="min-w-0">
+                <h3 className="text-xl font-bold font-display text-white truncate">
+                  {selectedUser.displayName || 'Scholar Profile'}
+                </h3>
+                <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 truncate">
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>{selectedUser.email || 'No email attached'}</span>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono mt-0.5">UID: {selectedUser.uid}</div>
+              </div>
+            </div>
+
+            {/* Editable Stats Card */}
+            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>God-Mode Scholar Stats Editor</span>
+                </span>
+                {!isEditingUserStats ? (
+                  <button
+                    onClick={() => setIsEditingUserStats(true)}
+                    className="px-3 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-semibold"
+                  >
+                    Edit Values
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setIsEditingUserStats(false)}
+                      className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveUserStats}
+                      className="px-3 py-1 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs"
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isEditingUserStats ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
                   <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Display Name</label>
+                    <label className="text-[10px] text-slate-400 block font-mono">Display Name</label>
                     <input
                       type="text"
                       value={editUserName}
                       onChange={(e) => setEditUserName(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white"
                     />
                   </div>
-
                   <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Total Score (Pts)</label>
+                    <label className="text-[10px] text-slate-400 block font-mono">Total Score</label>
                     <input
                       type="number"
                       value={editTotalScore}
                       onChange={(e) => setEditTotalScore(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-mono font-bold"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono"
                     />
                   </div>
-
                   <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Quizzes Completed</label>
+                    <label className="text-[10px] text-slate-400 block font-mono">Quizzes Done</label>
                     <input
                       type="number"
                       value={editQuizzesCount}
                       onChange={(e) => setEditQuizzesCount(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono"
                     />
                   </div>
-
                   <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Questions Solved</label>
-                    <input
-                      type="number"
-                      value={editQuestionsCount}
-                      onChange={(e) => setEditQuestionsCount(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-sky-400 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Daily Streak (Days)</label>
+                    <label className="text-[10px] text-slate-400 block font-mono">Day Streak</label>
                     <input
                       type="number"
                       value={editStreak}
                       onChange={(e) => setEditStreak(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-400 font-mono"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white font-mono"
                     />
                   </div>
                 </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-3 text-center">
+                  <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
+                    <div className="text-emerald-400 font-bold font-mono text-sm">{selectedUser.totalScore || 0}</div>
+                    <span className="text-[10px] text-slate-500">Total Points</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
+                    <div className="text-purple-400 font-bold font-mono text-sm">{selectedUser.quizzesCompleted || 0}</div>
+                    <span className="text-[10px] text-slate-500">Quizzes</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
+                    <div className="text-sky-400 font-bold font-mono text-sm">{selectedUser.totalQuestionsAnswered || 0}</div>
+                    <span className="text-[10px] text-slate-500">Questions</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
+                    <div className="text-orange-400 font-bold font-mono text-sm">🔥 {selectedUser.currentStreak || 1}d</div>
+                    <span className="text-[10px] text-slate-500">Streak</span>
+                  </div>
+                </div>
+              )}
+            </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/80">
+            {/* Quiz Attempt History List */}
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0 space-y-2">
+              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold px-1">
+                <span>Quiz Attempts & History ({selectedUserHistory.length})</span>
+                {selectedUserHistory.length > 0 && (
                   <button
-                    type="button"
-                    onClick={() => setIsEditingUserStats(false)}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
+                    onClick={handleDeleteAllHistoryForUser}
+                    className="text-rose-400 hover:text-rose-300 text-[11px] font-bold"
                   >
-                    Cancel
+                    Delete All History
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveUserStats}
-                    className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
-                  >
-                    <Save className="w-3.5 h-3.5" />
-                    <span>Save Changes</span>
-                  </button>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-56">
+                {isLoadingUserDetails ? (
+                  <div className="p-8 text-center text-xs text-slate-500">Loading attempts...</div>
+                ) : selectedUserHistory.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-500">No recorded quiz attempts for this scholar.</div>
+                ) : (
+                  selectedUserHistory.map((att) => (
+                    <div key={att.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="font-bold text-white">{att.config.class} • {att.config.subject}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Score: <span className="text-emerald-400 font-bold">{att.score}/{att.total}</span> ({Math.round((att.score / (att.total || 1)) * 100)}%) • {att.date}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingResult(att);
+                            setEditScoreVal(att.score);
+                            setEditTotalVal(att.total);
+                          }}
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px]"
+                        >
+                          Edit Score
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUserAttempt(att.id)}
+                          className="p-1 rounded hover:bg-rose-500/20 text-slate-500 hover:text-rose-400"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Score Edit Sub-Modal */}
+            {editingResult && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span>New Score:</span>
+                  <input
+                    type="number"
+                    value={editScoreVal}
+                    onChange={(e) => setEditScoreVal(Number(e.target.value))}
+                    className="w-16 p-1 bg-slate-950 border border-slate-700 rounded text-center font-mono text-white"
+                  />
+                  <span>/</span>
+                  <input
+                    type="number"
+                    value={editTotalVal}
+                    onChange={(e) => setEditTotalVal(Number(e.target.value))}
+                    className="w-16 p-1 bg-slate-950 border border-slate-700 rounded text-center font-mono text-white"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditingResult(null)} className="px-3 py-1 rounded bg-slate-800 text-slate-300">Cancel</button>
+                  <button onClick={handleSaveAttemptScore} className="px-3 py-1 rounded bg-emerald-500 text-slate-950 font-bold">Apply</button>
                 </div>
               </div>
             )}
 
-            {/* Modal Body */}
-            <div className="space-y-6">
-              
-              {/* User KPI summary */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 block">Total Quizzes</span>
-                  <span className="text-lg font-bold text-white font-mono">
-                    {selectedUser.quizzesCompleted || selectedUserHistory.length}
-                  </span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 block">Questions Solved</span>
-                  <span className="text-lg font-bold text-sky-400 font-mono">
-                    {selectedUser.totalQuestionsAnswered || selectedUserHistory.reduce((acc, h) => acc + h.total, 0)}
-                  </span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 block">Total Score</span>
-                  <span className="text-lg font-bold text-emerald-400 font-mono">
-                    {selectedUser.totalScore !== undefined ? selectedUser.totalScore : selectedUserHistory.reduce((acc, h) => acc + h.score, 0)} pts
-                  </span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 block">Cloud Saved Quizzes</span>
-                  <span className="text-lg font-bold text-purple-400 font-mono">
-                    {selectedUserSavedQuizzes.length}/50
-                  </span>
-                </div>
-              </div>
-
-              {isLoadingUserDetails ? (
-                <div className="py-12 text-center text-xs text-slate-400 font-mono">
-                  Loading user quiz logs and stored vaults...
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <BookOpen className="w-4 h-4 text-amber-400" />
-                      <span>Assessment Attempts & History ({selectedUserHistory.length})</span>
-                    </h3>
-
-                    {selectedUserHistory.length > 0 && (
-                      <button
-                        onClick={handleDeleteAllUserResults}
-                        className="px-3 py-1 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete All User History</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Editing Individual Result Score Form */}
-                  {editingResult && (
-                    <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-3 animate-in slide-in-from-top-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                          <Edit3 className="w-3.5 h-3.5" />
-                          Modify Result Score for {editingResult.config.class} {editingResult.config.subject}
-                        </span>
-                        <button
-                          onClick={() => setEditingResult(null)}
-                          className="text-xs text-slate-400 hover:text-white cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">Score Obtained</label>
-                          <input
-                            type="number"
-                            value={editScoreVal}
-                            onChange={(e) => setEditScoreVal(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-emerald-400 font-mono font-bold"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">Total Questions</label>
-                          <input
-                            type="number"
-                            value={editTotalVal}
-                            onChange={(e) => setEditTotalVal(Number(e.target.value))}
-                            className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white font-mono font-bold"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingResult(null)}
-                          className="px-3 py-1 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSaveResultScore}
-                          className="px-4 py-1 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold flex items-center gap-1.5"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Update Score</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedUserHistory.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic py-4">No completed quiz history recorded yet for this user.</p>
-                  ) : (
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                      {selectedUserHistory.map((rec) => {
-                        const recAccuracy = rec.total > 0 ? Math.round((rec.score / rec.total) * 100) : 0;
-                        return (
-                          <div 
-                            key={rec.id}
-                            className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                          >
-                            <div>
-                              <div className="font-bold text-slate-200 flex items-center gap-2">
-                                <span>{rec.config.class} {rec.config.subject}</span>
-                                <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono">
-                                  {rec.config.quantity} Qs • {rec.config.strength}
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                                {new Date(rec.date).toLocaleDateString()} • {rec.config.topics.join(', ')}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                              <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                                {rec.score}/{rec.total} ({recAccuracy}%)
-                              </span>
-
-                              <button
-                                onClick={() => handleStartEditScore(rec)}
-                                title="Edit Score"
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-500/20 hover:text-amber-400 text-slate-400 transition-colors cursor-pointer"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-
-                              <button
-                                onClick={() => setInspectingQuizRecord(rec)}
-                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold cursor-pointer"
-                              >
-                                Answers
-                              </button>
-
-                              <button
-                                onClick={() => handleDeleteUserResult(rec.id)}
-                                title="Delete Result"
-                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Detailed question view for inspected record */}
-                  {inspectingQuizRecord && (
-                    <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/40 space-y-3 mt-4">
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                        <div>
-                          <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                            Detailed Question Breakdown
-                          </div>
-                          <div className="text-sm font-bold text-white">
-                            {inspectingQuizRecord.config.class} {inspectingQuizRecord.config.subject} ({inspectingQuizRecord.score}/{inspectingQuizRecord.total} Score)
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setInspectingQuizRecord(null)}
-                          className="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-800 rounded-lg cursor-pointer"
-                        >
-                          Close Breakdown
-                        </button>
-                      </div>
-
-                      <div className="space-y-3 max-h-72 overflow-y-auto pr-2">
-                        {inspectingQuizRecord.questions.map((q, idx) => {
-                          const userAns = inspectingQuizRecord.userAnswers[idx];
-                          const isCorrect = userAns && userAns.trim() === q.correctAnswer.trim();
-
-                          return (
-                            <div key={idx} className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-2">
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="font-semibold text-white">
-                                  Q{idx + 1}. {q.question}
-                                </span>
-                                {isCorrect ? (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 shrink-0">
-                                    Correct
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-400 shrink-0">
-                                    Incorrect
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="text-[11px] space-y-1 text-slate-300">
-                                <div>
-                                  <span className="text-slate-500 font-semibold">User Answer: </span>
-                                  <span className={isCorrect ? 'text-emerald-400 font-medium' : 'text-rose-400 font-medium'}>
-                                    {userAns || 'Skipped'}
-                                  </span>
-                                </div>
-                                {!isCorrect && (
-                                  <div>
-                                    <span className="text-slate-500 font-semibold">Correct Answer: </span>
-                                    <span className="text-emerald-400 font-medium">{q.correctAnswer}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-              )}
-
-            </div>
-
             {/* Modal Footer */}
-            <div className="pt-3 border-t border-slate-800 flex justify-end">
+            <div className="pt-2 border-t border-slate-800 flex justify-end">
               <button
                 onClick={() => setSelectedUser(null)}
-                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
               >
                 Close Inspector
               </button>

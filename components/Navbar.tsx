@@ -35,6 +35,7 @@ interface NavbarProps {
   onSignOut: () => void;
   onOpenJoinModal: () => void;
   onOpenAdminAuth: () => void;
+  onOpenAttendance: () => void;
   isAdminUnlocked?: boolean;
 }
 
@@ -49,6 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSignOut,
   onOpenJoinModal,
   onOpenAdminAuth,
+  onOpenAttendance,
   isAdminUnlocked = false
 }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -309,6 +311,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <button
                         onClick={() => {
                           setIsProfileMenuOpen(false);
+                          onOpenAttendance();
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Flame className="w-3.5 h-3.5 text-orange-400" />
+                          <span>My Attendance & Streak</span>
+                        </div>
+                        <span className="text-[10px] font-mono text-orange-400 font-bold">
+                          🔥 {user.currentStreak || 1}d
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
                           onNavigate(AppState.SAVED_QUIZZES);
                         }}
                         className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
@@ -338,9 +356,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setIsProfileMenuOpen(false);
                           onNavigate(AppState.CHAT);
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-left cursor-pointer"
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-colors text-left cursor-pointer"
                       >
-                        <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                        <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
                         <span>Study Chat & AI Tutor</span>
                       </button>
 
@@ -358,11 +376,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <button
                         onClick={() => {
                           setIsProfileMenuOpen(false);
-                          if (isAdminUnlocked) {
-                            onNavigate(AppState.ADMIN);
-                          } else {
-                            onOpenAdminAuth();
-                          }
+                          onOpenAdminAuth();
                         }}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
                       >
