@@ -13,7 +13,7 @@ interface MathTextProps {
 }
 
 /**
- * Preprocesses mathematical strings to ensure KaTeX & Markdown render seamlessly
+ * Preprocesses mathematical strings to ensure formula typography & Markdown render seamlessly
  * without leaving raw dollar signs ($), raw slashes, unrendered LaTeX commands,
  * form-feed artefacts (rac{1}{2} from \f escapes), or unescaped math expressions.
  */
@@ -25,47 +25,48 @@ function sanitizeAndFormatMath(rawContent: string): string {
   // 1. Normalize line endings
   text = text.replace(/\r\n/g, '\n');
 
-  // 2. Fix form feed characters (\f or \x0c) which cause \frac to become rac{...}{...}
+  // 2. Normalize unicode Celsius ℃ (U+2103) & Fahrenheit ℉ (U+2109) to standard °C and °F
+  text = text.replace(/\u2103/g, '°C');
+  text = text.replace(/\u2109/g, '°F');
+
+  // 3. Fix form feed characters (\f or \x0c) which cause \frac to become rac{...}{...}
   text = text.replace(/[\u000c\x0c]/g, '');
   text = text.replace(/\\f\s*rac\{/g, '\\frac{');
   text = text.replace(/(^|[^\\])rac\{/g, '$1\\frac{');
   text = text.replace(/\\+rac\{/g, '\\frac{');
 
-  // 3. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
+  // 4. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$1$$$');
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
-  // 4. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
-  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|le|ge|leq|geq|neq|ne|cdot|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ|infty|partial|nabla)/g, '\\$1');
+  // 5. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
+  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|mathrm|le|ge|leq|geq|neq|ne|cdot|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ|infty|partial|nabla)/g, '\\$1');
 
-  // 5. Handle degree representations (e.g., 90\degree, 90^\circ, 90^o, 90°, 45°C, 37 °C)
+  // 6. Handle degree conversions in LaTeX contexts
+  text = text.replace(/\\degree\s*C\b/g, '^{\\circ}\\mathrm{C}');
   text = text.replace(/\\degree/g, '^{\\circ}');
-  text = text.replace(/(\d+(?:\.\d+)?)\s*°\s*C\b/g, '$$$1^{\\circ}\\text{C}$$');
-  text = text.replace(/(\d+(?:\.\d+)?)\s*°\s*F\b/g, '$$$1^{\\circ}\\text{F}$$');
-  text = text.replace(/(\d+(?:\.\d+)?)\s*°/g, '$$$1^{\\circ}$$');
-  text = text.replace(/(?<!\$)\b(\d+(?:\.\d+)?)\^\{\\circ\}(?!\$)/g, '$$$1^{\\circ}$$');
-  text = text.replace(/(?<!\$)\b(\d+(?:\.\d+)?)\^\\circ(?!\$)/g, '$$$1^{\\circ}$$');
 
-  // 6. Wrap bare \frac{...}{...} in $...$ if not already in math block
+  // 7. Fix degree symbol INSIDE math expressions ($...$) so it doesn't break math parsing
+  text = text.replace(/\$([^\$]+)\$/g, (match, inner) => {
+    let clean = inner;
+    clean = clean.replace(/°\s*C\b/g, '^\\circ\\mathrm{C}');
+    clean = clean.replace(/°\s*F\b/g, '^\\circ\\mathrm{F}');
+    clean = clean.replace(/°/g, '^\\circ');
+    clean = clean.replace(/\\text\{C\}/g, '\\mathrm{C}');
+    clean = clean.replace(/\\text\{F\}/g, '\\mathrm{F}');
+    return `$${clean}$`;
+  });
+
+  // 8. Wrap bare \frac{...}{...} in $...$ if not already in math block
   text = text.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, '$\\frac{$1}{$2}$');
 
-  // 7. Wrap bare \sqrt{...} or \sqrt[n]{...} in $...$ if not already in math block
+  // 9. Wrap bare \sqrt{...} or \sqrt[n]{...} in $...$ if not already in math block
   text = text.replace(/(?<!\$)\\sqrt\[([^\]]+)\]\{([^{}]+)\}(?!\$)/g, '$\\sqrt[$1]{$2}$');
   text = text.replace(/(?<!\$)\\sqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
   text = text.replace(/(?<![\$\\])\bsqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
 
-  // 8. Wrap standalone math symbols like \pi, \theta, \pm, \approx, \le, \ge, \times
+  // 10. Wrap standalone math symbols like \pi, \theta, \pm, \approx, \le, \ge, \times
   text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|leq|geq|le|ge|neq|ne|cdot|perp|parallel|angle|triangle|infty)(?!\$)/g, '$\\$1$');
-
-  // 9. Handle standalone superscripts like x^2, y^3, 10^5 outside dollars
-  text = text.replace(/(?<![\$\w])([a-zA-Z0-9]+)\^(\d+)(?![\$\w])/g, '$$$1^{$2}$$');
-
-  // 10. Clean up double nested $ ($$ inside $)
-  text = text.replace(/\$\$(\$[^$]+\$)\$\$/g, '$1');
-  text = text.replace(/\$([^\$]+)\$/g, (match, inner) => {
-    const cleanInner = inner.replace(/\$/g, '');
-    return `$${cleanInner}$`;
-  });
 
   return text;
 }
@@ -82,7 +83,16 @@ export const MathText: React.FC<MathTextProps> = ({ content, className = '' }) =
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[
-          [rehypeKatex, { throwOnError: false, strict: false }],
+          [rehypeKatex, { 
+            throwOnError: false, 
+            strict: false,
+            macros: {
+              "\\degree": "^{\\circ}",
+              "°": "^{\\circ}",
+              "°C": "^{\\circ}\\mathrm{C}",
+              "°F": "^{\\circ}\\mathrm{F}"
+            }
+          }],
           rehypeRaw
         ]}
         components={{

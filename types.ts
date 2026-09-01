@@ -40,6 +40,18 @@ export interface QuizResultRecord {
   userAnswers: (string | null)[];
   sharedQuizId?: string;
   userName?: string;
+  timeIST?: string;
+  subject?: string;
+  class?: string;
+  topics?: string[];
+  strength?: string;
+}
+
+export interface AdminUserQuizEntry extends QuizResultRecord {
+  userId: string;
+  userDisplayName?: string;
+  userEmail?: string;
+  userPhoto?: string;
 }
 
 export interface UserProfile {

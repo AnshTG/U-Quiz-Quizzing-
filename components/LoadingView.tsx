@@ -16,7 +16,7 @@ export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) =>
     `Scanning ${config.class} • ${config.subject} Syllabus...`,
     `Synthesizing ${config.quantity} items for [${config.topics.slice(0, 2).join(', ')}${config.topics.length > 2 ? ` +${config.topics.length - 2} more` : ''}]...`,
     `Calibrating ${config.strength} Cognitive Demand & Rationales...`,
-    'Finalizing KaTeX Mathematical Formulas & Response Verification...',
+    'Finalizing Mathematical Formulas & Response Verification...',
   ];
 
   const quotes = [

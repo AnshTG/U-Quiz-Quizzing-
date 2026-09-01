@@ -13,6 +13,7 @@ import {
   setDoc, 
   getDoc, 
   collection, 
+  collectionGroup,
   getDocs, 
   query, 
   orderBy, 
@@ -36,7 +37,8 @@ import {
   LeaderboardUser,
   AttendanceRecord,
   ChatMessage,
-  MaintenanceConfig 
+  MaintenanceConfig,
+  AdminUserQuizEntry
 } from '../types';
 
 // Initialize Firebase App
@@ -53,7 +55,7 @@ googleProvider.setCustomParameters({
   prompt: 'select_account'
 });
 
-export const MAX_CLOUD_QUIZZES_LIMIT = 50;
+export const MAX_CLOUD_QUIZZES_LIMIT = 10;
 
 // Helper to get formatted IST date and time
 export const getISTDateString = (d: Date = new Date()): string => {
@@ -367,7 +369,7 @@ export const saveQuizResultToCloud = async (
 export const fetchUserQuizHistory = async (userId: string): Promise<QuizResultRecord[]> => {
   try {
     const historyCol = collection(db, 'users', userId, 'quizHistory');
-    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(50));
+    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(10));
     const snapshot = await getDocs(q);
     
     const list: QuizResultRecord[] = [];
@@ -390,7 +392,7 @@ export const subscribeToUserQuizHistory = (
 ): Unsubscribe => {
   try {
     const historyCol = collection(db, 'users', userId, 'quizHistory');
-    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(50));
+    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(10));
     return onSnapshot(q, (snapshot) => {
       const list: QuizResultRecord[] = [];
       snapshot.forEach(docSnap => {
@@ -520,7 +522,7 @@ export const adminUpdateUserProfile = async (
 export const fetchUserSavedQuizzes = async (userId: string): Promise<SavedQuizRecord[]> => {
   try {
     const savedCol = collection(db, 'users', userId, 'savedQuizzes');
-    const q = query(savedCol, orderBy('timestamp', 'desc'));
+    const q = query(savedCol, orderBy('timestamp', 'desc'), limit(10));
     const snapshot = await getDocs(q);
     
     const list: SavedQuizRecord[] = [];
@@ -543,7 +545,7 @@ export const subscribeToUserSavedQuizzes = (
 ): Unsubscribe => {
   try {
     const savedCol = collection(db, 'users', userId, 'savedQuizzes');
-    const q = query(savedCol, orderBy('timestamp', 'desc'));
+    const q = query(savedCol, orderBy('timestamp', 'desc'), limit(10));
     return onSnapshot(q, (snapshot) => {
       const list: SavedQuizRecord[] = [];
       snapshot.forEach(docSnap => {
@@ -829,6 +831,89 @@ export const fetchUserHistoryForAdmin = async (userId: string): Promise<QuizResu
 
 export const fetchUserSavedQuizzesForAdmin = async (userId: string): Promise<SavedQuizRecord[]> => {
   return fetchUserSavedQuizzes(userId);
+};
+
+/**
+ * Fetch all quizzes/assessments completed by all scholars
+ */
+export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQuizEntry[]> => {
+  const allResults: AdminUserQuizEntry[] = [];
+  try {
+    // First attempt collectionGroup
+    try {
+      const q = query(collectionGroup(db, 'quizHistory'), orderBy('timestamp', 'desc'), limit(150));
+      const snap = await getDocs(q);
+      snap.forEach(docSnap => {
+        const data = docSnap.data() as QuizResultRecord;
+        const parentUserId = docSnap.ref.parent.parent?.id || (data as any).userId || 'anonymous';
+        allResults.push({
+          ...data,
+          id: data.id || docSnap.id,
+          userId: parentUserId,
+          subject: data.subject || data.config?.subject || 'Assessment',
+          class: data.class || data.config?.class || 'NCERT',
+          topics: data.topics || data.config?.topics || [],
+          strength: data.strength || data.config?.strength || 'Medium',
+          userDisplayName: (data as any).userName || (data as any).userDisplayName || undefined,
+          userEmail: (data as any).userEmail || undefined,
+          userPhoto: (data as any).userPhoto || undefined
+        });
+      });
+      if (allResults.length > 0) {
+        return allResults;
+      }
+    } catch (cgErr) {
+      console.warn('CollectionGroup quizHistory query notice, falling back to per-user fetch:', cgErr);
+    }
+
+    // Fallback: Fetch per user
+    const usersCol = collection(db, 'users');
+    const usersSnap = await getDocs(usersCol);
+    const promises = usersSnap.docs.map(async (userDoc) => {
+      const userData = userDoc.data();
+      const userId = userDoc.id;
+      const historyCol = collection(db, 'users', userId, 'quizHistory');
+      const hSnap = await getDocs(query(historyCol, orderBy('timestamp', 'desc'), limit(10)));
+      hSnap.forEach(hDoc => {
+        const d = hDoc.data() as QuizResultRecord;
+        allResults.push({
+          ...d,
+          id: d.id || hDoc.id,
+          userId,
+          subject: d.subject || d.config?.subject || 'Assessment',
+          class: d.class || d.config?.class || 'NCERT',
+          topics: d.topics || d.config?.topics || [],
+          strength: d.strength || d.config?.strength || 'Medium',
+          userDisplayName: userData.displayName || d.userName || undefined,
+          userEmail: userData.email || undefined,
+          userPhoto: userData.photoURL || undefined
+        });
+      });
+    });
+
+    await Promise.all(promises);
+    return allResults.sort((a, b) => {
+      const tA = a.timestamp || new Date(a.date).getTime();
+      const tB = b.timestamp || new Date(b.date).getTime();
+      return tB - tA;
+    });
+  } catch (error) {
+    console.error('Error fetching all quizzes across users for admin:', error);
+    return allResults;
+  }
+};
+
+/**
+ * Delete a user's quiz attempt as Admin
+ */
+export const adminDeleteUserQuizAttempt = async (userId: string, resultId: string): Promise<void> => {
+  try {
+    const ref = doc(db, 'users', userId, 'quizHistory', resultId);
+    await deleteDoc(ref);
+  } catch (error) {
+    console.error('Admin delete user quiz attempt error:', error);
+    throw error;
+  }
 };
 
 /**

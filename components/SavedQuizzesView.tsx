@@ -243,12 +243,12 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
                   Cloud Quiz Vault
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  50 Limit
+                  10 Limit
                 </span>
               </div>
             </div>
             <p className="text-xs sm:text-sm text-slate-400 max-w-2xl leading-relaxed">
-              Store up to 50 custom and pre-saved NCERT assessments securely on Google Cloud Firestore. Retake them anytime, manage pre-saved templates, and share challenge links.
+              Store your latest 10 custom and pre-saved NCERT assessments securely in the Cloud Vault. Retake them anytime, manage templates, and share challenge links.
             </p>
           </div>
 
@@ -300,7 +300,7 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
           {usedSlots >= MAX_CLOUD_QUIZZES_LIMIT && (
             <div className="text-[11px] text-rose-400 font-medium flex items-center gap-1.5 pt-1">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>Vault is full (50/50). Delete some quizzes below to save fresh assessments.</span>
+              <span>Vault is full (10/10). Delete some quizzes below to save fresh assessments.</span>
             </div>
           )}
         </div>
@@ -347,7 +347,7 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
             }`}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>My Cloud Vault ({cloudQuizzes.length}/50)</span>
+            <span>My Cloud Vault ({cloudQuizzes.length}/10)</span>
           </button>
 
           <button
@@ -404,7 +404,7 @@ export const SavedQuizzesView: React.FC<SavedQuizzesViewProps> = ({
       {isLoading ? (
         <div className="py-16 text-center space-y-3">
           <div className="w-8 h-8 border-3 border-purple-500/30 border-t-purple-400 rounded-full animate-spin mx-auto" />
-          <p className="text-xs text-slate-400 font-mono">Accessing Cloud Firestore Storage Vault...</p>
+          <p className="text-xs text-slate-400 font-mono">Accessing Cloud Storage Vault...</p>
         </div>
       ) : displayList.length === 0 ? (
         <div className="p-12 text-center bg-slate-900/40 rounded-3xl border border-slate-800/80 space-y-3">

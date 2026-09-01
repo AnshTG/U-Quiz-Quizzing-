@@ -172,7 +172,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
             <Cloud className="w-4 h-4 text-emerald-400" />
             <span>Saved to Cloud for {user.displayName || user.email}</span>
           </div>
-          <span className="text-[10px] text-emerald-300/80 uppercase tracking-wider">Firestore Synchronized</span>
+          <span className="text-[10px] text-emerald-300/80 uppercase tracking-wider">Cloud Synchronized</span>
         </div>
       ) : (
         <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 text-xs">

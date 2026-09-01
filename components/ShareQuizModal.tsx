@@ -134,7 +134,7 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
           <div className="py-12 text-center space-y-3">
             <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
             <p className="text-sm font-medium text-slate-300">Generating secure cloud challenge link...</p>
-            <p className="text-xs text-slate-500">Syncing questions with Firebase database</p>
+            <p className="text-xs text-slate-500">Syncing questions with cloud database</p>
           </div>
         ) : error ? (
           <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs space-y-2">

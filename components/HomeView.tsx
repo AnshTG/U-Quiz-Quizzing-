@@ -128,7 +128,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     },
     {
       q: 'How does mathematical and scientific formula rendering work?',
-      a: 'The assessment engine formats all mathematical notations, fractions, equations, powers, and scientific symbols with KaTeX typography, rendering clean math notation on any screen size.'
+      a: 'The assessment engine formats all mathematical notations, fractions, equations, powers, and scientific symbols with clean typographic precision, rendering formulas smoothly on any screen size.'
     },
     {
       q: 'Can I choose specific chapters or combine multiple topics?',
@@ -180,7 +180,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </h1>
 
           <p className="text-slate-300 text-base sm:text-lg leading-relaxed">
-            Generate customized, topic-specific assessments with detailed NCERT-grounded explanations, KaTeX mathematical typesetting, and the latest NCF-SE textbook series.
+            Generate customized, topic-specific assessments with detailed NCERT-grounded explanations, high-precision mathematical typesetting, and the latest NCF-SE textbook series.
           </p>
 
           <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -467,9 +467,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
             <Layers className="w-5 h-5" />
           </div>
-          <h3 className="text-lg font-bold font-display text-white">KaTeX Mathematical Precision</h3>
+          <h3 className="text-lg font-bold font-display text-white">Mathematical & Scientific Precision</h3>
           <p className="text-sm text-slate-400 leading-relaxed">
-            Equations, chemical reactions, radicals, and geometric notations are typeset natively with high-fidelity KaTeX engine support.
+            Equations, chemical reactions, radicals, and geometric notations are typeset natively with high-fidelity formula engine support.
           </p>
         </div>
 

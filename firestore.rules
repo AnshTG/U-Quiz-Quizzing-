@@ -14,20 +14,28 @@ service cloud.firestore {
     // User profiles & stats (public read for leaderboard & profile display)
     match /users/{userId} {
       allow read: if true;
-      allow create, update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow create, update: if true;
+      allow delete: if true;
 
       // User quiz history subcollection
       match /quizHistory/{historyId} {
         allow read: if true;
-        allow write, delete: if isAuthenticated();
+        allow write, delete: if true;
       }
 
-      // User saved quizzes bank (Cloud Vault limit of 50 quizzes)
+      // User saved quizzes bank (Cloud Vault limit of 10 quizzes)
       match /savedQuizzes/{savedQuizId} {
-        allow read: if isAuthenticated();
-        allow write, delete: if isAuthenticated();
+        allow read: if true;
+        allow write, delete: if true;
       }
+    }
+
+    // Collection group matches for Admin queries
+    match /{path=**}/quizHistory/{historyId} {
+      allow read, write, delete: if true;
+    }
+    match /{path=**}/savedQuizzes/{savedQuizId} {
+      allow read, write, delete: if true;
     }
 
     // Public shared quizzes
@@ -35,24 +43,18 @@ service cloud.firestore {
       // Anyone can read a shared quiz to play it
       allow read: if true;
       
-      // Anyone authenticated can create a shared quiz
-      allow create: if isAuthenticated()
-                    && request.resource.data.id == quizId
-                    && request.resource.data.title is string
-                    && request.resource.data.questions is list
-                    && request.resource.data.config is map;
+      // Anyone can create or update a shared quiz
+      allow create, update: if true;
       
-      // Allow updating plays count or creator editing
-      allow update: if true;
       // Allow deletion by creator or admin
-      allow delete: if isAuthenticated();
+      allow delete: if true;
     }
 
-    // Attendance records (public read for admin dashboard & leaderboard, create/update if authenticated)
+    // Attendance records (public read for admin dashboard & leaderboard)
     match /attendance/{recordId} {
       allow read: if true;
-      allow create, update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow create, update: if true;
+      allow delete: if true;
     }
 
     // Public community chat messages
@@ -60,21 +62,14 @@ service cloud.firestore {
       // Anyone can read public study messages in real time
       allow read: if true;
       
-      // Authenticated users can send messages with their own uid
-      allow create: if isAuthenticated() 
-                    && request.resource.data.userId == request.auth.uid
-                    && request.resource.data.message is string
-                    && request.resource.data.message.size() > 0
-                    && request.resource.data.message.size() <= 1000;
-
-      // Authors or admins can delete/edit messages
-      allow update, delete: if isAuthenticated();
+      // Allow create, update, delete for messages
+      allow create, update, delete: if true;
     }
 
     // System configuration (Maintenance mode, announcements, etc.)
     match /system/{configId} {
       allow read: if true;
-      allow write: if true;
+      allow write, delete: if true;
     }
   }
 }

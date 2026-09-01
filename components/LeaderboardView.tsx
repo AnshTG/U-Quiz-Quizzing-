@@ -144,7 +144,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               </span>
             </h1>
             <p className="text-slate-400 text-xs sm:text-sm max-w-xl leading-relaxed">
-              Real-time rankings aggregated from Firestore quiz submissions across Classes 1 to 12. Complete quizzes to score points, boost accuracy, and claim your place at the top.
+              Real-time rankings aggregated from quiz submissions across Classes 1 to 12. Complete quizzes to score points, boost accuracy, and claim your place at the top.
             </p>
           </div>
 
@@ -153,7 +153,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
               onClick={() => { loadLeaderboard(); }}
               disabled={isRefreshing}
               className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer disabled:opacity-60"
-              title="Refresh Leaderboard from Firestore"
+              title="Refresh Leaderboard"
             >
               <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
               <span>{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
@@ -227,7 +227,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <Trophy className="w-6 h-6" />
           </div>
           <p className="text-sm font-semibold text-slate-200">Aggregating real-time leaderboard rankings...</p>
-          <p className="text-xs text-slate-500">Querying Firestore quiz submissions across Class 1-12 batches.</p>
+          <p className="text-xs text-slate-500">Querying live quiz submissions across Class 1-12 batches.</p>
         </div>
       ) : data.topUsers.length === 0 ? (
         <div className="p-12 rounded-3xl bg-slate-900/60 border border-slate-800 text-center space-y-5">

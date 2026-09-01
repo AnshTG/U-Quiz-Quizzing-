@@ -515,7 +515,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                         </div>
                       )}
 
-                      {/* Content with Markdown and KaTeX */}
+                      {/* Content with Markdown and Math rendering */}
                       <div className="text-sm leading-relaxed">
                         <MathText content={msg.content} />
                       </div>

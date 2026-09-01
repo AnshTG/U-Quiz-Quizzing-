@@ -68,7 +68,7 @@ export const SharedPreviewView: React.FC<SharedPreviewViewProps> = ({
           <Sparkles className="w-7 h-7" />
         </div>
         <h2 className="text-2xl font-bold font-display text-white">Loading Shared Assessment...</h2>
-        <p className="text-xs text-slate-400">Retrieving challenge questions and curriculum parameters from Firebase</p>
+        <p className="text-xs text-slate-400">Retrieving challenge questions and curriculum parameters from the cloud</p>
       </div>
     );
   }

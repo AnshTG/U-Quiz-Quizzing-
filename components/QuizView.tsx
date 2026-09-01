@@ -246,7 +246,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
           </button>
         </div>
 
-        {/* Question Text with KaTeX */}
+        {/* Question Text with Math rendering */}
         <div className="text-lg sm:text-xl md:text-2xl font-medium text-white leading-relaxed">
           <MathText content={currentQ.question} />
         </div>
@@ -277,7 +277,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
                   {letter}
                 </div>
 
-                {/* Option Text with KaTeX */}
+                {/* Option Text with Math rendering */}
                 <div className="flex-1 text-sm sm:text-base font-normal">
                   <MathText content={option} />
                 </div>

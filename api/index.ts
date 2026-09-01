@@ -40,7 +40,7 @@ function getAIClient(): GoogleGenAI {
       apiKey,
       httpOptions: {
         headers: {
-          'User-Agent': 'aistudio-build-vercel',
+          'User-Agent': 'uquiz-app-vercel',
         },
       },
     });

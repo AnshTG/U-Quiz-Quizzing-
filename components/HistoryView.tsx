@@ -64,23 +64,26 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     }
   }, [user]);
 
-  // Combine and deduplicate records
+  // Combine and deduplicate records (limit to 10 most recent)
   const displayRecords = React.useMemo(() => {
-    if (tab === 'local') return history;
-    if (tab === 'cloud') return cloudHistory;
+    let list: QuizResultRecord[] = [];
+    if (tab === 'local') list = history;
+    else if (tab === 'cloud') list = cloudHistory;
+    else {
+      // Merge both
+      const map = new Map<string, QuizResultRecord>();
+      cloudHistory.forEach(item => map.set(item.id, item));
+      history.forEach(item => {
+        if (!map.has(item.id)) map.set(item.id, item);
+      });
+      list = Array.from(map.values());
+    }
 
-    // Merge both
-    const map = new Map<string, QuizResultRecord>();
-    cloudHistory.forEach(item => map.set(item.id, item));
-    history.forEach(item => {
-      if (!map.has(item.id)) map.set(item.id, item);
-    });
-
-    return Array.from(map.values()).sort((a, b) => {
+    return list.sort((a, b) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
       return dateB - dateA;
-    });
+    }).slice(0, 10);
   }, [tab, history, cloudHistory]);
 
   const totalQuizzes = displayRecords.length;
@@ -133,7 +136,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
           {user ? (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
               <Cloud className="w-3.5 h-3.5" />
-              <span>Synced with Firebase</span>
+              <span>Synced with Cloud</span>
             </div>
           ) : (
             <button
@@ -187,7 +190,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             }`}
           >
             <Cloud className="w-3.5 h-3.5" />
-            <span>Firebase Cloud ({cloudHistory.length})</span>
+            <span>Cloud Records ({Math.min(10, cloudHistory.length)})</span>
           </button>
           <button
             onClick={() => setTab('local')}
@@ -230,7 +233,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
         {loadingCloud ? (
           <div className="text-center py-12 text-slate-400 flex items-center justify-center gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
-            <span className="text-xs">Fetching cloud records from Firebase...</span>
+            <span className="text-xs">Fetching cloud records...</span>
           </div>
         ) : displayRecords.length === 0 ? (
           <div className="text-center py-16 rounded-3xl border border-slate-800 bg-slate-900/30 p-8 space-y-4">

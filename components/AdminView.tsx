@@ -7,13 +7,16 @@ import {
   AttendanceRecord,
   AppState,
   MaintenanceConfig,
-  ChatMessage
+  ChatMessage,
+  AdminUserQuizEntry
 } from '../types';
 import { 
   fetchAllUsersForAdmin, 
   fetchUserHistoryForAdmin, 
   fetchUserSavedQuizzesForAdmin,
   fetchAllSharedQuizzesForAdmin,
+  fetchAllQuizzesAcrossUsersForAdmin,
+  adminDeleteUserQuizAttempt,
   deleteSharedQuizByAdmin,
   subscribeToAllUsersForAdmin,
   subscribeToSharedQuizzesForAdmin,
@@ -37,6 +40,7 @@ import {
   getISTDateString,
   getISTTimeString
 } from '../services/firebase';
+import { MathText } from './MathText';
 import { 
   Users, 
   TrendingUp, 
@@ -83,9 +87,15 @@ interface AdminViewProps {
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
-  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'shared' | 'chat' | 'godmode'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'quizzes' | 'shared' | 'chat' | 'godmode'>('attendance');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [sharedQuizzes, setSharedQuizzes] = useState<SharedQuiz[]>([]);
+  const [allQuizzes, setAllQuizzes] = useState<AdminUserQuizEntry[]>([]);
+  const [isLoadingAllQuizzes, setIsLoadingAllQuizzes] = useState<boolean>(false);
+  const [quizViewMode, setQuizViewMode] = useState<'all' | 'by_user'>('all');
+  const [quizSortBy, setQuizSortBy] = useState<'date' | 'score' | 'subject' | 'user'>('date');
+  const [quizSubjectFilter, setQuizSubjectFilter] = useState<string>('all');
+  const [quizClassFilter, setQuizClassFilter] = useState<string>('all');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -134,6 +144,18 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
+  const loadAllQuizzes = async () => {
+    setIsLoadingAllQuizzes(true);
+    try {
+      const records = await fetchAllQuizzesAcrossUsersForAdmin();
+      setAllQuizzes(records);
+    } catch (err) {
+      console.error('Failed to load all quizzes:', err);
+    } finally {
+      setIsLoadingAllQuizzes(false);
+    }
+  };
+
   // Real-time subscriptions
   useEffect(() => {
     setIsLoading(true);
@@ -160,6 +182,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       if (config.message && !customMaintenanceMsg) setCustomMaintenanceMsg(config.message);
       if (config.estimatedDuration && !estimatedDuration) setEstimatedDuration(config.estimatedDuration);
     });
+
+    loadAllQuizzes();
 
     return () => {
       unsubUsers();
@@ -229,6 +253,91 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       cm.subjectTag?.toLowerCase().includes(q)
     );
   }, [chatMessages, searchQuery]);
+
+  // Filtered & Sorted Quizzes Across All Users
+  const filteredAndSortedQuizzes = useMemo(() => {
+    let list = [...allQuizzes];
+    if (quizSubjectFilter !== 'all') {
+      list = list.filter(q => q.subject?.toLowerCase() === quizSubjectFilter.toLowerCase());
+    }
+    if (quizClassFilter !== 'all') {
+      list = list.filter(q => q.class?.toLowerCase() === quizClassFilter.toLowerCase());
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(item => 
+        item.subject?.toLowerCase().includes(q) ||
+        item.class?.toLowerCase().includes(q) ||
+        item.topics?.some(t => t.toLowerCase().includes(q)) ||
+        item.userDisplayName?.toLowerCase().includes(q) ||
+        item.userEmail?.toLowerCase().includes(q) ||
+        item.userId?.toLowerCase().includes(q)
+      );
+    }
+
+    list.sort((a, b) => {
+      if (quizSortBy === 'score') {
+        const pctA = a.total > 0 ? (a.score / a.total) : 0;
+        const pctB = b.total > 0 ? (b.score / b.total) : 0;
+        return pctB - pctA;
+      }
+      if (quizSortBy === 'subject') {
+        return (a.subject || '').localeCompare(b.subject || '');
+      }
+      if (quizSortBy === 'user') {
+        return (a.userDisplayName || a.userId || '').localeCompare(b.userDisplayName || b.userId || '');
+      }
+      // date (newest first)
+      const tA = a.timestamp || new Date(a.date).getTime() || 0;
+      const tB = b.timestamp || new Date(b.date).getTime() || 0;
+      return tB - tA;
+    });
+
+    return list;
+  }, [allQuizzes, quizSubjectFilter, quizClassFilter, searchQuery, quizSortBy]);
+
+  // Quizzes Grouped by Scholar
+  const quizzesGroupedByUser = useMemo(() => {
+    const map = new Map<string, {
+      userId: string;
+      displayName: string;
+      email?: string;
+      photo?: string;
+      quizzes: AdminUserQuizEntry[];
+      totalScore: number;
+      totalQuestions: number;
+      avgAccuracy: number;
+    }>();
+
+    filteredAndSortedQuizzes.forEach(quiz => {
+      const uid = quiz.userId || 'anonymous';
+      if (!map.has(uid)) {
+        const matchedUser = users.find(u => u.uid === uid);
+        map.set(uid, {
+          userId: uid,
+          displayName: quiz.userDisplayName || matchedUser?.displayName || `Scholar ${uid.substring(0, 5)}`,
+          email: quiz.userEmail || matchedUser?.email || undefined,
+          photo: quiz.userPhoto || matchedUser?.photoURL || undefined,
+          quizzes: [],
+          totalScore: 0,
+          totalQuestions: 0,
+          avgAccuracy: 0
+        });
+      }
+      const group = map.get(uid)!;
+      group.quizzes.push(quiz);
+      group.totalScore += quiz.score || 0;
+      group.totalQuestions += quiz.total || 0;
+    });
+
+    const result = Array.from(map.values()).map(g => ({
+      ...g,
+      avgAccuracy: g.totalQuestions > 0 ? Math.round((g.totalScore / g.totalQuestions) * 100) : 0
+    }));
+
+    result.sort((a, b) => b.quizzes.length - a.quizzes.length);
+    return result;
+  }, [filteredAndSortedQuizzes, users]);
 
   // Handle Maintenance Toggle
   const handleToggleMaintenance = async (targetActive: boolean) => {
@@ -387,11 +496,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
   // Delete Individual Shared Quiz
   const handleDeleteSharedQuiz = async (quizId: string) => {
     if (!window.confirm(`Delete shared challenge quiz #${quizId}?`)) return;
+    setActionLoading(`delete_shared_${quizId}`);
     try {
       await deleteSharedQuizByAdmin(quizId);
+      setSharedQuizzes(prev => prev.filter(q => q.id !== quizId));
       showToast(`Shared quiz #${quizId} deleted.`);
     } catch (err) {
+      console.error('Delete shared quiz error:', err);
       alert('Failed to delete shared quiz.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -407,6 +521,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     setActionLoading('delete_all_shared');
     try {
       const count = await adminDeleteAllSharedQuizzes();
+      setSharedQuizzes([]);
       showToast(`Purged ${count} shared challenge quizzes.`);
     } catch (err) {
       alert('Failed to delete all shared quizzes.');
@@ -415,14 +530,41 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     }
   };
 
+  // Delete Individual Quiz Attempt in Quizzes view
+  const handleDeleteQuizAttempt = async (quiz: AdminUserQuizEntry) => {
+    if (!quiz.userId) {
+      alert('Cannot delete: Missing user ID for this quiz attempt.');
+      return;
+    }
+    if (!window.confirm(`Delete ${quiz.subject} quiz result (${quiz.score}/${quiz.total}) for ${quiz.userDisplayName || quiz.userId}?`)) {
+      return;
+    }
+    setActionLoading(`delete_quiz_${quiz.id}`);
+    try {
+      await adminDeleteUserQuizAttempt(quiz.userId, quiz.id);
+      setAllQuizzes(prev => prev.filter(q => q.id !== quiz.id));
+      setSelectedUserHistory(prev => prev.filter(q => q.id !== quiz.id));
+      showToast('Quiz assessment record deleted.');
+    } catch (err) {
+      console.error('Delete quiz attempt error:', err);
+      alert('Failed to delete quiz attempt.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Delete Individual Chat Message
   const handleDeleteChatMessage = async (msgId: string) => {
     if (!window.confirm('Delete this chat message?')) return;
+    setActionLoading(`delete_msg_${msgId}`);
     try {
       await deletePublicChatMessage(msgId);
+      setChatMessages(prev => prev.filter(m => m.id !== msgId));
       showToast('Chat message deleted.');
     } catch (e) {
       alert('Failed to delete message.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -653,6 +795,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
             <span>Scholars & Accounts</span>
             <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
               {users.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('quizzes');
+              loadAllQuizzes();
+            }}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'quizzes'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>All Assessments</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {allQuizzes.length}
             </span>
           </button>
 
@@ -1020,6 +1180,360 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
             )}
           </div>
 
+        </div>
+      )}
+
+      {/* ===================== TAB: ALL ASSESSMENTS & QUIZZES ===================== */}
+      {activeTab === 'quizzes' && (
+        <div className="space-y-4">
+          {/* Header & Controls Bar */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-white">All Assessments & Quizzes</h3>
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-mono font-bold">
+                    {filteredAndSortedQuizzes.length} Quizzes Found
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Complete repository of quizzes created and attempted by scholars across all classes
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={loadAllQuizzes}
+                  disabled={isLoadingAllQuizzes}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                  title="Reload all assessments"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAllQuizzes ? 'animate-spin text-cyan-400' : ''}`} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {/* View Mode & Filter Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
+              {/* View Mode Switcher */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  onClick={() => setQuizViewMode('all')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    quizViewMode === 'all'
+                      ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Chronological List ({allQuizzes.length})
+                </button>
+                <button
+                  onClick={() => setQuizViewMode('by_user')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    quizViewMode === 'by_user'
+                      ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Group by Scholar ({quizzesGroupedByUser.length})
+                </button>
+              </div>
+
+              {/* Filters & Sorting */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Sort Dropdown */}
+                <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+                  <span className="text-slate-500">Sort:</span>
+                  <select
+                    value={quizSortBy}
+                    onChange={(e) => setQuizSortBy(e.target.value as any)}
+                    className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
+                  >
+                    <option value="date" className="bg-slate-900 text-white">Date (Newest)</option>
+                    <option value="score" className="bg-slate-900 text-white">Score (Highest %)</option>
+                    <option value="subject" className="bg-slate-900 text-white">Subject (A-Z)</option>
+                    <option value="user" className="bg-slate-900 text-white">Scholar Name</option>
+                  </select>
+                </div>
+
+                {/* Class Filter */}
+                <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+                  <span className="text-slate-500">Class:</span>
+                  <select
+                    value={quizClassFilter}
+                    onChange={(e) => setQuizClassFilter(e.target.value)}
+                    className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
+                  >
+                    <option value="all" className="bg-slate-900 text-white">All Classes</option>
+                    <option value="Class 6" className="bg-slate-900 text-white">Class 6</option>
+                    <option value="Class 7" className="bg-slate-900 text-white">Class 7</option>
+                    <option value="Class 8" className="bg-slate-900 text-white">Class 8</option>
+                    <option value="Class 9" className="bg-slate-900 text-white">Class 9</option>
+                    <option value="Class 10" className="bg-slate-900 text-white">Class 10</option>
+                  </select>
+                </div>
+
+                {/* Subject Filter */}
+                <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800 text-xs">
+                  <span className="text-slate-500">Subject:</span>
+                  <select
+                    value={quizSubjectFilter}
+                    onChange={(e) => setQuizSubjectFilter(e.target.value)}
+                    className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
+                  >
+                    <option value="all" className="bg-slate-900 text-white">All Subjects</option>
+                    <option value="Science" className="bg-slate-900 text-white">Science</option>
+                    <option value="Mathematics" className="bg-slate-900 text-white">Mathematics</option>
+                    <option value="Social Science" className="bg-slate-900 text-white">Social Science</option>
+                    <option value="Physics" className="bg-slate-900 text-white">Physics</option>
+                    <option value="Chemistry" className="bg-slate-900 text-white">Chemistry</option>
+                    <option value="Biology" className="bg-slate-900 text-white">Biology</option>
+                    <option value="History" className="bg-slate-900 text-white">History</option>
+                    <option value="Geography" className="bg-slate-900 text-white">Geography</option>
+                    <option value="Civics" className="bg-slate-900 text-white">Civics</option>
+                    <option value="Economics" className="bg-slate-900 text-white">Economics</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Loading State */}
+          {isLoadingAllQuizzes && (
+            <div className="p-12 text-center text-slate-400 space-y-3">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto text-cyan-400" />
+              <p className="text-sm">Fetching quizzes and assessments from database...</p>
+            </div>
+          )}
+
+          {/* No Quizzes Match */}
+          {!isLoadingAllQuizzes && filteredAndSortedQuizzes.length === 0 && (
+            <div className="p-12 rounded-3xl bg-slate-900/60 border border-slate-800 text-center space-y-3">
+              <BookOpen className="w-10 h-10 text-slate-600 mx-auto" />
+              <h4 className="text-base font-bold text-white">No Quizzes Found</h4>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                No quiz assessments match the selected search query or filters.
+              </p>
+            </div>
+          )}
+
+          {/* FLAT LIST VIEW */}
+          {!isLoadingAllQuizzes && quizViewMode === 'all' && filteredAndSortedQuizzes.length > 0 && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900/90 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                      <th className="p-3.5 font-bold">Scholar</th>
+                      <th className="p-3.5 font-bold">Curriculum</th>
+                      <th className="p-3.5 font-bold">Topics / Description</th>
+                      <th className="p-3.5 font-bold">Score & Accuracy</th>
+                      <th className="p-3.5 font-bold">Date & Time</th>
+                      <th className="p-3.5 font-bold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-xs">
+                    {filteredAndSortedQuizzes.map((quiz) => {
+                      const pct = quiz.total > 0 ? Math.round((quiz.score / quiz.total) * 100) : 0;
+                      return (
+                        <tr key={quiz.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-2.5">
+                              {quiz.userPhoto ? (
+                                <img
+                                  src={quiz.userPhoto}
+                                  alt=""
+                                  className="w-7 h-7 rounded-full object-cover border border-slate-700"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-bold flex items-center justify-center text-[10px]">
+                                  {(quiz.userDisplayName || 'S').charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="font-bold text-white truncate">
+                                  {quiz.userDisplayName || 'Scholar'}
+                                </div>
+                                <div className="text-[10px] text-slate-400 truncate">
+                                  {quiz.userEmail || quiz.userId || 'Guest'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="p-3.5">
+                            <div className="font-bold text-slate-200">{quiz.subject}</div>
+                            <span className="inline-block px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-cyan-400 mt-0.5">
+                              {quiz.class || 'NCERT'}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 max-w-xs">
+                            <div className="text-slate-300 truncate">
+                              {quiz.topics && quiz.topics.length > 0
+                                ? quiz.topics.join(', ')
+                                : `${quiz.subject} Assessment`}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {quiz.total} Questions • {quiz.strength || 'Standard'}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-xs font-mono font-bold ${
+                                  pct >= 80
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : pct >= 50
+                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {quiz.score} / {quiz.total} ({pct}%)
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="p-3.5 font-mono text-[11px] text-slate-400">
+                            <div>{quiz.date}</div>
+                            <div className="text-[10px] text-slate-500">{quiz.timeIST || ''}</div>
+                          </td>
+
+                          <td className="p-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {quiz.questions && quiz.questions.length > 0 && (
+                                <button
+                                  onClick={() => setInspectingQuizRecord(quiz)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold transition-colors cursor-pointer"
+                                  title="Inspect questions and rationale"
+                                >
+                                  Inspect
+                                </button>
+                              )}
+
+                              <button
+                                onClick={() => handleDeleteQuizAttempt(quiz)}
+                                disabled={actionLoading === `delete_quiz_${quiz.id}`}
+                                className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer disabled:opacity-40"
+                                title="Delete this quiz attempt"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* GROUPED BY SCHOLAR VIEW */}
+          {!isLoadingAllQuizzes && quizViewMode === 'by_user' && quizzesGroupedByUser.length > 0 && (
+            <div className="space-y-4">
+              {quizzesGroupedByUser.map((group) => (
+                <div key={group.userId} className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 shadow-lg">
+                  {/* Scholar Summary Header */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+                    <div className="flex items-center gap-3">
+                      {group.photo ? (
+                        <img
+                          src={group.photo}
+                          alt=""
+                          className="w-10 h-10 rounded-full object-cover border border-slate-700"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-bold flex items-center justify-center text-sm">
+                          {group.displayName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <h4 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                          {group.displayName}
+                          <span className="px-2 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400 font-normal">
+                            {group.userId}
+                          </span>
+                        </h4>
+                        <div className="text-xs text-slate-400">{group.email || 'No email provided'}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="text-xs font-mono font-bold text-cyan-400">
+                          {group.quizzes.length} Quizzes Taken
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          Avg: {group.avgAccuracy}% ({group.totalScore}/{group.totalQuestions} Qs)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Scholar's Quizzes Sub-Table */}
+                  <div className="space-y-2 pt-1">
+                    {group.quizzes.map((quiz) => {
+                      const pct = quiz.total > 0 ? Math.round((quiz.score / quiz.total) * 100) : 0;
+                      return (
+                        <div
+                          key={quiz.id}
+                          className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-slate-950 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-white">{quiz.subject}</span>
+                              <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-cyan-400">
+                                {quiz.class}
+                              </span>
+                              <span
+                                className={`px-2 py-0.2 rounded text-[11px] font-mono font-bold ${
+                                  pct >= 80
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : pct >= 50
+                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {quiz.score}/{quiz.total} ({pct}%)
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-1 truncate">
+                              {quiz.topics && quiz.topics.length > 0 ? quiz.topics.join(', ') : 'Standard Assessment'} • {quiz.date} {quiz.timeIST || ''}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                            {quiz.questions && quiz.questions.length > 0 && (
+                              <button
+                                onClick={() => setInspectingQuizRecord(quiz)}
+                                className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-semibold transition-colors cursor-pointer"
+                              >
+                                Inspect Questions
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteQuizAttempt(quiz)}
+                              disabled={actionLoading === `delete_quiz_${quiz.id}`}
+                              className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                              title="Delete Quiz"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1449,6 +1963,126 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                 className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
               >
                 Close Inspector
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ===================== QUIZ ATTEMPT QUESTION INSPECTION MODAL ===================== */}
+      {inspectingQuizRecord && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-base text-white">Quiz Question Breakdown</h3>
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-mono font-bold">
+                    {inspectingQuizRecord.subject} ({inspectingQuizRecord.class})
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Score: <span className="text-emerald-400 font-bold font-mono">{inspectingQuizRecord.score}/{inspectingQuizRecord.total}</span> • Completed on {inspectingQuizRecord.date} {inspectingQuizRecord.timeIST || ''}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setInspectingQuizRecord(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Questions List */}
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+              {inspectingQuizRecord.questions && inspectingQuizRecord.questions.length > 0 ? (
+                inspectingQuizRecord.questions.map((q, idx) => {
+                  const userAnswer = inspectingQuizRecord.userAnswers?.[idx];
+                  const isCorrect = String(userAnswer).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase() ||
+                    (typeof userAnswer === 'number' && q.options[userAnswer] === q.correctAnswer);
+                  return (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-2.5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-bold text-xs text-cyan-400 font-mono">Q{idx + 1}.</span>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                            isCorrect
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : userAnswer !== undefined && userAnswer !== null
+                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {isCorrect ? 'Correct' : userAnswer !== undefined && userAnswer !== null ? 'Incorrect' : 'Skipped'}
+                        </span>
+                      </div>
+
+                      <div className="text-sm font-semibold text-white">
+                        <MathText content={q.question} />
+                      </div>
+
+                      {/* Options Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {q.options.map((opt, optIdx) => {
+                          const isOptionCorrect = opt === q.correctAnswer || String(optIdx) === String(q.correctAnswer) || String.fromCharCode(65 + optIdx).toLowerCase() === String(q.correctAnswer).toLowerCase();
+                          const isOptionSelected = opt === userAnswer || String(optIdx) === String(userAnswer) || String.fromCharCode(65 + optIdx).toLowerCase() === String(userAnswer).toLowerCase();
+                          return (
+                            <div
+                              key={optIdx}
+                              className={`p-2.5 rounded-xl text-xs border ${
+                                isOptionCorrect
+                                  ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-300 font-bold'
+                                  : isOptionSelected && !isOptionCorrect
+                                  ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                                  : 'bg-slate-900/60 border-slate-800 text-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[10px] text-slate-500 uppercase">
+                                  {String.fromCharCode(65 + optIdx)}.
+                                </span>
+                                <div>
+                                  <MathText content={opt} />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Explanation */}
+                      {q.explanation && (
+                        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs text-slate-300 space-y-1">
+                          <span className="font-bold text-[10px] uppercase font-mono text-cyan-400">NCERT Solution / Rationale:</span>
+                          <div>
+                            <MathText content={q.explanation} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="p-8 text-center text-xs text-slate-500">
+                  Question breakdown data is not stored for this older attempt.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-2 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setInspectingQuizRecord(null)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+              >
+                Close
               </button>
             </div>
 
