@@ -672,7 +672,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 lg:p-8 space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 lg:p-8 space-y-6 pb-24 md:pb-12">
       
       {/* Toast Notification */}
       {actionSuccessMsg && (

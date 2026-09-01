@@ -469,8 +469,8 @@ export const Navbar: React.FC<NavbarProps> = ({
       </header>
 
       {/* Responsive Mobile Bottom Navigation Bar */}
-      {currentView !== AppState.CHAT && currentView !== AppState.QUIZ && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/80 px-2 py-1.5 shadow-2xl">
+      {currentView !== AppState.CHAT && currentView !== AppState.QUIZ && currentView !== AppState.ADMIN && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/80 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl">
           <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
             <button
               onClick={() => onNavigate(AppState.HOME)}

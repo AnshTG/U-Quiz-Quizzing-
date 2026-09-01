@@ -433,7 +433,7 @@ export default function App() {
           )}
 
           {/* Main View Router */}
-          <main className={view === AppState.CHAT ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "flex-1"}>
+          <main className={view === AppState.CHAT ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "flex-1 pb-28 md:pb-12"}>
             
             {/* Admin View is accessible ONLY when unlocked via fresh PIN */}
             {isViewingAdmin ? (
