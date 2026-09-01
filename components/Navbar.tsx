@@ -21,7 +21,9 @@ import {
   ArrowLeft,
   ChevronRight,
   Home,
-  Flame
+  Flame,
+  Bug,
+  HelpCircle
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -36,6 +38,7 @@ interface NavbarProps {
   onOpenJoinModal: () => void;
   onOpenAdminAuth: () => void;
   onOpenAttendance: () => void;
+  onOpenFeedback: () => void;
   isAdminUnlocked?: boolean;
 }
 
@@ -51,6 +54,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenJoinModal,
   onOpenAdminAuth,
   onOpenAttendance,
+  onOpenFeedback,
   isAdminUnlocked = false
 }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -236,6 +240,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Right Section: Actions & Profile */}
           <div className="flex items-center gap-2 shrink-0">
             
+            {/* Feedback / Bug Report Quick Trigger */}
+            <button
+              onClick={onOpenFeedback}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
+              title="Report Bug or Send Feedback"
+            >
+              <Bug className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden lg:inline">Report</span>
+            </button>
+
             {/* Join Shared Challenge Code Button */}
             <button
               onClick={onOpenJoinModal}
@@ -371,6 +385,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                       >
                         <History className="w-3.5 h-3.5 text-emerald-400" />
                         <span>Quiz History & Analytics</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          onOpenFeedback();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                      >
+                        <Bug className="w-3.5 h-3.5 text-rose-400" />
+                        <span>Report Bug & Feedback</span>
                       </button>
 
                       <button

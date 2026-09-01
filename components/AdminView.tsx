@@ -8,7 +8,11 @@ import {
   AppState,
   MaintenanceConfig,
   ChatMessage,
-  AdminUserQuizEntry
+  AdminUserQuizEntry,
+  UserFeedback,
+  FeedbackCategory,
+  FeedbackSeverity,
+  FeedbackStatus
 } from '../types';
 import { 
   fetchAllUsersForAdmin, 
@@ -39,6 +43,11 @@ import {
   deletePublicChatMessage,
   listenToMaintenanceMode,
   updateMaintenanceMode,
+  listenToAllFeedbacksForAdmin,
+  adminUpdateFeedbackStatus,
+  adminDeleteFeedback,
+  adminDeleteAllFeedbacks,
+  adminPurgeResolvedFeedbacks,
   getISTDateString,
   getISTTimeString
 } from '../services/firebase';
@@ -81,7 +90,10 @@ import {
   ShieldAlert,
   Sliders,
   X,
-  Plus
+  Plus,
+  Bug,
+  HelpCircle,
+  LifeBuoy
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -89,7 +101,7 @@ interface AdminViewProps {
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
-  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'quizzes' | 'shared' | 'chat' | 'godmode'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'quizzes' | 'shared' | 'feedback' | 'chat' | 'godmode'>('attendance');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [sharedQuizzes, setSharedQuizzes] = useState<SharedQuiz[]>([]);
   const [allQuizzes, setAllQuizzes] = useState<AdminUserQuizEntry[]>([]);
@@ -101,6 +113,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  
+  // Feedback & Bug Reports State
+  const [feedbacks, setFeedbacks] = useState<UserFeedback[]>([]);
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<'all' | FeedbackStatus>('all');
+  const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<'all' | FeedbackCategory>('all');
+  const [feedbackSeverityFilter, setFeedbackSeverityFilter] = useState<'all' | FeedbackSeverity>('all');
+  const [selectedFeedbackForDetails, setSelectedFeedbackForDetails] = useState<UserFeedback | null>(null);
+  const [adminReplyText, setAdminReplyText] = useState<string>('');
   
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -197,13 +217,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     });
 
     const unsubQuizzes = subscribeToAllQuizzesForAdmin((records) => {
-      if (records && records.length > 0) {
+      if (records) {
         setAllQuizzes(records);
       }
     });
 
     const unsubChat = listenToPublicChat((msgs) => {
       setChatMessages(msgs);
+    });
+
+    const unsubFeedbacks = listenToAllFeedbacksForAdmin((liveFeedbacks) => {
+      setFeedbacks(liveFeedbacks);
     });
 
     const unsubMaintenance = listenToMaintenanceMode((config) => {
@@ -224,6 +248,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       unsubAttendance();
       unsubQuizzes();
       unsubChat();
+      unsubFeedbacks();
       unsubMaintenance();
     };
   }, []);
@@ -292,17 +317,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
   const filteredAndSortedQuizzes = useMemo(() => {
     let list = [...allQuizzes];
     if (quizSubjectFilter !== 'all') {
-      list = list.filter(q => q.subject?.toLowerCase() === quizSubjectFilter.toLowerCase());
+      list = list.filter(q => (q.subject || q.config?.subject || '').toLowerCase() === quizSubjectFilter.toLowerCase());
     }
     if (quizClassFilter !== 'all') {
-      list = list.filter(q => q.class?.toLowerCase() === quizClassFilter.toLowerCase());
+      list = list.filter(q => (q.class || q.config?.class || '').toLowerCase() === quizClassFilter.toLowerCase());
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(item => 
-        item.subject?.toLowerCase().includes(q) ||
-        item.class?.toLowerCase().includes(q) ||
-        item.topics?.some(t => t.toLowerCase().includes(q)) ||
+        (item.subject || item.config?.subject || '').toLowerCase().includes(q) ||
+        (item.class || item.config?.class || '').toLowerCase().includes(q) ||
+        (item.topics || item.config?.topics || []).some(t => t.toLowerCase().includes(q)) ||
         item.userDisplayName?.toLowerCase().includes(q) ||
         item.userEmail?.toLowerCase().includes(q) ||
         item.userId?.toLowerCase().includes(q)
@@ -372,6 +397,34 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     result.sort((a, b) => b.quizzes.length - a.quizzes.length);
     return result;
   }, [filteredAndSortedQuizzes, users]);
+
+  // Filtered Feedbacks List
+  const filteredFeedbacks = useMemo(() => {
+    return feedbacks.filter((item) => {
+      if (feedbackStatusFilter !== 'all' && item.status !== feedbackStatusFilter) {
+        return false;
+      }
+      if (feedbackCategoryFilter !== 'all' && item.category !== feedbackCategoryFilter) {
+        return false;
+      }
+      if (feedbackSeverityFilter !== 'all' && item.severity !== feedbackSeverityFilter) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesUser = item.userDisplayName?.toLowerCase().includes(q);
+        const matchesEmail = item.userEmail?.toLowerCase().includes(q);
+        const matchesTitle = item.title?.toLowerCase().includes(q);
+        const matchesDesc = item.description?.toLowerCase().includes(q);
+        const matchesSubject = item.relatedSubject?.toLowerCase().includes(q);
+        const matchesClass = item.relatedClass?.toLowerCase().includes(q);
+        if (!matchesUser && !matchesEmail && !matchesTitle && !matchesDesc && !matchesSubject && !matchesClass) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [feedbacks, feedbackStatusFilter, feedbackCategoryFilter, feedbackSeverityFilter, searchQuery]);
 
   // Handle Maintenance Toggle
   const handleToggleMaintenance = async (targetActive: boolean) => {
@@ -617,6 +670,94 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       showToast(`Cleared ${count} public chat messages.`);
     } catch (err) {
       alert('Failed to clear public chat.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Feedback: Update Status & Admin Notes
+  const handleUpdateFeedbackStatus = async (
+    feedbackId: string, 
+    status: FeedbackStatus, 
+    notes?: string
+  ) => {
+    setActionLoading(`fb_status_${feedbackId}`);
+    try {
+      await adminUpdateFeedbackStatus(feedbackId, status, notes);
+      setFeedbacks(prev => prev.map(f => f.id === feedbackId ? {
+        ...f,
+        status,
+        adminNotes: notes !== undefined ? notes : f.adminNotes,
+        resolvedAt: status === 'resolved' ? new Date().toISOString() : f.resolvedAt
+      } : f));
+      if (selectedFeedbackForDetails?.id === feedbackId) {
+        setSelectedFeedbackForDetails(prev => prev ? {
+          ...prev,
+          status,
+          adminNotes: notes !== undefined ? notes : prev.adminNotes,
+          resolvedAt: status === 'resolved' ? new Date().toISOString() : prev.resolvedAt
+        } : null);
+      }
+      showToast(`Ticket status updated to "${status.toUpperCase()}".`);
+    } catch (e) {
+      console.error('Update feedback status error:', e);
+      alert('Failed to update ticket status.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Feedback: Delete Single Report
+  const handleDeleteFeedback = async (feedbackId: string) => {
+    if (!window.confirm('Delete this feedback/bug report ticket?')) return;
+    setActionLoading(`delete_fb_${feedbackId}`);
+    try {
+      await adminDeleteFeedback(feedbackId);
+      setFeedbacks(prev => prev.filter(f => f.id !== feedbackId));
+      if (selectedFeedbackForDetails?.id === feedbackId) {
+        setSelectedFeedbackForDetails(null);
+      }
+      showToast('Feedback ticket removed.');
+    } catch (e) {
+      console.error('Delete feedback error:', e);
+      alert('Failed to delete feedback ticket.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Feedback: Purge Resolved Reports
+  const handlePurgeResolvedFeedbacks = async () => {
+    if (!window.confirm('Are you sure you want to delete all RESOLVED and CLOSED feedback tickets?')) return;
+    setActionLoading('purge_resolved_fb');
+    try {
+      const count = await adminPurgeResolvedFeedbacks();
+      setFeedbacks(prev => prev.filter(f => f.status !== 'resolved' && f.status !== 'closed'));
+      showToast(`Purged ${count} resolved feedback tickets.`);
+    } catch (e) {
+      alert('Failed to purge resolved feedbacks.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Feedback: Delete All Feedbacks
+  const handleDeleteAllFeedbacks = async () => {
+    const confirmation = window.prompt(
+      '⚠️ DANGER: You are about to DELETE ALL FEEDBACK & BUG REPORTS! Type "PURGE ALL FEEDBACK" to confirm:'
+    );
+    if (confirmation !== 'PURGE ALL FEEDBACK') {
+      alert('Action cancelled.');
+      return;
+    }
+    setActionLoading('delete_all_feedbacks');
+    try {
+      const count = await adminDeleteAllFeedbacks();
+      setFeedbacks([]);
+      setSelectedFeedbackForDetails(null);
+      showToast(`Purged all ${count} feedback reports.`);
+    } catch (e) {
+      alert('Failed to delete all feedbacks.');
     } finally {
       setActionLoading(null);
     }
@@ -873,6 +1014,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
             <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
               {sharedQuizzes.length}
             </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('feedback')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'feedback'
+                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Bug className="w-4 h-4 text-rose-400 group-hover:text-white" />
+            <span>Feedback & Bugs</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {feedbacks.length}
+            </span>
+            {feedbacks.filter(f => f.status === 'open').length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+            )}
           </button>
 
           <button
@@ -1629,7 +1788,419 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
         </div>
       )}
 
-      {/* ===================== TAB 4: PUBLIC CHAT ===================== */}
+      {/* ===================== TAB 4: FEEDBACK & BUG REPORTS ===================== */}
+      {activeTab === 'feedback' && (
+        <div className="space-y-4">
+          
+          {/* Header & Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+              <span className="text-xs text-slate-400 font-semibold flex items-center justify-between">
+                <span>Total Reports</span>
+                <Bug className="w-4 h-4 text-rose-400" />
+              </span>
+              <div className="text-2xl font-bold font-mono text-white">
+                {feedbacks.length}
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono">All Submitted Tickets</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-rose-500/30 space-y-1 bg-rose-500/5">
+              <span className="text-xs text-rose-300 font-semibold flex items-center justify-between">
+                <span>Open / Pending</span>
+                <Clock className="w-4 h-4 text-rose-400" />
+              </span>
+              <div className="text-2xl font-bold font-mono text-rose-400">
+                {feedbacks.filter(f => f.status === 'open').length}
+              </div>
+              <span className="text-[10px] text-rose-400/80 font-mono">Requires Triage</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-cyan-500/30 space-y-1 bg-cyan-500/5">
+              <span className="text-xs text-cyan-300 font-semibold flex items-center justify-between">
+                <span>Under Review</span>
+                <RotateCw className="w-4 h-4 text-cyan-400" />
+              </span>
+              <div className="text-2xl font-bold font-mono text-cyan-400">
+                {feedbacks.filter(f => f.status === 'under_review').length}
+              </div>
+              <span className="text-[10px] text-cyan-400/80 font-mono">Being Investigated</span>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30 space-y-1 bg-emerald-500/5">
+              <span className="text-xs text-emerald-300 font-semibold flex items-center justify-between">
+                <span>Resolved & Fixed</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              </span>
+              <div className="text-2xl font-bold font-mono text-emerald-400">
+                {feedbacks.filter(f => f.status === 'resolved').length}
+              </div>
+              <span className="text-[10px] text-emerald-400/80 font-mono">Completed</span>
+            </div>
+          </div>
+
+          {/* Action Bar & Filters */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  <Filter className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Status Filter:</span>
+                </span>
+                
+                {(['all', 'open', 'under_review', 'resolved', 'closed'] as const).map((st) => {
+                  const count = st === 'all' ? feedbacks.length : feedbacks.filter(f => f.status === st).length;
+                  const isSelected = feedbackStatusFilter === st;
+                  const labels: Record<string, string> = {
+                    all: 'All',
+                    open: 'Open',
+                    under_review: 'Under Review',
+                    resolved: 'Resolved',
+                    closed: 'Closed'
+                  };
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => setFeedbackStatusFilter(st)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-rose-500 text-white font-bold shadow-md shadow-rose-500/20'
+                          : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                      }`}
+                    >
+                      <span>{labels[st]}</span>
+                      <span className="px-1.5 py-0.2 rounded-full bg-slate-900/60 text-[10px] font-mono">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePurgeResolvedFeedbacks}
+                  disabled={actionLoading === 'purge_resolved_fb' || feedbacks.filter(f => f.status === 'resolved' || f.status === 'closed').length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all cursor-pointer disabled:opacity-40"
+                  title="Remove resolved & closed tickets"
+                >
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Purge Resolved ({feedbacks.filter(f => f.status === 'resolved' || f.status === 'closed').length})</span>
+                </button>
+
+                <button
+                  onClick={handleDeleteAllFeedbacks}
+                  disabled={actionLoading === 'delete_all_feedbacks' || feedbacks.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Purge All</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Category & Severity Selectors */}
+            <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-800/80">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-400">Category:</span>
+                <select
+                  value={feedbackCategoryFilter}
+                  onChange={(e) => setFeedbackCategoryFilter(e.target.value as any)}
+                  className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-rose-400 cursor-pointer"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="bug">Bug Reports</option>
+                  <option value="content_error">NCERT Content Issues</option>
+                  <option value="feature_request">Feature Requests</option>
+                  <option value="general">General Feedback</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-400">Severity:</span>
+                <select
+                  value={feedbackSeverityFilter}
+                  onChange={(e) => setFeedbackSeverityFilter(e.target.value as any)}
+                  className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-rose-400 cursor-pointer"
+                >
+                  <option value="all">All Severities</option>
+                  <option value="critical">Critical</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+
+              <span className="text-[11px] text-slate-500 font-mono ml-auto">
+                Showing {filteredFeedbacks.length} of {feedbacks.length} report(s)
+              </span>
+            </div>
+          </div>
+
+          {/* Feedback Items List */}
+          {filteredFeedbacks.length === 0 ? (
+            <div className="text-center py-16 bg-slate-900/60 rounded-3xl border border-slate-800 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-500 mx-auto">
+                <Bug className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-white">No Feedback Reports Found</h4>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                {searchQuery || feedbackStatusFilter !== 'all' 
+                  ? 'No tickets match the current filters and search criteria.' 
+                  : 'Scholars have not submitted any bug reports or feedback yet.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredFeedbacks.map((item) => {
+                const categoryBadge: Record<string, { label: string; color: string; icon: any }> = {
+                  bug: { label: 'Bug Report', color: 'bg-rose-500/10 text-rose-400 border-rose-500/30', icon: Bug },
+                  content_error: { label: 'NCERT Content', color: 'bg-amber-500/10 text-amber-400 border-amber-500/30', icon: BookOpen },
+                  feature_request: { label: 'Feature Request', color: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30', icon: Sparkles },
+                  general: { label: 'General Feedback', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30', icon: MessageSquare }
+                };
+
+                const severityBadge: Record<string, { label: string; color: string }> = {
+                  critical: { label: 'CRITICAL', color: 'bg-rose-600 text-white font-black animate-pulse' },
+                  high: { label: 'HIGH', color: 'bg-orange-500/20 text-orange-400 border border-orange-500/40 font-bold' },
+                  medium: { label: 'MEDIUM', color: 'bg-amber-500/20 text-amber-400 border border-amber-500/40' },
+                  low: { label: 'LOW', color: 'bg-slate-800 text-slate-400 border border-slate-700' }
+                };
+
+                const statusBadge: Record<string, { label: string; color: string }> = {
+                  open: { label: 'OPEN', color: 'bg-amber-500/20 text-amber-400 border-amber-500/40' },
+                  under_review: { label: 'UNDER REVIEW', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40' },
+                  resolved: { label: 'RESOLVED', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' },
+                  closed: { label: 'CLOSED', color: 'bg-slate-800 text-slate-400 border-slate-700' }
+                };
+
+                const catInfo = categoryBadge[item.category] || categoryBadge.bug;
+                const CatIcon = catInfo.icon;
+                const sevInfo = severityBadge[item.severity] || severityBadge.medium;
+                const statInfo = statusBadge[item.status] || statusBadge.open;
+                const isSelected = selectedFeedbackForDetails?.id === item.id;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-5 rounded-2xl bg-slate-900/80 border transition-all space-y-4 shadow-lg ${
+                      item.status === 'open' 
+                        ? 'border-slate-700 hover:border-slate-600' 
+                        : item.status === 'resolved'
+                        ? 'border-emerald-500/20 bg-emerald-500/[0.02]'
+                        : 'border-slate-800'
+                    }`}
+                  >
+                    {/* Top Meta Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-800/80">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2.5 py-0.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 ${catInfo.color}`}>
+                          <CatIcon className="w-3.5 h-3.5" />
+                          <span>{catInfo.label}</span>
+                        </span>
+
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-mono ${sevInfo.color}`}>
+                          {sevInfo.label}
+                        </span>
+
+                        <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold border ${statInfo.color}`}>
+                          {statInfo.label}
+                        </span>
+
+                        {(item.relatedClass || item.relatedSubject) && (
+                          <span className="px-2 py-0.5 rounded-lg bg-slate-950 text-[10px] font-mono text-slate-400 border border-slate-800">
+                            {item.relatedClass ? `${item.relatedClass}` : ''} {item.relatedSubject ? `• ${item.relatedSubject}` : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 text-right text-[11px] font-mono text-slate-400">
+                        <span>{item.timeIST || item.date}</span>
+                        <span className="text-[9px] text-slate-400">ID: {item.id}</span>
+                      </div>
+                    </div>
+
+                    {/* Scholar User Row */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {item.userPhoto ? (
+                          <img
+                            src={item.userPhoto}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-9 h-9 rounded-xl object-cover border border-slate-700 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-slate-800 text-emerald-400 font-bold flex items-center justify-center text-sm shrink-0 border border-slate-700">
+                            {item.userDisplayName ? item.userDisplayName.charAt(0) : 'U'}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-white truncate">
+                            {item.userDisplayName}
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-mono truncate">
+                            {item.userEmail || item.userId}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeleteFeedback(item.id)}
+                        disabled={actionLoading === `delete_fb_${item.id}`}
+                        className="p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                        title="Delete Report"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Title & Description */}
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>{item.title}</span>
+                      </h4>
+                      <p className="text-xs text-slate-200 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 leading-relaxed whitespace-pre-wrap">
+                        {item.description}
+                      </p>
+                    </div>
+
+                    {/* Diagnostics info if available */}
+                    {item.deviceInfo && (
+                      <div className="text-[10px] text-slate-400 font-mono bg-slate-950/40 px-3 py-1.5 rounded-lg border border-slate-800/60 truncate">
+                        Client System: {item.deviceInfo}
+                      </div>
+                    )}
+
+                    {/* Admin Response & Action Hub */}
+                    <div className="pt-2 border-t border-slate-800/60 space-y-3">
+                      {/* Current Admin Notes if exist */}
+                      {item.adminNotes && (
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-emerald-400">
+                            <span className="flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              <span>Admin Resolution Note:</span>
+                            </span>
+                            {item.resolvedAt && (
+                              <span className="text-[10px] font-mono text-slate-400">
+                                Resolved: {new Date(item.resolvedAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-200 leading-relaxed">
+                            {item.adminNotes}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Status Update Quick Toggles */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-semibold text-slate-400 mr-1">
+                            Set Status:
+                          </span>
+
+                          <button
+                            onClick={() => handleUpdateFeedbackStatus(item.id, 'open')}
+                            disabled={item.status === 'open' || actionLoading === `fb_status_${item.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            Open
+                          </button>
+
+                          <button
+                            onClick={() => handleUpdateFeedbackStatus(item.id, 'under_review')}
+                            disabled={item.status === 'under_review' || actionLoading === `fb_status_${item.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            Under Review
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              const note = window.prompt('Enter resolution note for scholar (optional):', item.adminNotes || 'Fixed in syllabus database / verified.');
+                              if (note !== null) {
+                                handleUpdateFeedbackStatus(item.id, 'resolved', note.trim());
+                              }
+                            }}
+                            disabled={item.status === 'resolved' || actionLoading === `fb_status_${item.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 flex items-center gap-1"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Mark Resolved</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleUpdateFeedbackStatus(item.id, 'closed')}
+                            disabled={item.status === 'closed' || actionLoading === `fb_status_${item.id}`}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        {/* Add/Edit Response Note button */}
+                        <button
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedFeedbackForDetails(null);
+                              setAdminReplyText('');
+                            } else {
+                              setSelectedFeedbackForDetails(item);
+                              setAdminReplyText(item.adminNotes || '');
+                            }
+                          }}
+                          className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <Edit3 className="w-3 h-3 text-amber-400" />
+                          <span>{item.adminNotes ? 'Edit Response Note' : 'Add Response Note'}</span>
+                        </button>
+                      </div>
+
+                      {/* Expanded Inline Admin Note Editor */}
+                      {isSelected && (
+                        <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2 animate-in fade-in">
+                          <label className="block text-xs font-semibold text-amber-300">
+                            Administrator Resolution Response (Visible to Scholar):
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={adminReplyText}
+                            onChange={(e) => setAdminReplyText(e.target.value)}
+                            placeholder="e.g. Corrected the exponent formula for Question 2 in Class 10 Light chapter. Thank you for reporting!"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-400"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => setSelectedFeedbackForDetails(null)}
+                              className="px-3 py-1 rounded-lg bg-slate-800 text-slate-400 text-xs hover:bg-slate-700"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleUpdateFeedbackStatus(item.id, item.status, adminReplyText.trim());
+                                setSelectedFeedbackForDetails(null);
+                              }}
+                              className="px-3.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400"
+                            >
+                              Save Note
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ===================== TAB 5: PUBLIC CHAT ===================== */}
       {activeTab === 'chat' && (
         <div className="space-y-4">
           <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
@@ -1760,6 +2331,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
                   <span>Purge All Public Chat</span>
                 </div>
                 <p className="text-[11px] text-slate-400">Wipes all peer study messages from the database.</p>
+              </button>
+
+              <button
+                onClick={handleDeleteAllFeedbacks}
+                className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 hover:bg-rose-500/10 text-left space-y-1 transition-all cursor-pointer"
+              >
+                <div className="font-bold text-xs text-rose-400 flex items-center gap-1.5">
+                  <Bug className="w-4 h-4" />
+                  <span>Purge All Bug/Feedback Tickets</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Deletes all student bug reports and feedback from the database.</p>
               </button>
 
               <button

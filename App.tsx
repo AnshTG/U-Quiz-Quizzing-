@@ -27,6 +27,7 @@ import { SavedQuizzesView } from './components/SavedQuizzesView';
 import { AdminView } from './components/AdminView';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { AttendanceModal } from './components/AttendanceModal';
+import { FeedbackModal } from './components/FeedbackModal';
 import { LoginView } from './components/LoginView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
@@ -45,6 +46,7 @@ export default function App() {
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState<boolean>(false);
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
 
   // Shared challenge state
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -296,12 +298,16 @@ export default function App() {
     // Save to local storage state
     setHistory(prev => [newRecord, ...prev.slice(0, 49)]); // Keep last 50
 
-    // Save to Cloud Firestore if logged in
-    if (user?.uid) {
-      saveQuizResultToCloud(user.uid, newRecord, user).catch(err => {
-        console.warn('Failed to sync quiz result to Firestore:', err);
-      });
-    }
+    // Save to Cloud Firestore (for both logged-in scholars and guest sessions)
+    const currentUserId = user?.uid || (typeof window !== 'undefined' ? (localStorage.getItem('uquiz_client_uid') || (() => {
+      const generated = 'guest_' + Math.random().toString(36).substring(2, 10);
+      localStorage.setItem('uquiz_client_uid', generated);
+      return generated;
+    })()) : 'guest_scholar');
+
+    saveQuizResultToCloud(currentUserId, newRecord, user).catch(err => {
+      console.warn('Failed to sync quiz result to Firestore:', err);
+    });
 
     setView(AppState.RESULTS);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -418,6 +424,7 @@ export default function App() {
               onOpenJoinModal={() => setIsJoinModalOpen(true)}
               onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
               onOpenAttendance={() => setIsAttendanceModalOpen(true)}
+              onOpenFeedback={() => setIsFeedbackModalOpen(true)}
               isAdminUnlocked={isAdminUnlocked}
             />
           )}

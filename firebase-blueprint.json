@@ -143,6 +143,32 @@
         "subjectTag": { "type": "string" }
       },
       "required": ["id", "userId", "userName", "message", "timestamp"]
+    },
+    "UserFeedback": {
+      "title": "UserFeedback",
+      "description": "Bug report or feature feedback submitted by authenticated user for admin triage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "category": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "timeIST": { "type": "string" },
+        "date": { "type": "string" },
+        "relatedSubject": { "type": "string" },
+        "relatedClass": { "type": "string" },
+        "deviceInfo": { "type": "string" },
+        "adminNotes": { "type": "string" }
+      },
+      "required": ["id", "userId", "category", "title", "description", "severity", "status", "timestamp"]
     }
   },
   "firestore": {
@@ -169,6 +195,10 @@
     "/publicChat/{messageId}": {
       "entity": "ChatMessage",
       "description": "Public real-time study discussion room for all students"
+    },
+    "/feedbacks/{feedbackId}": {
+      "entity": "UserFeedback",
+      "description": "User submitted bug reports and feedback items visible in admin console"
     }
   }
 }

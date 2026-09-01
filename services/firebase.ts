@@ -38,7 +38,11 @@ import {
   AttendanceRecord,
   ChatMessage,
   MaintenanceConfig,
-  AdminUserQuizEntry
+  AdminUserQuizEntry,
+  UserFeedback,
+  FeedbackCategory,
+  FeedbackSeverity,
+  FeedbackStatus
 } from '../types';
 
 // Initialize Firebase App
@@ -209,7 +213,7 @@ export const listenToAuthChanges = (callback: (user: UserProfile | null) => void
 
 export const recordAttendance = async (
   user: UserProfile,
-  activityType: 'manual_checkin' | 'quiz_completion' | 'daily_login',
+  activityType: 'manual_checkin' | 'quiz_completion' | 'daily_login' | 'chat_interaction',
   extra?: { subject?: string; score?: number }
 ): Promise<AttendanceRecord> => {
   try {
@@ -385,7 +389,7 @@ export const saveQuizResultToCloud = async (
     const timestamp = result.timestamp || Date.now();
     const timeIST = result.timeIST || getISTTimeString();
     const date = result.date || getISTDateString();
-    const userName = userProfile?.displayName || result.userName || 'Scholar';
+    const userName = userProfile?.displayName || result.userName || (userId.startsWith('guest_') ? 'Guest Scholar' : 'Scholar');
     const userEmail = userProfile?.email || null;
     const userPhoto = userProfile?.photoURL || null;
 
@@ -408,39 +412,54 @@ export const saveQuizResultToCloud = async (
       percentage: Math.round((result.score / Math.max(1, result.total)) * 100)
     };
 
-    // 1. Save in user's subcollection
-    const historyRef = doc(db, 'users', userId, 'quizHistory', result.id);
-    await setDoc(historyRef, fullResultData, { merge: true });
+    // 1. Save in user's subcollection if authenticated
+    if (userId && !userId.startsWith('guest_')) {
+      try {
+        const historyRef = doc(db, 'users', userId, 'quizHistory', result.id);
+        await setDoc(historyRef, fullResultData, { merge: true });
+      } catch (subErr) {
+        console.warn('Subcollection write notice:', subErr);
+      }
+    }
 
     // 2. Mirror into top-level quizAssessments collection for fast direct query in Admin Panel
     try {
-      const topLevelRef = doc(db, 'quizAssessments', `${userId}_${result.id}`);
+      const docKey = `${userId}_${result.id}`;
+      const topLevelRef = doc(db, 'quizAssessments', docKey);
       await setDoc(topLevelRef, fullResultData, { merge: true });
     } catch (mirrorErr) {
       console.warn('Mirror quizAssessments write notice:', mirrorErr);
     }
 
-    // 3. Also update aggregated user stats in users/{userId}
-    const userRef = doc(db, 'users', userId);
-    await setDoc(userRef, {
-      lastQuizAt: new Date().toISOString(),
-      quizzesCompleted: increment(1),
-      totalQuestionsAnswered: increment(result.total),
-      totalScore: increment(result.score),
-      lastActive: new Date().toISOString()
-    }, { merge: true });
+    // 3. Also update aggregated user stats in users/{userId} if authenticated
+    if (userId && !userId.startsWith('guest_')) {
+      try {
+        const userRef = doc(db, 'users', userId);
+        await setDoc(userRef, {
+          lastQuizAt: new Date().toISOString(),
+          quizzesCompleted: increment(1),
+          totalQuestionsAnswered: increment(result.total),
+          totalScore: increment(result.score),
+          lastActive: new Date().toISOString()
+        }, { merge: true });
+      } catch (statErr) {
+        console.warn('User stat increment notice:', statErr);
+      }
+    }
 
-    // 4. Automatically record attendance for completing a quiz
-    const profileToRecord: UserProfile = userProfile || {
-      uid: userId,
-      displayName: userName,
-      email: userEmail,
-      photoURL: userPhoto
-    };
-    recordAttendance(profileToRecord, 'quiz_completion', {
-      subject: `${result.config?.class || 'NCERT'} ${result.config?.subject || 'Assessment'}`,
-      score: result.score
-    }).catch(console.warn);
+    // 4. Automatically record attendance for completing a quiz (for logged in scholars)
+    if (userId && !userId.startsWith('guest_')) {
+      const profileToRecord: UserProfile = userProfile || {
+        uid: userId,
+        displayName: userName,
+        email: userEmail,
+        photoURL: userPhoto
+      };
+      recordAttendance(profileToRecord, 'quiz_completion', {
+        subject: `${result.config?.class || 'NCERT'} ${result.config?.subject || 'Assessment'}`,
+        score: result.score
+      }).catch(console.warn);
+    }
   } catch (error) {
     console.error('Failed to save quiz result to Firestore:', error);
   }
@@ -449,14 +468,17 @@ export const saveQuizResultToCloud = async (
 export const fetchUserQuizHistory = async (userId: string): Promise<QuizResultRecord[]> => {
   try {
     const historyCol = collection(db, 'users', userId, 'quizHistory');
-    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(10));
-    const snapshot = await getDocs(q);
+    const snapshot = await getDocs(query(historyCol, limit(100)));
     
     const list: QuizResultRecord[] = [];
     snapshot.forEach(docSnap => {
       list.push(docSnap.data() as QuizResultRecord);
     });
-    return list;
+    return list.sort((a, b) => {
+      const tA = a.timestamp || (a.date ? new Date(a.date).getTime() : 0);
+      const tB = b.timestamp || (b.date ? new Date(b.date).getTime() : 0);
+      return tB - tA;
+    });
   } catch (error) {
     console.error('Failed to fetch user quiz history:', error);
     return [];
@@ -472,20 +494,24 @@ export const subscribeToUserQuizHistory = (
 ): Unsubscribe => {
   try {
     const historyCol = collection(db, 'users', userId, 'quizHistory');
-    const q = query(historyCol, orderBy('timestamp', 'desc'), limit(10));
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(query(historyCol, limit(100)), (snapshot) => {
       const list: QuizResultRecord[] = [];
       snapshot.forEach(docSnap => {
         list.push(docSnap.data() as QuizResultRecord);
       });
+      list.sort((a, b) => {
+        const tA = a.timestamp || (a.date ? new Date(a.date).getTime() : 0);
+        const tB = b.timestamp || (b.date ? new Date(b.date).getTime() : 0);
+        return tB - tA;
+      });
       callback(list);
     }, (error) => {
-      console.warn('Quiz history subscription error:', error);
-      callback([]);
+      console.warn('Quiz history subscription notice:', error);
+      fetchUserQuizHistory(userId).then(callback).catch(() => callback([]));
     });
   } catch (error) {
     console.error('Failed to subscribe to quiz history:', error);
-    callback([]);
+    fetchUserQuizHistory(userId).then(callback).catch(() => callback([]));
     return () => {};
   }
 };
@@ -952,9 +978,14 @@ export const subscribeToAllQuizzesForAdmin = (
       });
 
       callback(records);
+
+      if (records.length === 0) {
+        fetchAllQuizzesAcrossUsersForAdmin().then(res => {
+          if (res && res.length > 0) callback(res);
+        }).catch(console.warn);
+      }
     }, (error) => {
       console.warn('subscribeToAllQuizzesForAdmin notice:', error);
-      // Fallback: trigger manual fetch
       fetchAllQuizzesAcrossUsersForAdmin().then(callback).catch(() => callback([]));
     });
   } catch (err) {
@@ -965,7 +996,7 @@ export const subscribeToAllQuizzesForAdmin = (
 };
 
 /**
- * Fetch all quizzes/assessments completed by all scholars (Multi-tiered resilient fetcher)
+ * Fetch all quizzes/assessments completed by all scholars (Multi-tiered resilient fetcher with auto-mirroring)
  */
 export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQuizEntry[]> => {
   const resultMap = new Map<string, AdminUserQuizEntry>();
@@ -1006,7 +1037,7 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
       const parentUserId = docSnap.ref.parent.parent?.id || (data as any).userId || 'anonymous';
       const key = `${parentUserId}_${data.id || docSnap.id}`;
       if (!resultMap.has(key)) {
-        resultMap.set(key, {
+        const entry: AdminUserQuizEntry = {
           ...data,
           id: data.id || docSnap.id,
           userId: parentUserId,
@@ -1019,7 +1050,11 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
           userPhoto: (data as any).userPhoto || undefined,
           date: data.date || getISTDateString(),
           timeIST: data.timeIST || (data.timestamp ? getISTTimeString(new Date(data.timestamp)) : '')
-        });
+        };
+        resultMap.set(key, entry);
+
+        // Auto-mirror to top level for persistent indexing
+        setDoc(doc(db, 'quizAssessments', key), entry, { merge: true }).catch(console.warn);
       }
     });
   } catch (cgErr) {
@@ -1040,7 +1075,7 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
           const d = hDoc.data() as QuizResultRecord;
           const key = `${userId}_${d.id || hDoc.id}`;
           if (!resultMap.has(key)) {
-            resultMap.set(key, {
+            const entry: AdminUserQuizEntry = {
               ...d,
               id: d.id || hDoc.id,
               userId,
@@ -1053,7 +1088,11 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
               userPhoto: userData.photoURL || undefined,
               date: d.date || getISTDateString(),
               timeIST: d.timeIST || (d.timestamp ? getISTTimeString(new Date(d.timestamp)) : '')
-            });
+            };
+            resultMap.set(key, entry);
+
+            // Auto-mirror to top level
+            setDoc(doc(db, 'quizAssessments', key), entry, { merge: true }).catch(console.warn);
           }
         });
       } catch (userErr) {
@@ -1348,6 +1387,14 @@ export const sendPublicChatMessage = async (
 
   const msgRef = doc(db, 'publicChat', messageId);
   await setDoc(msgRef, chatMsg);
+
+  // Automatically record attendance for participating in study chat
+  if (user && user.uid) {
+    recordAttendance(user, 'chat_interaction', {
+      subject: `Community Chat: ${subjectTag}`
+    }).catch(console.warn);
+  }
+
   return chatMsg;
 };
 
@@ -1652,6 +1699,236 @@ export const adminBanUser = async (
     throw error;
   }
 };
+
+/**
+ * Submit user feedback or bug report to Firestore
+ */
+export const submitUserFeedback = async (
+  feedbackData: {
+    category: FeedbackCategory;
+    title: string;
+    description: string;
+    severity: FeedbackSeverity;
+    relatedSubject?: string;
+    relatedClass?: string;
+    deviceInfo?: string;
+  },
+  userProfile: UserProfile
+): Promise<string> => {
+  try {
+    const feedbackId = `fb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newFeedback: UserFeedback = {
+      id: feedbackId,
+      userId: userProfile.uid,
+      userDisplayName: userProfile.displayName || 'Scholar',
+      userEmail: userProfile.email || null,
+      userPhoto: userProfile.photoURL || null,
+      category: feedbackData.category,
+      title: feedbackData.title.trim(),
+      description: feedbackData.description.trim(),
+      severity: feedbackData.severity,
+      status: 'open',
+      createdAt: new Date().toISOString(),
+      timestamp: Date.now(),
+      timeIST: getISTTimeString(),
+      date: getISTDateString(),
+      relatedSubject: feedbackData.relatedSubject?.trim() || undefined,
+      relatedClass: feedbackData.relatedClass?.trim() || undefined,
+      deviceInfo: feedbackData.deviceInfo || (typeof navigator !== 'undefined' ? `${navigator.userAgent} (${window.innerWidth}x${window.innerHeight})` : undefined)
+    };
+
+    const feedbackDocRef = doc(db, 'feedbacks', feedbackId);
+    await setDoc(feedbackDocRef, newFeedback);
+    return feedbackId;
+  } catch (error) {
+    console.error('Failed to submit user feedback:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all feedbacks submitted by a specific user
+ */
+export const fetchUserFeedbacks = async (userId: string): Promise<UserFeedback[]> => {
+  try {
+    const colRef = collection(db, 'feedbacks');
+    const snapshot = await getDocs(query(colRef, limit(100)));
+    const list: UserFeedback[] = [];
+    snapshot.forEach(d => {
+      const data = d.data() as UserFeedback;
+      if (data.userId === userId) {
+        list.push({ ...data, id: data.id || d.id });
+      }
+    });
+    return list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  } catch (error) {
+    console.error('Failed to fetch user feedbacks:', error);
+    return [];
+  }
+};
+
+/**
+ * Real-time listener for user's own submitted feedbacks
+ */
+export const listenToUserFeedbacks = (
+  userId: string,
+  callback: (feedbacks: UserFeedback[]) => void
+): Unsubscribe => {
+  try {
+    const colRef = collection(db, 'feedbacks');
+    return onSnapshot(query(colRef, limit(100)), (snapshot) => {
+      const list: UserFeedback[] = [];
+      snapshot.forEach(d => {
+        const data = d.data() as UserFeedback;
+        if (data.userId === userId) {
+          list.push({ ...data, id: data.id || d.id });
+        }
+      });
+      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      callback(list);
+    }, (err) => {
+      console.warn('listenToUserFeedbacks notice:', err);
+      fetchUserFeedbacks(userId).then(callback).catch(() => callback([]));
+    });
+  } catch (error) {
+    console.error('Failed to subscribe to user feedbacks:', error);
+    fetchUserFeedbacks(userId).then(callback).catch(() => callback([]));
+    return () => {};
+  }
+};
+
+/**
+ * Admin: Real-time listener for ALL submitted feedbacks & bug reports
+ */
+export const listenToAllFeedbacksForAdmin = (
+  callback: (feedbacks: UserFeedback[]) => void
+): Unsubscribe => {
+  try {
+    const colRef = collection(db, 'feedbacks');
+    return onSnapshot(query(colRef, limit(300)), (snapshot) => {
+      const list: UserFeedback[] = [];
+      snapshot.forEach(d => {
+        const data = d.data() as UserFeedback;
+        list.push({ ...data, id: data.id || d.id });
+      });
+      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      callback(list);
+    }, (err) => {
+      console.warn('listenToAllFeedbacksForAdmin notice:', err);
+      fetchAllFeedbacksForAdmin().then(callback).catch(() => callback([]));
+    });
+  } catch (error) {
+    console.error('Failed to listen to all feedbacks for admin:', error);
+    fetchAllFeedbacksForAdmin().then(callback).catch(() => callback([]));
+    return () => {};
+  }
+};
+
+/**
+ * Admin: Fetch all submitted feedbacks
+ */
+export const fetchAllFeedbacksForAdmin = async (): Promise<UserFeedback[]> => {
+  try {
+    const colRef = collection(db, 'feedbacks');
+    const snapshot = await getDocs(query(colRef, limit(300)));
+    const list: UserFeedback[] = [];
+    snapshot.forEach(d => {
+      const data = d.data() as UserFeedback;
+      list.push({ ...data, id: data.id || d.id });
+    });
+    return list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  } catch (error) {
+    console.error('Failed to fetch all feedbacks for admin:', error);
+    return [];
+  }
+};
+
+/**
+ * Admin: Update status and add notes to a feedback or bug report
+ */
+export const adminUpdateFeedbackStatus = async (
+  feedbackId: string,
+  status: FeedbackStatus,
+  adminNotes?: string,
+  resolvedBy?: string
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'feedbacks', feedbackId);
+    const updateData: Partial<UserFeedback> = {
+      status,
+      adminNotes: adminNotes !== undefined ? adminNotes : undefined,
+      resolvedAt: status === 'resolved' ? new Date().toISOString() : undefined,
+      resolvedBy: status === 'resolved' ? (resolvedBy || 'Administrator') : undefined
+    };
+    await setDoc(docRef, updateData, { merge: true });
+  } catch (error) {
+    console.error('Failed to update feedback status:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete a single feedback record
+ */
+export const adminDeleteFeedback = async (feedbackId: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'feedbacks', feedbackId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.error('Failed to delete feedback record:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete all feedback records
+ */
+export const adminDeleteAllFeedbacks = async (): Promise<number> => {
+  try {
+    const colRef = collection(db, 'feedbacks');
+    const snap = await getDocs(colRef);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.delete(d.ref);
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Failed to delete all feedbacks:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Purge only resolved / closed feedback records
+ */
+export const adminPurgeResolvedFeedbacks = async (): Promise<number> => {
+  try {
+    const colRef = collection(db, 'feedbacks');
+    const snap = await getDocs(colRef);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      const data = d.data() as UserFeedback;
+      if (data.status === 'resolved' || data.status === 'closed') {
+        batch.delete(d.ref);
+        count++;
+      }
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Failed to purge resolved feedbacks:', error);
+    throw error;
+  }
+};
+
 
 
 

@@ -73,6 +73,13 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // Feedback and Bug Reports collection (user reports & admin triage)
+    match /feedbacks/{feedbackId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
     // System configuration (Maintenance mode, announcements, etc.)
     match /system/{configId} {
       allow read: if true;

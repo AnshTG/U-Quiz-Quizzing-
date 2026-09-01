@@ -239,6 +239,8 @@ export const AttendanceModal: React.FC<AttendanceModalProps> = ({
                           ? `Quiz Completed: ${record.subjectAttempted || 'NCERT Assessment'}`
                           : record.activityType === 'manual_checkin'
                           ? 'Daily Study Check-in'
+                          : record.activityType === 'chat_interaction'
+                          ? `Study Chat: ${record.subjectAttempted || 'Discussion'}`
                           : 'Platform Login Session'}
                       </span>
                     </div>

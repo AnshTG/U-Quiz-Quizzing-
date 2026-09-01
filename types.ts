@@ -83,7 +83,7 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   timestamp: number;
   timeStr: string; // e.g. "10:30 AM IST"
-  activityType: 'manual_checkin' | 'quiz_completion' | 'daily_login';
+  activityType: 'manual_checkin' | 'quiz_completion' | 'daily_login' | 'chat_interaction';
   currentStreak: number;
   subjectAttempted?: string;
   scoreGained?: number;
@@ -160,6 +160,33 @@ export interface MaintenanceConfig {
   estimatedDuration?: string;
 }
 
+export type FeedbackCategory = 'bug' | 'content_error' | 'feature_request' | 'general';
+export type FeedbackSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type FeedbackStatus = 'open' | 'under_review' | 'resolved' | 'closed';
+
+export interface UserFeedback {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  userEmail: string | null;
+  userPhoto?: string | null;
+  category: FeedbackCategory;
+  title: string;
+  description: string;
+  severity: FeedbackSeverity;
+  status: FeedbackStatus;
+  createdAt: string;
+  timestamp: number;
+  timeIST: string;
+  date: string;
+  relatedSubject?: string;
+  relatedClass?: string;
+  deviceInfo?: string;
+  adminNotes?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+}
+
 export enum AppState {
   HOME = 'HOME',
   SETUP = 'SETUP',
@@ -175,5 +202,6 @@ export enum AppState {
   SHARED_PREVIEW = 'SHARED_PREVIEW',
   MAINTENANCE = 'MAINTENANCE'
 }
+
 
 
