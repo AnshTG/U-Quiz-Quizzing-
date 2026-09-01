@@ -7,7 +7,9 @@ import {
   signOutUser, 
   saveQuizResultToCloud,
   fetchUserSavedQuizzes,
-  listenToMaintenanceMode
+  listenToMaintenanceMode,
+  getISTDateString,
+  getISTTimeString
 } from './services/firebase';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -274,7 +276,9 @@ export default function App() {
 
     const newRecord: QuizResultRecord = {
       id: `record_${Date.now()}`,
-      date: new Date().toISOString(),
+      date: getISTDateString(),
+      timestamp: Date.now(),
+      timeIST: getISTTimeString(),
       config: currentConfig,
       score,
       total: questions.length,
@@ -282,6 +286,10 @@ export default function App() {
       questions,
       userAnswers: answers,
       sharedQuizId: sharedQuizId || undefined,
+      subject: currentConfig.subject,
+      class: currentConfig.class,
+      topics: currentConfig.topics,
+      strength: currentConfig.strength,
       userName: user?.displayName || undefined
     };
 
@@ -290,7 +298,7 @@ export default function App() {
 
     // Save to Cloud Firestore if logged in
     if (user?.uid) {
-      saveQuizResultToCloud(user.uid, newRecord).catch(err => {
+      saveQuizResultToCloud(user.uid, newRecord, user).catch(err => {
         console.warn('Failed to sync quiz result to Firestore:', err);
       });
     }

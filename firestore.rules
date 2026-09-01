@@ -57,6 +57,13 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Top-level Quiz Assessments archive (for admin dashboard direct querying)
+    match /quizAssessments/{assessmentId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
     // Public community chat messages
     match /publicChat/{messageId} {
       // Anyone can read public study messages in real time

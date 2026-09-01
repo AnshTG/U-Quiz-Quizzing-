@@ -37,7 +37,14 @@ export const ShareReminderModal: React.FC<ShareReminderModalProps> = ({
   const [templateType, setTemplateType] = useState<'standard' | 'challenge' | 'exam' | 'quick'>('standard');
 
   // Build the target link
-  const origin = window.location.origin;
+  const getBaseUrl = () => {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('localhost')) {
+      return window.location.origin;
+    }
+    return 'https://uquizzes.vercel.app';
+  };
+
+  const origin = getBaseUrl();
   const targetLink = quizId 
     ? `${origin}?quizId=${quizId}`
     : `${origin}?subject=${encodeURIComponent(config?.subject || '')}&class=${encodeURIComponent(config?.class || '')}`;

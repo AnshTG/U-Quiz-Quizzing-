@@ -29,24 +29,34 @@ function sanitizeAndFormatMath(rawContent: string): string {
   text = text.replace(/\u2103/g, '°C');
   text = text.replace(/\u2109/g, '°F');
 
-  // 3. Fix form feed characters (\f or \x0c) which cause \frac to become rac{...}{...}
+  // 3. Fix unescaped tab-escaped or corrupted \text commands (e.g., "\text" becoming "\t" + "ext" -> "100extml" or "100	extml")
+  text = text.replace(/(\d+)\s*ext\s*(ml|mL|l|L|g|kg|mg|cm|mm|nm|pm|km|m|s|sec|min|h|hr|hrs|Pa|kPa|atm|bar|N|J|kJ|W|kW|V|mV|A|mA|Hz|kHz|MHz|mol|mmol|K|cal|kcal|dB|rpm|cm3|cm³|m3|m³)\b/gi, '$1 $2');
+  text = text.replace(/(\d+)\s*\\?text\s*\{\s*(ml|mL|l|L|g|kg|mg|cm|mm|nm|pm|km|m|s|sec|min|h|hr|hrs|Pa|kPa|atm|bar|N|J|kJ|W|kW|V|mV|A|mA|Hz|kHz|MHz|mol|mmol|K|cal|kcal|dB|rpm|cm3|cm³|m3|m³)\s*\}/gi, '$1 $2');
+  text = text.replace(/[\t\x09]ext\{([^}]+)\}/g, ' $1');
+  text = text.replace(/[\t\x09]ext\b/g, ' ');
+  text = text.replace(/(^|[^\\])ext\{([^}]+)\}/g, '$1$2');
+
+  // 4. Fix form feed characters (\f or \x0c) which cause \frac to become rac{...}{...}
   text = text.replace(/[\u000c\x0c]/g, '');
   text = text.replace(/\\f\s*rac\{/g, '\\frac{');
   text = text.replace(/(^|[^\\])rac\{/g, '$1\\frac{');
   text = text.replace(/\\+rac\{/g, '\\frac{');
 
-  // 4. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
+  // 5. Convert standard LaTeX delimiters \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
   text = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$1$$$');
   text = text.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$');
 
-  // 5. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
+  // 6. Fix double-escaped backslashes in math formulas (e.g. \\frac -> \frac, \\sqrt -> \sqrt)
   text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|degree|text|mathrm|le|ge|leq|geq|neq|ne|cdot|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ|infty|partial|nabla)/g, '\\$1');
 
-  // 6. Handle degree conversions in LaTeX contexts
+  // 7. Handle degree conversions in LaTeX contexts
   text = text.replace(/\\degree\s*C\b/g, '^{\\circ}\\mathrm{C}');
   text = text.replace(/\\degree/g, '^{\\circ}');
 
-  // 7. Fix degree symbol INSIDE math expressions ($...$) so it doesn't break math parsing
+  // 8. Clean \text{} outside of math $...$ blocks (convert \text{foo} -> foo)
+  text = text.replace(/(?<!\$)\\text\{([^}]+)\}(?!\$)/g, '$1');
+
+  // 9. Fix degree symbol INSIDE math expressions ($...$) so it doesn't break math parsing
   text = text.replace(/\$([^\$]+)\$/g, (match, inner) => {
     let clean = inner;
     clean = clean.replace(/°\s*C\b/g, '^\\circ\\mathrm{C}');
@@ -57,15 +67,15 @@ function sanitizeAndFormatMath(rawContent: string): string {
     return `$${clean}$`;
   });
 
-  // 8. Wrap bare \frac{...}{...} in $...$ if not already in math block
+  // 10. Wrap bare \frac{...}{...} in $...$ if not already in math block
   text = text.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, '$\\frac{$1}{$2}$');
 
-  // 9. Wrap bare \sqrt{...} or \sqrt[n]{...} in $...$ if not already in math block
+  // 11. Wrap bare \sqrt{...} or \sqrt[n]{...} in $...$ if not already in math block
   text = text.replace(/(?<!\$)\\sqrt\[([^\]]+)\]\{([^{}]+)\}(?!\$)/g, '$\\sqrt[$1]{$2}$');
   text = text.replace(/(?<!\$)\\sqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
   text = text.replace(/(?<![\$\\])\bsqrt\{([^{}]+)\}(?!\$)/g, '$\\sqrt{$1}$');
 
-  // 10. Wrap standalone math symbols like \pi, \theta, \pm, \approx, \le, \ge, \times
+  // 12. Wrap standalone math symbols like \pi, \theta, \pm, \approx, \le, \ge, \times
   text = text.replace(/(?<!\$)\\(theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|approx|pm|times|div|leq|geq|le|ge|neq|ne|cdot|perp|parallel|angle|triangle|infty)(?!\$)/g, '$\\$1$');
 
   return text;

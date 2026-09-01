@@ -118,7 +118,7 @@ export const ScorecardExportModal: React.FC<ScorecardExportModalProps> = ({
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           title: `My NCERT Assessment Scorecard: ${percentage}%`,
-          text: `I scored ${correctCount}/${questions.length} (${percentage}%) in ${config.class} ${config.subject} on U Quiz AI! 🎓`,
+          text: `I scored ${correctCount}/${questions.length} (${percentage}%) in ${config.class} ${config.subject} on U Quiz AI! 🎓 Practice at https://uquizzes.vercel.app`,
           files: [file],
         });
         setSharedSuccess(true);
@@ -132,7 +132,7 @@ export const ScorecardExportModal: React.FC<ScorecardExportModalProps> = ({
         link.click();
 
         if (navigator.clipboard) {
-          await navigator.clipboard.writeText(`I scored ${correctCount}/${questions.length} (${percentage}%) in ${config.class} ${config.subject} on U Quiz AI! 🚀`);
+          await navigator.clipboard.writeText(`I scored ${correctCount}/${questions.length} (${percentage}%) in ${config.class} ${config.subject} on U Quiz AI! 🚀 Practice at https://uquizzes.vercel.app`);
           setCopied(true);
           setTimeout(() => setCopied(false), 3000);
         }

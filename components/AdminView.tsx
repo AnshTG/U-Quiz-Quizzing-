@@ -16,11 +16,13 @@ import {
   fetchUserSavedQuizzesForAdmin,
   fetchAllSharedQuizzesForAdmin,
   fetchAllQuizzesAcrossUsersForAdmin,
+  subscribeToAllQuizzesForAdmin,
   adminDeleteUserQuizAttempt,
   deleteSharedQuizByAdmin,
   subscribeToAllUsersForAdmin,
   subscribeToSharedQuizzesForAdmin,
   subscribeToAttendance,
+  fetchAllAttendanceForAdmin,
   adminDeleteUserQuizResult,
   adminUpdateUserQuizResult,
   adminDeleteAllUserQuizHistory,
@@ -156,7 +158,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     }
   };
 
-  // Real-time subscriptions
+  const refreshAllAdminData = async () => {
+    setIsLoading(true);
+    try {
+      const [usersList, quizzesList, attendanceList] = await Promise.allSettled([
+        fetchAllUsersForAdmin(),
+        fetchAllQuizzesAcrossUsersForAdmin(),
+        fetchAllAttendanceForAdmin()
+      ]);
+      if (usersList.status === 'fulfilled') setUsers(usersList.value);
+      if (quizzesList.status === 'fulfilled') setAllQuizzes(quizzesList.value);
+      if (attendanceList.status === 'fulfilled') setAttendanceRecords(attendanceList.value);
+      showToast('Admin data refreshed from cloud.');
+    } catch (e) {
+      console.warn('Manual refresh notice:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Real-time subscriptions & Initial Hydration
   useEffect(() => {
     setIsLoading(true);
 
@@ -170,7 +191,15 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
     });
 
     const unsubAttendance = subscribeToAttendance((records) => {
-      setAttendanceRecords(records);
+      if (records && records.length > 0) {
+        setAttendanceRecords(records);
+      }
+    });
+
+    const unsubQuizzes = subscribeToAllQuizzesForAdmin((records) => {
+      if (records && records.length > 0) {
+        setAllQuizzes(records);
+      }
     });
 
     const unsubChat = listenToPublicChat((msgs) => {
@@ -183,12 +212,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
       if (config.estimatedDuration && !estimatedDuration) setEstimatedDuration(config.estimatedDuration);
     });
 
+    // Initial direct fetches to ensure instant display
     loadAllQuizzes();
+    fetchAllAttendanceForAdmin().then(recs => {
+      if (recs && recs.length > 0) setAttendanceRecords(recs);
+    }).catch(console.warn);
 
     return () => {
       unsubUsers();
       unsubShared();
       unsubAttendance();
+      unsubQuizzes();
       unsubChat();
       unsubMaintenance();
     };
@@ -705,6 +739,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin }) => {
 
         {/* Top Action Buttons */}
         <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+          <button
+            onClick={refreshAllAdminData}
+            disabled={isLoading || isLoadingAllQuizzes}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+            title="Refresh All Database Records"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading || isLoadingAllQuizzes ? 'animate-spin' : ''}`} />
+            <span>Sync Cloud Data</span>
+          </button>
+
           <button
             onClick={() => {
               // Lock admin immediately on exit

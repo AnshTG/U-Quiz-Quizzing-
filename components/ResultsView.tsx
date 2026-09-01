@@ -120,7 +120,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   const assessment = getScoreAssessment();
 
   const handleQuickCopyScore = () => {
-    const shareText = `I scored ${correctCount}/${questions.length} (${percentage}%) in ${config.class} ${config.subject} on U Quiz AI! 🚀`;
+    const shareText = `I scored ${correctCount}/${questions.length} (${percentage}%) in ${config.class} ${config.subject} on U Quiz AI! 🚀 Practice here: https://uquizzes.vercel.app`;
     if (navigator.clipboard) {
       navigator.clipboard.writeText(shareText);
       setCopied(true);

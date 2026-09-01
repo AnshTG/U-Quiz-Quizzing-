@@ -145,6 +145,7 @@ export const listenToAuthChanges = (callback: (user: UserProfile | null) => void
       // Real-time listener for user profile document
       const userRef = doc(db, 'users', user.uid);
       const unsubUser = onSnapshot(userRef, (userDoc) => {
+        const todayStr = getISTDateString();
         if (userDoc.exists()) {
           const data = userDoc.data();
           const profile: UserProfile = {
@@ -161,15 +162,30 @@ export const listenToAuthChanges = (callback: (user: UserProfile | null) => void
             currentStreak: data.currentStreak || 1,
             lastCheckInDate: data.lastCheckInDate,
             attendanceDaysCount: data.attendanceDaysCount || 1,
+            isBanned: data.isBanned || false,
+            banReason: data.banReason || '',
           };
+
+          // Automatically record daily login attendance if not yet checked in today
+          if (data.lastCheckInDate !== todayStr) {
+            recordAttendance(profile, 'daily_login').catch(console.warn);
+          }
+
           callback(profile);
         } else {
-          callback({
+          const newProfile: UserProfile = {
             uid: user.uid,
             email: user.email,
             displayName: user.displayName,
-            photoURL: user.photoURL
-          });
+            photoURL: user.photoURL,
+            currentStreak: 1,
+            lastCheckInDate: todayStr,
+            attendanceDaysCount: 1,
+            createdAt: new Date().toISOString(),
+            lastLoginAt: new Date().toISOString()
+          };
+          recordAttendance(newProfile, 'daily_login').catch(console.warn);
+          callback(newProfile);
         }
       }, (error) => {
         console.warn('Auth snapshot error:', error);
@@ -303,6 +319,34 @@ export const subscribeToAttendance = (
 };
 
 /**
+ * Direct fetch for all attendance records (for admin dashboard initial hydration)
+ */
+export const fetchAllAttendanceForAdmin = async (dateFilter?: string): Promise<AttendanceRecord[]> => {
+  try {
+    const attendanceCol = collection(db, 'attendance');
+    const q = query(attendanceCol, limit(1000));
+    const snapshot = await getDocs(q);
+    let records: AttendanceRecord[] = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data() as AttendanceRecord;
+      records.push({
+        ...data,
+        id: docSnap.id
+      });
+    });
+    records.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    if (dateFilter && dateFilter.trim() !== '') {
+      records = records.filter(r => r.date === dateFilter.trim());
+    }
+    return records;
+  } catch (error) {
+    console.error('Error fetching attendance for admin:', error);
+    return [];
+  }
+};
+
+/**
  * Fetch personal attendance history for a single user
  */
 export const fetchUserAttendance = async (userId: string): Promise<AttendanceRecord[]> => {
@@ -338,29 +382,65 @@ export const saveQuizResultToCloud = async (
   userProfile?: UserProfile | null
 ): Promise<void> => {
   try {
-    const historyRef = doc(db, 'users', userId, 'quizHistory', result.id);
-    await setDoc(historyRef, {
+    const timestamp = result.timestamp || Date.now();
+    const timeIST = result.timeIST || getISTTimeString();
+    const date = result.date || getISTDateString();
+    const userName = userProfile?.displayName || result.userName || 'Scholar';
+    const userEmail = userProfile?.email || null;
+    const userPhoto = userProfile?.photoURL || null;
+
+    const fullResultData = {
       ...result,
       userId,
-      timestamp: result.timestamp || Date.now()
-    });
+      timestamp,
+      timeIST,
+      date,
+      userName,
+      userDisplayName: userName,
+      userEmail,
+      userPhoto,
+      subject: result.subject || result.config?.subject || 'Assessment',
+      class: result.class || result.config?.class || 'NCERT',
+      topics: result.topics || result.config?.topics || [],
+      strength: result.strength || result.config?.strength || 'Medium',
+      score: result.score,
+      total: result.total,
+      percentage: Math.round((result.score / Math.max(1, result.total)) * 100)
+    };
 
-    // Also update aggregated user stats in users/{userId}
+    // 1. Save in user's subcollection
+    const historyRef = doc(db, 'users', userId, 'quizHistory', result.id);
+    await setDoc(historyRef, fullResultData, { merge: true });
+
+    // 2. Mirror into top-level quizAssessments collection for fast direct query in Admin Panel
+    try {
+      const topLevelRef = doc(db, 'quizAssessments', `${userId}_${result.id}`);
+      await setDoc(topLevelRef, fullResultData, { merge: true });
+    } catch (mirrorErr) {
+      console.warn('Mirror quizAssessments write notice:', mirrorErr);
+    }
+
+    // 3. Also update aggregated user stats in users/{userId}
     const userRef = doc(db, 'users', userId);
     await setDoc(userRef, {
       lastQuizAt: new Date().toISOString(),
       quizzesCompleted: increment(1),
       totalQuestionsAnswered: increment(result.total),
-      totalScore: increment(result.score)
+      totalScore: increment(result.score),
+      lastActive: new Date().toISOString()
     }, { merge: true });
 
-    // Automatically record attendance for completing a quiz
-    if (userProfile) {
-      recordAttendance(userProfile, 'quiz_completion', {
-        subject: `${result.config.class} ${result.config.subject}`,
-        score: result.score
-      }).catch(console.warn);
-    }
+    // 4. Automatically record attendance for completing a quiz
+    const profileToRecord: UserProfile = userProfile || {
+      uid: userId,
+      displayName: userName,
+      email: userEmail,
+      photoURL: userPhoto
+    };
+    recordAttendance(profileToRecord, 'quiz_completion', {
+      subject: `${result.config?.class || 'NCERT'} ${result.config?.subject || 'Assessment'}`,
+      score: result.score
+    }).catch(console.warn);
   } catch (error) {
     console.error('Failed to save quiz result to Firestore:', error);
   }
@@ -834,19 +914,22 @@ export const fetchUserSavedQuizzesForAdmin = async (userId: string): Promise<Sav
 };
 
 /**
- * Fetch all quizzes/assessments completed by all scholars
+ * Real-time subscription to all assessments across all scholars (for Admin panel)
  */
-export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQuizEntry[]> => {
-  const allResults: AdminUserQuizEntry[] = [];
+export const subscribeToAllQuizzesForAdmin = (
+  callback: (quizzes: AdminUserQuizEntry[]) => void
+): Unsubscribe => {
   try {
-    // First attempt collectionGroup
-    try {
-      const q = query(collectionGroup(db, 'quizHistory'), orderBy('timestamp', 'desc'), limit(150));
-      const snap = await getDocs(q);
-      snap.forEach(docSnap => {
+    // Listen to top-level quizAssessments mirror collection
+    const assessmentsCol = collection(db, 'quizAssessments');
+    const q = query(assessmentsCol, limit(500));
+
+    return onSnapshot(q, (snapshot) => {
+      const records: AdminUserQuizEntry[] = [];
+      snapshot.forEach(docSnap => {
         const data = docSnap.data() as QuizResultRecord;
-        const parentUserId = docSnap.ref.parent.parent?.id || (data as any).userId || 'anonymous';
-        allResults.push({
+        const parentUserId = (data as any).userId || docSnap.id.split('_')[0] || 'anonymous';
+        records.push({
           ...data,
           id: data.id || docSnap.id,
           userId: parentUserId,
@@ -854,53 +937,141 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
           class: data.class || data.config?.class || 'NCERT',
           topics: data.topics || data.config?.topics || [],
           strength: data.strength || data.config?.strength || 'Medium',
-          userDisplayName: (data as any).userName || (data as any).userDisplayName || undefined,
+          userDisplayName: (data as any).userDisplayName || (data as any).userName || undefined,
           userEmail: (data as any).userEmail || undefined,
-          userPhoto: (data as any).userPhoto || undefined
+          userPhoto: (data as any).userPhoto || undefined,
+          date: data.date || getISTDateString(),
+          timeIST: data.timeIST || (data.timestamp ? getISTTimeString(new Date(data.timestamp)) : '')
         });
       });
-      if (allResults.length > 0) {
-        return allResults;
-      }
-    } catch (cgErr) {
-      console.warn('CollectionGroup quizHistory query notice, falling back to per-user fetch:', cgErr);
-    }
 
-    // Fallback: Fetch per user
+      records.sort((a, b) => {
+        const tA = a.timestamp || (a.date ? new Date(a.date).getTime() : 0);
+        const tB = b.timestamp || (b.date ? new Date(b.date).getTime() : 0);
+        return tB - tA;
+      });
+
+      callback(records);
+    }, (error) => {
+      console.warn('subscribeToAllQuizzesForAdmin notice:', error);
+      // Fallback: trigger manual fetch
+      fetchAllQuizzesAcrossUsersForAdmin().then(callback).catch(() => callback([]));
+    });
+  } catch (err) {
+    console.warn('subscribeToAllQuizzesForAdmin setup error:', err);
+    fetchAllQuizzesAcrossUsersForAdmin().then(callback).catch(() => callback([]));
+    return () => {};
+  }
+};
+
+/**
+ * Fetch all quizzes/assessments completed by all scholars (Multi-tiered resilient fetcher)
+ */
+export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQuizEntry[]> => {
+  const resultMap = new Map<string, AdminUserQuizEntry>();
+
+  // 1. First Tier: Top-level quizAssessments collection
+  try {
+    const assessmentsCol = collection(db, 'quizAssessments');
+    const snap = await getDocs(query(assessmentsCol, limit(500)));
+    snap.forEach(docSnap => {
+      const data = docSnap.data() as QuizResultRecord;
+      const parentUserId = (data as any).userId || docSnap.id.split('_')[0] || 'anonymous';
+      const key = `${parentUserId}_${data.id || docSnap.id}`;
+      resultMap.set(key, {
+        ...data,
+        id: data.id || docSnap.id,
+        userId: parentUserId,
+        subject: data.subject || data.config?.subject || 'Assessment',
+        class: data.class || data.config?.class || 'NCERT',
+        topics: data.topics || data.config?.topics || [],
+        strength: data.strength || data.config?.strength || 'Medium',
+        userDisplayName: (data as any).userDisplayName || (data as any).userName || undefined,
+        userEmail: (data as any).userEmail || undefined,
+        userPhoto: (data as any).userPhoto || undefined,
+        date: data.date || getISTDateString(),
+        timeIST: data.timeIST || (data.timestamp ? getISTTimeString(new Date(data.timestamp)) : '')
+      });
+    });
+  } catch (err) {
+    console.warn('Tier 1 quizAssessments query notice:', err);
+  }
+
+  // 2. Second Tier: CollectionGroup quizHistory (WITHOUT orderBy to prevent index errors)
+  try {
+    const cgQuery = query(collectionGroup(db, 'quizHistory'), limit(500));
+    const cgSnap = await getDocs(cgQuery);
+    cgSnap.forEach(docSnap => {
+      const data = docSnap.data() as QuizResultRecord;
+      const parentUserId = docSnap.ref.parent.parent?.id || (data as any).userId || 'anonymous';
+      const key = `${parentUserId}_${data.id || docSnap.id}`;
+      if (!resultMap.has(key)) {
+        resultMap.set(key, {
+          ...data,
+          id: data.id || docSnap.id,
+          userId: parentUserId,
+          subject: data.subject || data.config?.subject || 'Assessment',
+          class: data.class || data.config?.class || 'NCERT',
+          topics: data.topics || data.config?.topics || [],
+          strength: data.strength || data.config?.strength || 'Medium',
+          userDisplayName: (data as any).userDisplayName || (data as any).userName || undefined,
+          userEmail: (data as any).userEmail || undefined,
+          userPhoto: (data as any).userPhoto || undefined,
+          date: data.date || getISTDateString(),
+          timeIST: data.timeIST || (data.timestamp ? getISTTimeString(new Date(data.timestamp)) : '')
+        });
+      }
+    });
+  } catch (cgErr) {
+    console.warn('Tier 2 CollectionGroup quizHistory query notice:', cgErr);
+  }
+
+  // 3. Third Tier: Per-user subcollection fetch using Promise.allSettled
+  try {
     const usersCol = collection(db, 'users');
-    const usersSnap = await getDocs(usersCol);
+    const usersSnap = await getDocs(query(usersCol, limit(200)));
     const promises = usersSnap.docs.map(async (userDoc) => {
       const userData = userDoc.data();
       const userId = userDoc.id;
-      const historyCol = collection(db, 'users', userId, 'quizHistory');
-      const hSnap = await getDocs(query(historyCol, orderBy('timestamp', 'desc'), limit(10)));
-      hSnap.forEach(hDoc => {
-        const d = hDoc.data() as QuizResultRecord;
-        allResults.push({
-          ...d,
-          id: d.id || hDoc.id,
-          userId,
-          subject: d.subject || d.config?.subject || 'Assessment',
-          class: d.class || d.config?.class || 'NCERT',
-          topics: d.topics || d.config?.topics || [],
-          strength: d.strength || d.config?.strength || 'Medium',
-          userDisplayName: userData.displayName || d.userName || undefined,
-          userEmail: userData.email || undefined,
-          userPhoto: userData.photoURL || undefined
+      try {
+        const historyCol = collection(db, 'users', userId, 'quizHistory');
+        const hSnap = await getDocs(query(historyCol, limit(50)));
+        hSnap.forEach(hDoc => {
+          const d = hDoc.data() as QuizResultRecord;
+          const key = `${userId}_${d.id || hDoc.id}`;
+          if (!resultMap.has(key)) {
+            resultMap.set(key, {
+              ...d,
+              id: d.id || hDoc.id,
+              userId,
+              subject: d.subject || d.config?.subject || 'Assessment',
+              class: d.class || d.config?.class || 'NCERT',
+              topics: d.topics || d.config?.topics || [],
+              strength: d.strength || d.config?.strength || 'Medium',
+              userDisplayName: userData.displayName || d.userName || undefined,
+              userEmail: userData.email || undefined,
+              userPhoto: userData.photoURL || undefined,
+              date: d.date || getISTDateString(),
+              timeIST: d.timeIST || (d.timestamp ? getISTTimeString(new Date(d.timestamp)) : '')
+            });
+          }
         });
-      });
+      } catch (userErr) {
+        // Ignored for individual user doc
+      }
     });
 
-    await Promise.all(promises);
-    return allResults.sort((a, b) => {
-      const tA = a.timestamp || new Date(a.date).getTime();
-      const tB = b.timestamp || new Date(b.date).getTime();
-      return tB - tA;
-    });
-  } catch (error) {
-    console.error('Error fetching all quizzes across users for admin:', error);
-    return allResults;
+    await Promise.allSettled(promises);
+  } catch (usersErr) {
+    console.warn('Tier 3 users subcollection fetch notice:', usersErr);
   }
+
+  const allResults = Array.from(resultMap.values());
+  return allResults.sort((a, b) => {
+    const tA = a.timestamp || (a.date ? new Date(a.date).getTime() : 0);
+    const tB = b.timestamp || (b.date ? new Date(b.date).getTime() : 0);
+    return tB - tA;
+  });
 };
 
 /**
@@ -908,8 +1079,13 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
  */
 export const adminDeleteUserQuizAttempt = async (userId: string, resultId: string): Promise<void> => {
   try {
+    // 1. Delete from subcollection
     const ref = doc(db, 'users', userId, 'quizHistory', resultId);
-    await deleteDoc(ref);
+    await deleteDoc(ref).catch(console.warn);
+
+    // 2. Delete from top-level mirror
+    const mirrorRef = doc(db, 'quizAssessments', `${userId}_${resultId}`);
+    await deleteDoc(mirrorRef).catch(console.warn);
   } catch (error) {
     console.error('Admin delete user quiz attempt error:', error);
     throw error;

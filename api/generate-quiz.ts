@@ -158,7 +158,7 @@ export default async function handler(req: any, res: any) {
       - Roots: Always write roots in LaTeX inside dollar signs: $\\sqrt{x}$ or $\\sqrt[3]{x}$.
       - Degrees: Always format angles and temperatures as $90^{\\circ}$ or $37^{\\circ}\\text{C}$.
       - Currency: Always use "₹" for Indian Rupee (e.g. ₹500, never $500).
-      - Plain text & Units: DO NOT wrap plain words, units, or plain numbers in dollar signs.
+      - Plain text & Units: DO NOT wrap plain words, units, or plain numbers in LaTeX \\text{} or dollar signs (e.g., write '100 ml', '50 cm', '25 g', '10 m/s', never '$100\\text{ml}$', '100\\text{ml}', or '100extml').
       - Clean Formatting: Ensure all opening dollar signs have matching closing dollar signs.
     `;
 
