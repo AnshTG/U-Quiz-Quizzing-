@@ -30,7 +30,8 @@ import {
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
-  user: UserProfile;
+  user: UserProfile | null;
+  onSignIn?: () => Promise<void>;
   initialContext?: {
     category?: FeedbackCategory;
     title?: string;
@@ -44,6 +45,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   isOpen,
   onClose,
   user,
+  onSignIn,
   initialContext
 }) => {
   const [activeTab, setActiveTab] = useState<'submit' | 'history'>('submit');
@@ -78,19 +80,26 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
 
   // Subscribe to user feedbacks
   useEffect(() => {
-    if (!isOpen || !user.uid) return;
+    if (!isOpen || !user?.uid) {
+      setMyFeedbacks([]);
+      return;
+    }
     setIsLoadingHistory(true);
     const unsubscribe = listenToUserFeedbacks(user.uid, (list) => {
       setMyFeedbacks(list);
       setIsLoadingHistory(false);
     });
     return () => unsubscribe();
-  }, [isOpen, user.uid]);
+  }, [isOpen, user?.uid]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      setErrorMessage('You must be signed in with your Google account to submit feedback.');
+      return;
+    }
     if (!title.trim() || !description.trim()) {
       setErrorMessage('Please provide both a summary title and detailed description.');
       return;

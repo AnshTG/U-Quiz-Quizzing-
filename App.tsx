@@ -81,13 +81,24 @@ export default function App() {
 
   // Maintenance mode state
   const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
+  const [isMaintenanceChecking, setIsMaintenanceChecking] = useState<boolean>(true);
 
   // Listen to Maintenance mode
   useEffect(() => {
+    // Safety timer so offline/slow connections don't hang the initial boot screen indefinitely
+    const safetyTimer = setTimeout(() => {
+      setIsMaintenanceChecking(false);
+    }, 1200);
+
     const unsubscribe = listenToMaintenanceMode((config) => {
       setMaintenanceConfig(config);
+      setIsMaintenanceChecking(false);
+      clearTimeout(safetyTimer);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   // Track online/offline status
@@ -378,22 +389,54 @@ export default function App() {
   // If user is accessing Admin Panel
   const isViewingAdmin = view === AppState.ADMIN;
 
+  // Immediate Zero-Flicker Initial Boot Loader:
+  // Prevents any premature flash of Home or Login screens before maintenance/auth status is confirmed
+  if (isMaintenanceChecking) {
+    return (
+      <div className="min-h-screen bg-[#070a0f] text-slate-100 flex flex-col items-center justify-center space-y-4 px-4 font-sans selection:bg-emerald-500/20 selection:text-emerald-400">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-2xl shadow-emerald-500/20 animate-pulse">
+          <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+            <span className="font-extrabold text-2xl text-emerald-400 font-display">U</span>
+          </div>
+        </div>
+        <div className="text-center space-y-1">
+          <h3 className="text-base font-bold text-white tracking-wide">U-Quiz NCERT</h3>
+          <p className="text-xs text-slate-400 font-mono">Initializing academic assessment environment...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={view === AppState.CHAT ? "h-screen h-[100dvh] bg-[#0b141a] text-slate-100 flex flex-col overflow-hidden selection:bg-emerald-500/20 selection:text-emerald-400" : "min-h-screen bg-[#090d14] text-slate-100 flex flex-col justify-between selection:bg-emerald-500/20 selection:text-emerald-400"}>
       
       {/* Top Banner when Maintenance Mode is active and Admin is in bypass mode */}
       {maintenanceConfig.isActive && isAdminUnlocked && (
-        <div className="bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 px-4 py-2 text-white text-xs font-bold flex items-center justify-between shadow-lg sticky top-0 z-50">
+        <div className="bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 px-4 py-2.5 text-white text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-lg sticky top-0 z-50">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-white animate-pulse" />
+            <AlertTriangle className="w-4 h-4 text-white animate-pulse shrink-0" />
             <span>MAINTENANCE MODE IS ACTIVE &bull; Public access is blocked. You are viewing in Admin Bypass Mode.</span>
           </div>
-          <button
-            onClick={() => setView(AppState.ADMIN)}
-            className="px-2.5 py-1 rounded-md bg-black/40 hover:bg-black/60 text-white text-[11px] font-mono transition-colors cursor-pointer border border-white/20"
-          >
-            Open Admin Dashboard
-          </button>
+          <div className="flex items-center gap-2">
+            {view !== AppState.ADMIN && (
+              <button
+                onClick={() => setView(AppState.ADMIN)}
+                className="px-2.5 py-1 rounded-md bg-black/40 hover:bg-black/60 text-white text-[11px] font-mono transition-colors cursor-pointer border border-white/20 flex items-center gap-1"
+              >
+                <ShieldCheck className="w-3 h-3 text-amber-300" />
+                <span>Admin Dashboard</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setIsAdminUnlocked(false);
+                setView(AppState.HOME);
+              }}
+              className="px-2.5 py-1 rounded-md bg-rose-950/60 hover:bg-rose-900 text-rose-200 text-[11px] font-mono transition-colors cursor-pointer border border-rose-400/30"
+            >
+              Lock & Exit Bypass
+            </button>
+          </div>
         </div>
       )}
 
@@ -410,9 +453,6 @@ export default function App() {
             <Navbar
               currentView={view}
               onNavigate={(targetView) => {
-                if (targetView !== AppState.ADMIN) {
-                  setIsAdminUnlocked(false);
-                }
                 navigateTo(targetView);
               }}
               isOnline={isOnline}
@@ -457,9 +497,24 @@ export default function App() {
                   setIsAdminUnlocked(false);
                   setView(AppState.HOME);
                 }} 
+                onEnterMainWebsite={() => {
+                  navigateTo(AppState.HOME);
+                }}
               />
-            ) : !user && !isAuthChecking ? (
-              /* Mandatory Google Sign-in Gate */
+            ) : isAuthChecking ? (
+              <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 px-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-xl shadow-emerald-500/20 animate-pulse">
+                  <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
+                    <span className="font-extrabold text-xl text-emerald-400 font-display">U</span>
+                  </div>
+                </div>
+                <div className="text-center space-y-1">
+                  <h3 className="text-sm font-bold text-white tracking-wide">Authenticating Scholar Account</h3>
+                  <p className="text-xs text-slate-400 font-mono">Securing NCERT assessment environment...</p>
+                </div>
+              </div>
+            ) : !user && !isAdminUnlocked ? (
+              /* Mandatory Google Sign-in Gate - Strict & Unbypassable for non-admins */
               <LoginView
                 onSignIn={handleSignIn}
                 onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
@@ -605,6 +660,16 @@ export default function App() {
           user={user}
           isOpen={isAttendanceModalOpen}
           onClose={() => setIsAttendanceModalOpen(false)}
+          onSignIn={handleSignIn}
+        />
+      )}
+
+      {/* User Bug Report & Feedback Modal */}
+      {isFeedbackModalOpen && (
+        <FeedbackModal
+          user={user}
+          isOpen={isFeedbackModalOpen}
+          onClose={() => setIsFeedbackModalOpen(false)}
           onSignIn={handleSignIn}
         />
       )}
