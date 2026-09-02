@@ -28,6 +28,7 @@ import { AdminView } from './components/AdminView';
 import { AdminAuthModal } from './components/AdminAuthModal';
 import { AttendanceModal } from './components/AttendanceModal';
 import { FeedbackModal } from './components/FeedbackModal';
+import { DocumentationModal } from './components/DocumentationModal';
 import { LoginView } from './components/LoginView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
@@ -47,6 +48,7 @@ export default function App() {
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState<boolean>(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
+  const [isDocumentationModalOpen, setIsDocumentationModalOpen] = useState<boolean>(false);
 
   // Shared challenge state
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -412,12 +414,12 @@ export default function App() {
       
       {/* Top Banner when Maintenance Mode is active and Admin is in bypass mode */}
       {maintenanceConfig.isActive && isAdminUnlocked && (
-        <div className="bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 px-4 py-2.5 text-white text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-lg sticky top-0 z-50">
-          <div className="flex items-center gap-2">
+        <div className="bg-gradient-to-r from-rose-600 via-amber-600 to-rose-600 px-3 sm:px-4 py-2 text-white text-xs font-bold flex flex-wrap items-center justify-between gap-2 shadow-lg sticky top-0 z-50 w-full overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <AlertTriangle className="w-4 h-4 text-white animate-pulse shrink-0" />
-            <span>MAINTENANCE MODE IS ACTIVE &bull; Public access is blocked. You are viewing in Admin Bypass Mode.</span>
+            <span className="break-words leading-tight">MAINTENANCE ACTIVE &bull; Public access blocked (Admin Bypass Mode)</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {view !== AppState.ADMIN && (
               <button
                 onClick={() => setView(AppState.ADMIN)}
@@ -448,38 +450,38 @@ export default function App() {
         />
       ) : (
         <>
-          {/* Top Navigation - Hidden in Chat view for immersive WhatsApp layout */}
-          {view !== AppState.CHAT && (
-            <Navbar
-              currentView={view}
-              onNavigate={(targetView) => {
-                navigateTo(targetView);
-              }}
-              isOnline={isOnline}
-              historyCount={history.length}
-              savedQuizzesCount={savedQuizzesCount}
-              user={user}
-              onSignIn={handleSignIn}
-              onSignOut={handleSignOut}
-              onOpenJoinModal={() => setIsJoinModalOpen(true)}
-              onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
-              onOpenAttendance={() => setIsAttendanceModalOpen(true)}
-              onOpenFeedback={() => setIsFeedbackModalOpen(true)}
-              isAdminUnlocked={isAdminUnlocked}
-            />
-          )}
+          {/* Top Navigation Bar - Universally available across all views */}
+          <Navbar
+            currentView={view}
+            onNavigate={(targetView) => {
+              navigateTo(targetView);
+            }}
+            isOnline={isOnline}
+            historyCount={history.length}
+            savedQuizzesCount={savedQuizzesCount}
+            user={user}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+            onOpenJoinModal={() => setIsJoinModalOpen(true)}
+            onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+            onOpenAttendance={() => setIsAttendanceModalOpen(true)}
+            onOpenFeedback={() => setIsFeedbackModalOpen(true)}
+            onOpenDocs={() => setIsDocumentationModalOpen(true)}
+            isAdminUnlocked={isAdminUnlocked}
+          />
 
           {/* Dismissable Global Error Toast */}
           {error && (
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 w-full">
-              <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-center justify-between gap-3 shadow-lg">
-                <div className="flex items-center gap-3">
-                  <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-                  <span className="text-xs sm:text-sm font-medium">{error}</span>
+            <div className="max-w-4xl mx-auto px-3 sm:px-6 pt-3 w-full">
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-start sm:items-center justify-between gap-3 shadow-lg w-full overflow-hidden">
+                <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
+                  <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5 sm:mt-0" />
+                  <span className="text-xs sm:text-sm font-medium break-words leading-snug">{error}</span>
                 </div>
                 <button
                   onClick={() => setError(null)}
-                  className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer"
+                  className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-colors cursor-pointer shrink-0"
+                  aria-label="Dismiss error"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -500,6 +502,7 @@ export default function App() {
                 onEnterMainWebsite={() => {
                   navigateTo(AppState.HOME);
                 }}
+                onOpenDocs={() => setIsDocumentationModalOpen(true)}
               />
             ) : isAuthChecking ? (
               <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 px-4">
@@ -671,6 +674,15 @@ export default function App() {
           isOpen={isFeedbackModalOpen}
           onClose={() => setIsFeedbackModalOpen(false)}
           onSignIn={handleSignIn}
+        />
+      )}
+
+      {/* Platform Manual & Documentation Modal */}
+      {isDocumentationModalOpen && (
+        <DocumentationModal
+          isOpen={isDocumentationModalOpen}
+          onClose={() => setIsDocumentationModalOpen(false)}
+          isAdmin={isAdminUnlocked}
         />
       )}
 

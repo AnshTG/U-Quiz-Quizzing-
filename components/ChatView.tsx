@@ -53,6 +53,11 @@ const SUBJECT_OPTIONS = [
 ];
 
 const CLASS_OPTIONS = [
+  'Class 1',
+  'Class 2',
+  'Class 3',
+  'Class 4',
+  'Class 5',
   'Class 6',
   'Class 7',
   'Class 8',
@@ -407,7 +412,33 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
 
           {/* Context Selectors for AI Chat */}
           {activeTab === 'gemini' && (
-            <div className="hidden lg:flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <select
+                value={selectedClass}
+                onChange={(e) => setSelectedClass(e.target.value)}
+                className="hidden sm:block bg-[#111b21] text-xs font-semibold text-[#00a884] border border-[#2a3942] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-[#00a884] cursor-pointer"
+                title="Select Target NCERT Class"
+              >
+                {CLASS_OPTIONS.map((cls) => (
+                  <option key={cls} value={cls} className="bg-[#202c33] text-white">
+                    {cls}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="hidden md:block bg-[#111b21] text-xs font-semibold text-[#e9edef] border border-[#2a3942] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-[#00a884] cursor-pointer"
+                title="Select NCERT Subject"
+              >
+                {SUBJECT_OPTIONS.map((sub) => (
+                  <option key={sub} value={sub} className="bg-[#202c33] text-white">
+                    {sub}
+                  </option>
+                ))}
+              </select>
+
               <button
                 onClick={handleResetAiChat}
                 className="p-2 rounded-xl bg-[#111b21] hover:bg-[#374248] border border-[#2a3942] text-[#8696a0] hover:text-white transition-colors cursor-pointer"

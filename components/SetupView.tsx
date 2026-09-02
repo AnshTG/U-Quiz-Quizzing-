@@ -1,10 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { QuizConfig, SyllabusYear } from '../types';
+import { QuizConfig } from '../types';
 import { 
-  CLASSES_2026_27, 
-  CLASSES_2025_26, 
-  getSyllabusData, 
-  SYLLABUS_METADATA,
+  CLASSES, 
+  NCERT_DATA, 
   STRENGTHS 
 } from '../constants';
 import { 
@@ -18,7 +16,6 @@ import {
   ArrowLeft, 
   AlertCircle, 
   Flame,
-  Calendar,
   Zap,
   Bookmark,
   Bell,
@@ -42,9 +39,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
   onCancel,
 }) => {
   // STRICT REQUIREMENT: Do not preselect options anywhere unless explicitly provided in initialConfig
-  const [selectedYear, setSelectedYear] = useState<SyllabusYear | null>(
-    initialConfig?.syllabusYear || null
-  );
   const [selectedClass, setSelectedClass] = useState<string | null>(
     initialConfig?.class || null
   );
@@ -71,16 +65,11 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState<boolean>(false);
 
-  // Active dataset based on syllabus year (or fallback to 2026-27 for lookup if year is null)
-  const activeSyllabusData = useMemo(() => {
-    return getSyllabusData(selectedYear || '2026-27');
-  }, [selectedYear]);
+  // Canonical NCERT dataset
+  const activeSyllabusData = NCERT_DATA;
 
-  // Available classes for selected year
-  const availableClasses = useMemo(() => {
-    if (!selectedYear) return [];
-    return selectedYear === '2026-27' ? CLASSES_2026_27 : CLASSES_2025_26;
-  }, [selectedYear]);
+  // Available classes
+  const availableClasses = CLASSES;
 
   // Available subjects for the selected class
   const availableSubjects = useMemo(() => {
@@ -111,17 +100,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
       t.toLowerCase().includes(topicSearch.toLowerCase())
     );
   }, [availableTopics, topicSearch]);
-
-  const handleYearChange = (year: SyllabusYear) => {
-    setSelectedYear(year);
-    // Reset lower dependencies only if invalid
-    if (selectedClass && !((year === '2026-27' ? CLASSES_2026_27 : CLASSES_2025_26).includes(selectedClass))) {
-      setSelectedClass(null);
-      setSelectedSubject(null);
-      setSelectedTopics([]);
-    }
-    setValidationError(null);
-  };
 
   const handleClassChange = (cls: string) => {
     setSelectedClass(cls);
@@ -155,10 +133,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedYear) {
-      setValidationError('Please select the Academic Syllabus Year (2026-27 or 2025-26).');
-      return;
-    }
     if (!selectedClass) {
       setValidationError('Please select a Grade Level / Class.');
       return;
@@ -191,14 +165,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
       strength,
       quantity,
       timeLimitMinutes,
-      syllabusYear: selectedYear,
       questionType,
     });
   };
 
   // Check how many configuration steps are completed
   const completedSteps = [
-    !!selectedYear,
     !!selectedClass,
     !!selectedSubject,
     selectedTopics.length > 0,
@@ -208,7 +180,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     !!questionType,
   ].filter(Boolean).length;
 
-  const totalSteps = 8;
+  const totalSteps = 7;
   const isFormComplete = completedSteps === totalSteps;
 
   const quantityOptions = [5, 10, 15, 20, 25];
@@ -264,7 +236,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
             </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Choose your academic session, grade, chapters, and test conditions. No options are preselected.
+            Choose your grade, subject, chapters, and test conditions. No options are preselected.
           </p>
         </div>
 
@@ -299,74 +271,17 @@ export const SetupView: React.FC<SetupViewProps> = ({
         
         {/* Left 2 Columns: Main Form Steps */}
         <div className="lg:col-span-2 space-y-6">
-          
-          {/* STEP 1: Academic Year Session */}
-          <div className={`p-6 rounded-3xl border transition-all ${selectedYear ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedYear ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  1
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-white font-display">Academic Syllabus Session</h3>
-                  <p className="text-xs text-slate-400">Select which NCERT curriculum syllabus edition to follow</p>
-                </div>
-              </div>
-              {selectedYear && (
-                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5" /> Selected
-                </span>
-              )}
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {(['2026-27', '2025-26'] as SyllabusYear[]).map((yr) => {
-                const isSelected = selectedYear === yr;
-                return (
-                  <button
-                    key={yr}
-                    type="button"
-                    onClick={() => handleYearChange(yr)}
-                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                      isSelected
-                        ? 'bg-emerald-500/15 border-emerald-500/50 text-white ring-1 ring-emerald-500/30'
-                        : 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:border-slate-700 hover:bg-slate-900/50'
-                    }`}
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Calendar className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
-                        <span className="font-bold text-sm">Session {yr}</span>
-                        {yr === '2026-27' && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 uppercase">
-                            Latest
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-400">
-                        {yr === '2026-27' ? 'Updated rationalized syllabus & latest textbook patterns' : 'Standard academic year curriculum'}
-                      </p>
-                    </div>
-
-                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-700'}`}>
-                      {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* STEP 2: Grade Level / Class */}
-          <div className={`p-6 rounded-3xl border transition-all ${!selectedYear ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedClass ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+          {/* STEP 1: Grade Level / Class */}
+          <div className={`p-6 rounded-3xl border transition-all ${selectedClass ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedClass ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  2
+                  1
                 </span>
                 <div>
                   <h3 className="text-base font-bold text-white font-display">Grade / Class Level</h3>
-                  <p className="text-xs text-slate-400">Choose the class for standard NCERT syllabus content</p>
+                  <p className="text-xs text-slate-400">Choose the class for official NCERT curriculum content</p>
                 </div>
               </div>
               {selectedClass && (
@@ -376,39 +291,33 @@ export const SetupView: React.FC<SetupViewProps> = ({
               )}
             </div>
 
-            {!selectedYear ? (
-              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
-                Please select the Academic Session (Step 1) to view available classes.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                {availableClasses.map((cls) => {
-                  const isSelected = selectedClass === cls;
-                  return (
-                    <button
-                      key={cls}
-                      type="button"
-                      onClick={() => handleClassChange(cls)}
-                      className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20 scale-105'
-                          : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
-                      }`}
-                    >
-                      {cls}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {availableClasses.map((cls) => {
+                const isSelected = selectedClass === cls;
+                return (
+                  <button
+                    key={cls}
+                    type="button"
+                    onClick={() => handleClassChange(cls)}
+                    className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20 scale-105'
+                        : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {cls}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* STEP 3: Subject Selection */}
+          {/* STEP 2: Subject Selection */}
           <div className={`p-6 rounded-3xl border transition-all ${!selectedClass ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedSubject ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedSubject ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  3
+                  2
                 </span>
                 <div>
                   <h3 className="text-base font-bold text-white font-display">Subject</h3>
@@ -424,7 +333,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
             {!selectedClass ? (
               <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
-                Please select a Grade / Class above (Step 2) to unlock subjects.
+                Please select a Grade / Class above (Step 1) to unlock subjects.
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -461,12 +370,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
             )}
           </div>
 
-          {/* STEP 4: Chapter & Topics Selection */}
+          {/* STEP 3: Chapter & Topics Selection */}
           <div className={`p-6 rounded-3xl border transition-all ${!selectedSubject ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedTopics.length > 0 ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedTopics.length > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  4
+                  3
                 </span>
                 <div>
                   <h3 className="text-base font-bold text-white font-display">
@@ -498,7 +407,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
             {!selectedSubject ? (
               <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
-                Please select a Subject (Step 3) to view chapters and topics.
+                Please select a Subject (Step 2) to view chapters and topics.
               </div>
             ) : (
               <div className="space-y-3">
@@ -543,15 +452,15 @@ export const SetupView: React.FC<SetupViewProps> = ({
             )}
           </div>
 
-          {/* STEP 5, 6, 7: Assessment Parameters */}
+          {/* STEP 4, 5, 6, 7: Assessment Parameters */}
           <div className="p-6 rounded-3xl border bg-slate-900/60 border-slate-800 space-y-6">
             
-            {/* Step 5: Difficulty */}
+            {/* Step 4: Difficulty */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${strength ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    5
+                    4
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Cognitive Demand / Difficulty</h3>
@@ -597,12 +506,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
 
-            {/* Step 6: Question Quantity */}
+            {/* Step 5: Question Quantity */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${quantity ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    6
+                    5
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Number of Questions</h3>
@@ -637,12 +546,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
 
-            {/* Step 7: Question Format (Single, Multiple, or Both) */}
+            {/* Step 6: Question Format (Single, Multiple, or Both) */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className="w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    7
+                    6
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Question Format</h3>
@@ -679,12 +588,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
 
-            {/* Step 8: Timer Mode */}
+            {/* Step 7: Timer Mode */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${timeLimitMinutes !== null ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    8
+                    7
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Time Allocation</h3>
@@ -748,13 +657,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
             {/* Checklist */}
             <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Academic Session:</span>
-                <span className={selectedYear ? 'text-slate-200 font-semibold font-mono' : 'text-slate-600 italic'}>
-                  {selectedYear || 'Unselected'}
-                </span>
-              </div>
-
               <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
                 <span className="text-slate-400">Class Level:</span>
                 <span className={selectedClass ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>

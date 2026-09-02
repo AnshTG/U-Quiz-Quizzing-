@@ -114,22 +114,24 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
         severity,
         title: title.trim(),
         description: description.trim(),
-        relatedSubject: relatedSubject.trim() || undefined,
-        relatedClass: relatedClass.trim() || undefined,
-        deviceInfo: `${navigator.userAgent} (${window.innerWidth}x${window.innerHeight})`
+        relatedSubject: relatedSubject.trim() ? relatedSubject.trim() : undefined,
+        relatedClass: relatedClass.trim() ? relatedClass.trim() : undefined,
+        deviceInfo: typeof navigator !== 'undefined' ? `${navigator.userAgent} (${window.innerWidth}x${window.innerHeight})` : undefined
       }, user);
 
       setSubmitSuccess(true);
       setTitle('');
       setDescription('');
+      setRelatedSubject('');
+      setRelatedClass('');
       
       setTimeout(() => {
         setSubmitSuccess(false);
         setActiveTab('history');
-      }, 1500);
+      }, 1200);
     } catch (err: any) {
       console.error('Feedback submit failed:', err);
-      setErrorMessage('Failed to submit report. Please check your internet connection.');
+      setErrorMessage(err?.message || 'Failed to submit report. Please check your connection.');
     } finally {
       setIsSubmitting(false);
     }

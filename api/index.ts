@@ -197,7 +197,7 @@ app.post(['/api/generate-quiz', '/generate-quiz', '/api/quiz/generate', '/quiz/g
 });
 
 // Gemini Chat Endpoint (handles all route aliases)
-app.post(['/api/gemini/chat', '/gemini/chat', '/api/ai/chat', '/ai/chat'], async (req, res) => {
+app.post(['/api/chat', '/chat', '/api/gemini/chat', '/gemini/chat', '/api/ai/chat', '/ai/chat'], async (req, res) => {
   try {
     const { messages, classContext, subjectContext, syllabusYear = '2026-27' } = req.body;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -224,18 +224,41 @@ app.post(['/api/gemini/chat', '/gemini/chat', '/api/ai/chat', '/ai/chat'], async
       parts: [{ text: m.content || '' }],
     }));
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: formattedContents,
-      config: {
-        systemInstruction,
-        temperature: 0.7,
-        topP: 0.95,
-      },
-    });
+    const modelsToTry = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-flash-latest',
+      'gemini-3.7-flash',
+      'gemini-1.5-flash',
+    ];
 
-    const replyText = response.text || 'I apologize, but I could not generate a response. Please try again.';
-    return res.json({ reply: replyText });
+    let response: any = null;
+    let lastErr: any = null;
+
+    for (const model of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: formattedContents,
+          config: {
+            systemInstruction,
+            temperature: 0.7,
+            topP: 0.95,
+          },
+        });
+        if (response && response.text) {
+          break;
+        }
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+
+    if (!response || !response.text) {
+      throw new Error(lastErr?.message || 'Empty response from AI study mentor.');
+    }
+
+    return res.json({ reply: response.text });
   } catch (error: any) {
     console.error('Gemini Chat API error:', error);
     return res.status(500).json({

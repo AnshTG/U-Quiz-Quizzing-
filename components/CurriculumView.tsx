@@ -1,11 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  getSyllabusData, 
-  CLASSES_2026_27, 
-  CLASSES_2025_26, 
-  SYLLABUS_METADATA 
+  CLASSES, 
+  NCERT_DATA 
 } from '../constants';
-import { QuizConfig, SyllabusYear } from '../types';
+import { QuizConfig } from '../types';
 import { 
   BookOpen, 
   Search, 
@@ -14,8 +12,6 @@ import {
   Layers, 
   CheckCircle,
   GraduationCap,
-  Calendar,
-  Zap,
   Info,
   CheckCircle2,
   Bookmark,
@@ -25,7 +21,7 @@ import {
 
 interface CurriculumViewProps {
   onStartChapterQuiz: (config: QuizConfig) => void;
-  onOpenCustomSetup: (cls?: string, sub?: string, year?: SyllabusYear) => void;
+  onOpenCustomSetup: (cls?: string, sub?: string) => void;
   onBackHome?: () => void;
 }
 
@@ -34,21 +30,14 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
   onOpenCustomSetup,
   onBackHome,
 }) => {
-  const [selectedYear, setSelectedYear] = useState<SyllabusYear>('2026-27');
   const [selectedClass, setSelectedClass] = useState<string>('Class 10');
   const [selectedSubject, setSelectedSubject] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showEvolutionGuide, setShowEvolutionGuide] = useState<boolean>(false);
 
-  // Active dataset based on syllabus year
-  const activeSyllabusData = useMemo(() => {
-    return getSyllabusData(selectedYear);
-  }, [selectedYear]);
-
-  // Classes for the active year
-  const activeClasses = useMemo(() => {
-    return selectedYear === '2026-27' ? CLASSES_2026_27 : CLASSES_2025_26;
-  }, [selectedYear]);
+  // Canonical NCERT dataset
+  const activeSyllabusData = NCERT_DATA;
+  const activeClasses = CLASSES;
 
   // Available subjects for the class
   const availableSubjects = useMemo(() => {
@@ -59,7 +48,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
     );
   }, [activeSyllabusData, selectedClass]);
 
-  // Update default subject when class or year changes
+  // Update default subject when class changes
   React.useEffect(() => {
     if (availableSubjects.length > 0 && (!selectedSubject || !availableSubjects.includes(selectedSubject))) {
       setSelectedSubject(availableSubjects[0]);
@@ -81,8 +70,6 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
       ch.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [currentChapters, searchQuery]);
-
-  const yearMeta = SYLLABUS_METADATA[selectedYear];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -112,7 +99,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
             NCERT Syllabus Directory
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Explore the official NCERT curriculum for academic sessions 2025–26 & 2026–27 across Classes 1–12
+            Explore the official NCERT curriculum textbooks across Classes 1–12
           </p>
         </div>
 
@@ -120,15 +107,15 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowEvolutionGuide(!showEvolutionGuide)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white font-medium text-xs transition-all"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white font-medium text-xs transition-all cursor-pointer"
           >
             <Info className="w-4 h-4 text-cyan-400" />
             <span>{showEvolutionGuide ? 'Hide Curriculum Info' : 'NCERT Curriculum Overview'}</span>
           </button>
 
           <button
-            onClick={() => onOpenCustomSetup(selectedClass, selectedSubject, selectedYear)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 hover:from-emerald-400 hover:to-lime-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 transition-all"
+            onClick={() => onOpenCustomSetup(selectedClass, selectedSubject)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 hover:from-emerald-400 hover:to-lime-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
           >
             <Sparkles className="w-4 h-4" />
             <span>Multi-Chapter Test</span>
@@ -136,151 +123,41 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
         </div>
       </div>
 
-      {/* Syllabus Year Selector Tabs */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-bold font-display text-white uppercase tracking-wider">
-              Academic Session Selection
-            </h2>
+      {/* Curriculum Summary Banner */}
+      <section className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-teal-950/40 p-6 sm:p-7 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5 max-w-3xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                Official NCERT Curriculum
+              </span>
+              <span className="text-xs text-emerald-400 font-mono">NEP 2020 Aligned</span>
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold font-display text-white">
+              Official NCERT Textbooks & Rationalized Modules
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              Includes all official textbook series: 
+              <strong className="text-emerald-300"> Curiosity</strong> (Science 6-8), 
+              <strong className="text-emerald-300"> Ganita Prakash</strong> (Maths 6-8), 
+              <strong className="text-emerald-300"> Exploring Society</strong> (Social Science 6-8), 
+              <strong className="text-emerald-300"> Poorvi & Malhar</strong> (Languages), 
+              <strong className="text-emerald-300"> Mridang, Sarangi, Santoor & Maths Mela</strong> (Primary 1-5), and streamlined Senior Secondary frameworks.
+            </p>
           </div>
-          <p className="text-xs text-slate-400">
-            Session 2025-26 & 2026-27 share the same unified official NCERT curriculum standard
-          </p>
+
+          <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
+            <div className="px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
+              <span className="text-[10px] text-slate-400 font-mono uppercase">Curriculum Units</span>
+              <p className="text-lg font-bold text-emerald-400 font-mono">{activeSyllabusData.length} Chapters</p>
+            </div>
+            <div className="px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
+              <span className="text-[10px] text-slate-400 font-mono uppercase">Grade Spectrum</span>
+              <p className="text-lg font-bold text-white font-mono">Class 1 to 12</p>
+            </div>
+          </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 max-w-md w-full">
-          <button
-            onClick={() => setSelectedYear('2026-27')}
-            className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg text-xs font-bold transition-all ${
-              selectedYear === '2026-27'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 fill-current" />
-              <span>2026–27 Session</span>
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-              selectedYear === '2026-27' ? 'bg-slate-950 text-emerald-400' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-            }`}>
-              Official
-            </span>
-          </button>
-
-          <button
-            onClick={() => setSelectedYear('2025-26')}
-            className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg text-xs font-bold transition-all ${
-              selectedYear === '2025-26'
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-          >
-            <span className="flex items-center gap-1.5">
-              <Bookmark className="w-3.5 h-3.5" />
-              <span>2025–26 Session</span>
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
-              selectedYear === '2025-26' ? 'bg-slate-950 text-emerald-400' : 'bg-slate-800 text-slate-400'
-            }`}>
-              Official
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* 2026-27 Featured Section / Syllabus Evolution Banner */}
-      {selectedYear === '2026-27' && (
-        <section className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-teal-950/40 p-6 sm:p-7 space-y-4">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="space-y-1.5 max-w-3xl">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
-                  ★ 2026–27 New NCF-SE Unified Syllabus
-                </span>
-                <span className="text-xs text-emerald-400 font-mono">NEP 2020 Aligned</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-bold font-display text-white">
-                Newly Integrated NCERT Textbooks & Rationalized Modules
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                Includes the new textbook series introduced under the National Curriculum Framework: 
-                <strong className="text-emerald-300"> Curiosity</strong> (Science 6-8), 
-                <strong className="text-emerald-300"> Ganita Prakash</strong> (Maths 6-8), 
-                <strong className="text-emerald-300"> Exploring Society</strong> (Social Science 6-8), 
-                <strong className="text-emerald-300"> Poorvi & Malhar</strong> (Languages), 
-                <strong className="text-emerald-300"> Mridang, Sarangi, Santoor & Maths Mela</strong> (Primary 1-5), and streamlined Senior Secondary frameworks.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
-              <div className="px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
-                <span className="text-[10px] text-slate-400 font-mono uppercase">Curriculum Units</span>
-                <p className="text-lg font-bold text-emerald-400 font-mono">{activeSyllabusData.length} Chapters</p>
-              </div>
-              <div className="px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
-                <span className="text-[10px] text-slate-400 font-mono uppercase">Grade Spectrum</span>
-                <p className="text-lg font-bold text-white font-mono">Class 1 to 12</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Highlights Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-            {yearMeta.highlights.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-2 bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 text-xs text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span className="leading-snug">{item}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* 2025-26 Standard Banner */}
-      {selectedYear === '2025-26' && (
-        <section className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-teal-950/40 p-6 sm:p-7 space-y-4">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="space-y-1.5 max-w-3xl">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold font-mono bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
-                  ★ 2025–26 Official NCERT Curriculum
-                </span>
-                <span className="text-xs text-emerald-400 font-mono">NEP 2020 Aligned</span>
-              </div>
-              <h3 className="text-xl sm:text-2xl font-bold font-display text-white">
-                Unified NCERT Textbooks & Rationalized Modules
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                Integrated NCERT textbooks and curriculum modules corresponding with the official session specifications across Foundational, Middle, Secondary, and Senior Secondary classes.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
-              <div className="px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
-                <span className="text-[10px] text-slate-400 font-mono uppercase">Curriculum Units</span>
-                <p className="text-lg font-bold text-emerald-400 font-mono">{activeSyllabusData.length} Chapters</p>
-              </div>
-              <div className="px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-800 text-center">
-                <span className="text-[10px] text-slate-400 font-mono uppercase">Grade Spectrum</span>
-                <p className="text-lg font-bold text-white font-mono">Class 1 to 12</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Highlights Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2">
-            {yearMeta.highlights.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-2 bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 text-xs text-slate-300">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span className="leading-snug">{item}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+      </section>
 
       {/* Optional Evolution Guide Modal / Card */}
       {showEvolutionGuide && (
@@ -289,12 +166,12 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
             <div className="flex items-center gap-2">
               <BookMarked className="w-5 h-5 text-cyan-400" />
               <h3 className="text-base font-bold font-display text-white">
-                Summary of NCERT 2026–27 Syllabus Upgrades & Changes
+                Summary of Official NCERT Curriculum Framework
               </h3>
             </div>
             <button
               onClick={() => setShowEvolutionGuide(false)}
-              className="text-xs text-cyan-400 hover:text-cyan-300"
+              className="text-xs text-cyan-400 hover:text-cyan-300 cursor-pointer"
             >
               Close
             </button>
@@ -304,7 +181,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
             <div className="p-4 rounded-xl bg-slate-950/70 border border-cyan-500/20 space-y-2">
               <span className="font-bold text-cyan-400 block font-display text-sm">Middle Stage (Classes 6–8)</span>
               <p>
-                Replacement of conventional textbooks with the integrated <strong>Curiosity</strong> (Science), <strong>Ganita Prakash</strong> (Mathematics), and <strong>Exploring Society: India and Beyond</strong> (Social Science) curricula, emphasizing hands-on inquiry, Indian civilisational roots, and environmental stewardship.
+                Integrated <strong>Curiosity</strong> (Science), <strong>Ganita Prakash</strong> (Mathematics), and <strong>Exploring Society: India and Beyond</strong> (Social Science) curricula, emphasizing hands-on inquiry, Indian civilisational roots, and environmental stewardship.
               </p>
             </div>
             <div className="p-4 rounded-xl bg-slate-950/70 border border-cyan-500/20 space-y-2">
@@ -327,7 +204,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-slate-400 uppercase font-mono tracking-wider">
-            Select Grade Level ({selectedYear}):
+            Select Grade Level:
           </span>
           <span className="text-xs font-mono text-emerald-400">
             {selectedClass} Active
@@ -339,7 +216,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
             <button
               key={cls}
               onClick={() => setSelectedClass(cls)}
-              className={`py-2.5 px-2 rounded-xl text-xs font-bold font-display transition-all border text-center ${
+              className={`py-2.5 px-2 rounded-xl text-xs font-bold font-display transition-all border text-center cursor-pointer ${
                 selectedClass === cls
                   ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20 font-bold scale-[1.02]'
                   : 'bg-slate-900/60 hover:bg-slate-800 border-slate-800 text-slate-300'
@@ -374,7 +251,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
                     setSelectedSubject(sub);
                     setSearchQuery('');
                   }}
-                  className={`w-full p-3.5 rounded-xl border text-left text-xs font-semibold transition-all flex items-center justify-between ${
+                  className={`w-full p-3.5 rounded-xl border text-left text-xs font-semibold transition-all flex items-center justify-between cursor-pointer ${
                     isSelected
                       ? 'bg-emerald-500/15 border-emerald-500 text-white font-bold shadow-sm'
                       : 'bg-slate-900/40 hover:bg-slate-800 border-slate-800 text-slate-400'
@@ -408,9 +285,6 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
               />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-emerald-400 font-mono">
-                {selectedYear} Edition
-              </span>
               <span className="text-xs text-slate-400 font-mono">
                 {filteredChapters.length} chapter{filteredChapters.length !== 1 ? 's' : ''}
               </span>
@@ -434,9 +308,6 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
                       <span className="text-[10px] font-mono text-emerald-400 uppercase font-bold tracking-wider">
                         Unit {idx + 1}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-500">
-                        {selectedYear}
-                      </span>
                     </div>
 
                     <h3 className="text-sm sm:text-base font-bold font-display text-white group-hover:text-emerald-400 transition-colors leading-snug">
@@ -456,9 +327,8 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
                         topics: [chapName],
                         strength: 'Medium',
                         quantity: 10,
-                        syllabusYear: selectedYear
                       })}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 border border-emerald-500/30 text-emerald-400 hover:text-slate-950 text-xs font-bold transition-all shadow-sm"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500 border border-emerald-500/30 text-emerald-400 hover:text-slate-950 text-xs font-bold transition-all shadow-sm cursor-pointer"
                     >
                       <span>Quiz</span>
                       <ArrowRight className="w-3.5 h-3.5" />

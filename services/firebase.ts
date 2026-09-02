@@ -61,6 +61,31 @@ googleProvider.setCustomParameters({
 
 export const MAX_CLOUD_QUIZZES_LIMIT = 10;
 
+// Helper to deeply sanitize objects for Firestore (removes undefined fields and replaces with null or deletes them)
+export const sanitizeForFirestore = (obj: any): any => {
+  if (obj === undefined) {
+    return null;
+  }
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item));
+  }
+  if (obj instanceof Date) {
+    return obj.toISOString();
+  }
+  const cleaned: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      cleaned[key] = sanitizeForFirestore(val);
+    } else {
+      cleaned[key] = null;
+    }
+  }
+  return cleaned;
+};
+
 // Helper to get formatted IST date and time
 export const getISTDateString = (d: Date = new Date()): string => {
   const istOffsetMs = 5.5 * 3600 * 1000;
@@ -251,29 +276,31 @@ export const recordAttendance = async (
       id: attendanceDocId,
       userId: user.uid,
       displayName: user.displayName || 'NCERT Scholar',
-      email: user.email,
-      photoURL: user.photoURL,
+      email: user.email || undefined,
+      photoURL: user.photoURL || undefined,
       date: todayStr,
       timestamp: Date.now(),
       timeStr,
       activityType,
       currentStreak: newStreak,
-      subjectAttempted: extra?.subject,
-      scoreGained: extra?.score
+      subjectAttempted: extra?.subject || undefined,
+      scoreGained: extra?.score !== undefined ? extra.score : undefined
     };
 
+    const sanitizedRecord = sanitizeForFirestore(record);
+
     // Save attendance record
-    await setDoc(attendanceRef, record, { merge: true });
+    await setDoc(attendanceRef, sanitizedRecord, { merge: true });
 
     // Update user profile streak & stats
     const userRef = doc(db, 'users', user.uid);
-    await setDoc(userRef, {
+    await setDoc(userRef, sanitizeForFirestore({
       currentStreak: newStreak,
       lastCheckInDate: todayStr,
       attendanceDaysCount: isNewDay ? increment(1) : (user.attendanceDaysCount || 1),
       lastActive: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    }, { merge: true });
+    }), { merge: true });
 
     return record;
   } catch (error) {
@@ -393,7 +420,7 @@ export const saveQuizResultToCloud = async (
     const userEmail = userProfile?.email || null;
     const userPhoto = userProfile?.photoURL || null;
 
-    const fullResultData = {
+    const rawResultData = {
       ...result,
       userId,
       timestamp,
@@ -412,6 +439,8 @@ export const saveQuizResultToCloud = async (
       percentage: Math.round((result.score / Math.max(1, result.total)) * 100)
     };
 
+    const fullResultData = sanitizeForFirestore(rawResultData);
+
     // 1. Save in user's subcollection if authenticated
     if (userId && !userId.startsWith('guest_')) {
       try {
@@ -427,6 +456,11 @@ export const saveQuizResultToCloud = async (
       const docKey = `${userId}_${result.id}`;
       const topLevelRef = doc(db, 'quizAssessments', docKey);
       await setDoc(topLevelRef, fullResultData, { merge: true });
+
+      // Also mirror with result.id as document key to guarantee collectionGroup fallback match
+      if (result.id && result.id !== docKey) {
+        await setDoc(doc(db, 'quizAssessments', result.id), fullResultData, { merge: true }).catch(() => {});
+      }
     } catch (mirrorErr) {
       console.warn('Mirror quizAssessments write notice:', mirrorErr);
     }
@@ -435,13 +469,13 @@ export const saveQuizResultToCloud = async (
     if (userId && !userId.startsWith('guest_')) {
       try {
         const userRef = doc(db, 'users', userId);
-        await setDoc(userRef, {
+        await setDoc(userRef, sanitizeForFirestore({
           lastQuizAt: new Date().toISOString(),
           quizzesCompleted: increment(1),
           totalQuestionsAnswered: increment(result.total),
           totalScore: increment(result.score),
           lastActive: new Date().toISOString()
-        }, { merge: true });
+        }), { merge: true });
       } catch (statErr) {
         console.warn('User stat increment notice:', statErr);
       }
@@ -452,8 +486,8 @@ export const saveQuizResultToCloud = async (
       const profileToRecord: UserProfile = userProfile || {
         uid: userId,
         displayName: userName,
-        email: userEmail,
-        photoURL: userPhoto
+        email: userEmail || undefined,
+        photoURL: userPhoto || undefined
       };
       recordAttendance(profileToRecord, 'quiz_completion', {
         subject: `${result.config?.class || 'NCERT'} ${result.config?.subject || 'Assessment'}`,
@@ -1004,7 +1038,7 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
   // 1. First Tier: Top-level quizAssessments collection
   try {
     const assessmentsCol = collection(db, 'quizAssessments');
-    const snap = await getDocs(query(assessmentsCol, limit(500)));
+    const snap = await getDocs(query(assessmentsCol, limit(1000)));
     snap.forEach(docSnap => {
       const data = docSnap.data() as QuizResultRecord;
       const parentUserId = (data as any).userId || docSnap.id.split('_')[0] || 'anonymous';
@@ -1030,7 +1064,7 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
 
   // 2. Second Tier: CollectionGroup quizHistory (WITHOUT orderBy to prevent index errors)
   try {
-    const cgQuery = query(collectionGroup(db, 'quizHistory'), limit(500));
+    const cgQuery = query(collectionGroup(db, 'quizHistory'), limit(1000));
     const cgSnap = await getDocs(cgQuery);
     cgSnap.forEach(docSnap => {
       const data = docSnap.data() as QuizResultRecord;
@@ -1054,7 +1088,7 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
         resultMap.set(key, entry);
 
         // Auto-mirror to top level for persistent indexing
-        setDoc(doc(db, 'quizAssessments', key), entry, { merge: true }).catch(console.warn);
+        setDoc(doc(db, 'quizAssessments', key), sanitizeForFirestore(entry), { merge: true }).catch(console.warn);
       }
     });
   } catch (cgErr) {
@@ -1064,13 +1098,13 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
   // 3. Third Tier: Per-user subcollection fetch using Promise.allSettled
   try {
     const usersCol = collection(db, 'users');
-    const usersSnap = await getDocs(query(usersCol, limit(200)));
+    const usersSnap = await getDocs(query(usersCol, limit(300)));
     const promises = usersSnap.docs.map(async (userDoc) => {
       const userData = userDoc.data();
       const userId = userDoc.id;
       try {
         const historyCol = collection(db, 'users', userId, 'quizHistory');
-        const hSnap = await getDocs(query(historyCol, limit(50)));
+        const hSnap = await getDocs(query(historyCol, limit(100)));
         hSnap.forEach(hDoc => {
           const d = hDoc.data() as QuizResultRecord;
           const key = `${userId}_${d.id || hDoc.id}`;
@@ -1092,7 +1126,7 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
             resultMap.set(key, entry);
 
             // Auto-mirror to top level
-            setDoc(doc(db, 'quizAssessments', key), entry, { merge: true }).catch(console.warn);
+            setDoc(doc(db, 'quizAssessments', key), sanitizeForFirestore(entry), { merge: true }).catch(console.warn);
           }
         });
       } catch (userErr) {
@@ -1103,6 +1137,40 @@ export const fetchAllQuizzesAcrossUsersForAdmin = async (): Promise<AdminUserQui
     await Promise.allSettled(promises);
   } catch (usersErr) {
     console.warn('Tier 3 users subcollection fetch notice:', usersErr);
+  }
+
+  // 4. Fourth Tier: Local browser history recovery (if running in browser)
+  if (typeof window !== 'undefined') {
+    try {
+      const rawLocal = localStorage.getItem('uquiz_history');
+      if (rawLocal) {
+        const localList: QuizResultRecord[] = JSON.parse(rawLocal);
+        if (Array.isArray(localList)) {
+          localList.forEach(rec => {
+            const userId = 'guest_local';
+            const key = `${userId}_${rec.id}`;
+            if (!resultMap.has(key) && !resultMap.has(`anonymous_${rec.id}`)) {
+              const entry: AdminUserQuizEntry = {
+                ...rec,
+                id: rec.id,
+                userId,
+                subject: rec.subject || rec.config?.subject || 'Assessment',
+                class: rec.class || rec.config?.class || 'NCERT',
+                topics: rec.topics || rec.config?.topics || [],
+                strength: rec.strength || rec.config?.strength || 'Medium',
+                userDisplayName: rec.userName || 'Scholar (Local Session)',
+                date: rec.date || getISTDateString(),
+                timeIST: rec.timeIST || (rec.timestamp ? getISTTimeString(new Date(rec.timestamp)) : '')
+              };
+              resultMap.set(key, entry);
+              setDoc(doc(db, 'quizAssessments', key), sanitizeForFirestore(entry), { merge: true }).catch(() => {});
+            }
+          });
+        }
+      }
+    } catch (localErr) {
+      // Ignored
+    }
   }
 
   const allResults = Array.from(resultMap.values());
@@ -1717,7 +1785,7 @@ export const submitUserFeedback = async (
 ): Promise<string> => {
   try {
     const feedbackId = `fb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const newFeedback: UserFeedback = {
+    const newFeedback: Record<string, any> = {
       id: feedbackId,
       userId: userProfile.uid,
       userDisplayName: userProfile.displayName || 'Scholar',
@@ -1731,11 +1799,20 @@ export const submitUserFeedback = async (
       createdAt: new Date().toISOString(),
       timestamp: Date.now(),
       timeIST: getISTTimeString(),
-      date: getISTDateString(),
-      relatedSubject: feedbackData.relatedSubject?.trim() || undefined,
-      relatedClass: feedbackData.relatedClass?.trim() || undefined,
-      deviceInfo: feedbackData.deviceInfo || (typeof navigator !== 'undefined' ? `${navigator.userAgent} (${window.innerWidth}x${window.innerHeight})` : undefined)
+      date: getISTDateString()
     };
+
+    if (feedbackData.relatedSubject && feedbackData.relatedSubject.trim()) {
+      newFeedback.relatedSubject = feedbackData.relatedSubject.trim();
+    }
+    if (feedbackData.relatedClass && feedbackData.relatedClass.trim()) {
+      newFeedback.relatedClass = feedbackData.relatedClass.trim();
+    }
+    if (feedbackData.deviceInfo && feedbackData.deviceInfo.trim()) {
+      newFeedback.deviceInfo = feedbackData.deviceInfo.trim();
+    } else if (typeof navigator !== 'undefined') {
+      newFeedback.deviceInfo = `${navigator.userAgent} (${window.innerWidth}x${window.innerHeight})`;
+    }
 
     const feedbackDocRef = doc(db, 'feedbacks', feedbackId);
     await setDoc(feedbackDocRef, newFeedback);
@@ -1854,12 +1931,16 @@ export const adminUpdateFeedbackStatus = async (
 ): Promise<void> => {
   try {
     const docRef = doc(db, 'feedbacks', feedbackId);
-    const updateData: Partial<UserFeedback> = {
-      status,
-      adminNotes: adminNotes !== undefined ? adminNotes : undefined,
-      resolvedAt: status === 'resolved' ? new Date().toISOString() : undefined,
-      resolvedBy: status === 'resolved' ? (resolvedBy || 'Administrator') : undefined
+    const updateData: Record<string, any> = {
+      status
     };
+    if (adminNotes !== undefined && adminNotes !== null) {
+      updateData.adminNotes = adminNotes;
+    }
+    if (status === 'resolved') {
+      updateData.resolvedAt = new Date().toISOString();
+      updateData.resolvedBy = resolvedBy || 'Administrator';
+    }
     await setDoc(docRef, updateData, { merge: true });
   } catch (error) {
     console.error('Failed to update feedback status:', error);

@@ -51,8 +51,8 @@ export const SYLLABUS_METADATA: Record<SyllabusYear, SyllabusMetadata> = {
 };
 
 // ==========================================
-// OFFICIAL UNIFIED NCERT SYLLABUS (CLASSES 1 - 12)
-// Unified source of truth for 2025-26 and 2026-27
+// OFFICIAL UNIFIED NCERT CURRICULUM (CLASSES 1 - 12)
+// Comprehensive official textbook syllabus
 // ==========================================
 const rawNCERTData: Record<string, Record<string, string[]>> = {
   "Class 1": {
