@@ -30,6 +30,7 @@ import { AttendanceModal } from './components/AttendanceModal';
 import { FeedbackModal } from './components/FeedbackModal';
 import { DocumentationModal } from './components/DocumentationModal';
 import { LoginView } from './components/LoginView';
+import { LandingHomeView } from './components/LandingHomeView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
 import { AlertCircle, X, AlertTriangle, ShieldCheck } from 'lucide-react';
@@ -42,6 +43,7 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [savedQuizzesCount, setSavedQuizzesCount] = useState<number>(0);
+  const [showLoginScreen, setShowLoginScreen] = useState<boolean>(false);
   
   // Admin authentication state
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
@@ -200,6 +202,7 @@ export default function App() {
       setUser(null);
       setSavedQuizzesCount(0);
       setIsAdminUnlocked(false);
+      setShowLoginScreen(false);
     } catch (err: any) {
       console.error('Sign Out error:', err);
     }
@@ -470,7 +473,8 @@ export default function App() {
             onOpenFeedback={() => setIsFeedbackModalOpen(true)}
             onOpenDocs={() => setIsDocumentationModalOpen(true)}
             isAdminUnlocked={isAdminUnlocked}
-            isLoginScreen={!user && !isAdminUnlocked}
+            isLoginScreen={!user && !isAdminUnlocked && showLoginScreen}
+            onGoToLogin={() => setShowLoginScreen(true)}
           />
 
           {/* Dismissable Global Error Toast */}
@@ -520,12 +524,22 @@ export default function App() {
                 </div>
               </div>
             ) : !user && !isAdminUnlocked ? (
-              /* Mandatory Google Sign-in Gate - Strict & Unbypassable for non-admins */
-              <LoginView
-                onSignIn={handleSignIn}
-                onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
-                error={error}
-              />
+              showLoginScreen ? (
+                /* Dedicated Login Screen with Top Bar Options Removed */
+                <LoginView
+                  onSignIn={handleSignIn}
+                  onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+                  onBackToHome={() => setShowLoginScreen(false)}
+                  error={error}
+                />
+              ) : (
+                /* Home Screen with Rich App Description, Curriculum Highlights & Take to Login CTA */
+                <LandingHomeView
+                  onTakeToLogin={() => setShowLoginScreen(true)}
+                  onOpenDocs={() => setIsDocumentationModalOpen(true)}
+                  onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
+                />
+              )
             ) : (
               <>
                 {view === AppState.HOME && (

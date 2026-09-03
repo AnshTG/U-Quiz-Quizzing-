@@ -9,6 +9,7 @@ import {
   BookOpen, 
   Lock, 
   ArrowRight, 
+  ArrowLeft,
   AlertCircle,
   Database
 } from 'lucide-react';
@@ -16,12 +17,14 @@ import {
 interface LoginViewProps {
   onSignIn: () => Promise<void>;
   onOpenAdminAuth: () => void;
+  onBackToHome?: () => void;
   error?: string | null;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
   onSignIn,
   onOpenAdminAuth,
+  onBackToHome,
   error
 }) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -48,8 +51,22 @@ export const LoginView: React.FC<LoginViewProps> = ({
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 right-10 w-72 h-72 bg-lime-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-md w-full relative z-10 space-y-8">
+      <div className="max-w-md w-full relative z-10 space-y-6">
         
+        {/* Optional Back to Home Link */}
+        {onBackToHome && (
+          <div className="flex items-center justify-between">
+            <button
+              onClick={onBackToHome}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Back to App Overview</span>
+            </button>
+            <span className="text-[11px] font-mono text-slate-500">Sign In</span>
+          </div>
+        )}
+
         {/* Brand Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-xl shadow-emerald-500/20 mb-2">

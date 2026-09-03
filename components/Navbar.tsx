@@ -42,6 +42,7 @@ interface NavbarProps {
   onOpenDocs?: () => void;
   isAdminUnlocked?: boolean;
   isLoginScreen?: boolean;
+  onGoToLogin?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -59,9 +60,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenFeedback,
   onOpenDocs,
   isAdminUnlocked = false,
-  isLoginScreen
+  isLoginScreen,
+  onGoToLogin
 }) => {
-  const isLogin = isLoginScreen !== undefined ? isLoginScreen : (!user && !isAdminUnlocked);
+  const isAuthenticated = !!(user || isAdminUnlocked);
+  const isLogin = isLoginScreen !== undefined ? isLoginScreen : !isAuthenticated;
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -104,7 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const currentViewMeta = getViewTitle(currentView);
-  const showBreadcrumbBar = !isLogin && currentView !== AppState.HOME && currentView !== AppState.QUIZ && currentView !== AppState.CHAT && currentView !== AppState.LOADING;
+  const showBreadcrumbBar = isAuthenticated && !isLogin && currentView !== AppState.HOME && currentView !== AppState.QUIZ && currentView !== AppState.CHAT && currentView !== AppState.LOADING;
 
   return (
     <>
@@ -125,17 +128,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             <div 
-              onClick={() => !isLogin && onNavigate(AppState.HOME)}
-              className={`flex items-center gap-2.5 ${!isLogin ? 'cursor-pointer group' : 'cursor-default'} select-none shrink-0`}
+              onClick={() => isAuthenticated && onNavigate(AppState.HOME)}
+              className={`flex items-center gap-2.5 ${isAuthenticated ? 'cursor-pointer group' : 'cursor-default'} select-none shrink-0`}
             >
-              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-md shadow-emerald-500/20 ${!isLogin ? 'group-hover:shadow-emerald-500/40 group-hover:scale-105' : ''} transition-all duration-300`}>
+              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-md shadow-emerald-500/20 ${isAuthenticated ? 'group-hover:shadow-emerald-500/40 group-hover:scale-105' : ''} transition-all duration-300`}>
                 <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
                   <span className="font-extrabold text-base text-emerald-400 font-display">U</span>
                 </div>
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-lg font-bold font-display tracking-tight text-white ${!isLogin ? 'group-hover:text-emerald-400' : ''} transition-colors`}>
+                  <span className={`text-lg font-bold font-display tracking-tight text-white ${isAuthenticated ? 'group-hover:text-emerald-400' : ''} transition-colors`}>
                     U Quiz
                   </span>
                   <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded">
@@ -149,8 +152,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Center: Desktop Navigation Tabs (Hidden on Login Screen) */}
-          {!isLogin && (
+          {/* Center: Desktop Navigation Tabs (Only for Authenticated Users) */}
+          {isAuthenticated && !isLogin && (
             <nav className="hidden md:flex items-center gap-1 bg-slate-900/70 p-1 rounded-xl border border-slate-800/80">
               <button
                 onClick={() => onNavigate(AppState.HOME)}
@@ -244,227 +247,255 @@ export const Navbar: React.FC<NavbarProps> = ({
             </nav>
           )}
 
-          {/* Right Section: Actions & Profile (Hidden on Login Screen) */}
+          {/* Right Section: Actions & Profile */}
           {!isLogin && (
             <div className="flex items-center gap-2 shrink-0">
               
-              {/* Documentation / Guide Trigger */}
-              {onOpenDocs && (
-                <button
-                  onClick={onOpenDocs}
-                  className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
-                  title="Open Student & Educator Guide"
-                >
-                  <BookOpen className="w-3.5 h-3.5 text-teal-400" />
-                  <span className="hidden lg:inline">Guide</span>
-                </button>
-              )}
+              {/* If authenticated, show full controls */}
+              {isAuthenticated ? (
+                <>
+                  {/* Documentation / Guide Trigger */}
+                  {onOpenDocs && (
+                    <button
+                      onClick={onOpenDocs}
+                      className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                      title="Open Student & Educator Guide"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-teal-400" />
+                      <span className="hidden lg:inline">Guide</span>
+                    </button>
+                  )}
 
-              {/* Feedback / Bug Report Quick Trigger */}
-              <button
-                onClick={onOpenFeedback}
-                className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
-                title="Report Bug or Send Feedback"
-              >
-                <Bug className="w-3.5 h-3.5 text-rose-400" />
-                <span className="hidden lg:inline">Report</span>
-              </button>
-
-              {/* Join Shared Challenge Code Button */}
-              <button
-                onClick={onOpenJoinModal}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
-                title="Enter Quiz Code or Challenge Link"
-              >
-                <QrCode className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">Join Code</span>
-              </button>
-
-              {/* Create Quiz Primary CTA */}
-              <button
-                onClick={() => onNavigate(AppState.SETUP)}
-                className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span className="hidden xs:inline">New Quiz</span>
-              </button>
-
-              {/* Google Auth / Profile Dropdown */}
-              {user ? (
-                <div className="relative" ref={menuRef}>
+                  {/* Feedback / Bug Report Quick Trigger */}
                   <button
-                    onClick={() => setIsProfileMenuOpen(prev => !prev)}
-                    className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
-                    aria-label="User Profile Menu"
+                    onClick={onOpenFeedback}
+                    className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
+                    title="Report Bug or Send Feedback"
                   >
-                    {user.photoURL ? (
-                      <img
-                        src={user.photoURL}
-                        alt={user.displayName || 'User'}
-                        referrerPolicy="no-referrer"
-                        className="w-7 h-7 rounded-full object-cover border border-emerald-400/40"
-                      />
-                    ) : (
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center text-slate-950 font-bold text-xs">
-                        {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
-                      </div>
-                    )}
-                    
-                    {user.currentStreak && user.currentStreak > 0 ? (
-                      <span className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-orange-500/15 border border-orange-500/30 text-orange-400 text-[10px] font-black font-mono">
-                        🔥 {user.currentStreak}d
-                      </span>
-                    ) : null}
-
-                    <span className="text-xs font-semibold text-slate-200 hidden xl:inline max-w-[90px] truncate">
-                      {user.displayName?.split(' ')[0] || 'User'}
-                    </span>
-                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                    <Bug className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="hidden lg:inline">Report</span>
                   </button>
 
-                  {/* Profile Dropdown */}
-                  {isProfileMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-800 bg-slate-900 p-2.5 shadow-2xl space-y-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                      <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white truncate block">
-                            {user.displayName || 'Google User'}
+                  {/* Join Shared Challenge Code Button */}
+                  <button
+                    onClick={onOpenJoinModal}
+                    className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                    title="Enter Quiz Code or Challenge Link"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden sm:inline">Join Code</span>
+                  </button>
+
+                  {/* Create Quiz Primary CTA */}
+                  <button
+                    onClick={() => onNavigate(AppState.SETUP)}
+                    className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span className="hidden xs:inline">New Quiz</span>
+                  </button>
+
+                  {/* Google Auth / Profile Dropdown */}
+                  {user ? (
+                    <div className="relative" ref={menuRef}>
+                      <button
+                        onClick={() => setIsProfileMenuOpen(prev => !prev)}
+                        className="flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer"
+                        aria-label="User Profile Menu"
+                      >
+                        {user.photoURL ? (
+                          <img
+                            src={user.photoURL}
+                            alt={user.displayName || 'User'}
+                            referrerPolicy="no-referrer"
+                            className="w-7 h-7 rounded-full object-cover border border-emerald-400/40"
+                          />
+                        ) : (
+                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center text-slate-950 font-bold text-xs">
+                            {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'U'}
+                          </div>
+                        )}
+                        
+                        {user.currentStreak && user.currentStreak > 0 ? (
+                          <span className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-orange-500/15 border border-orange-500/30 text-orange-400 text-[10px] font-black font-mono">
+                            🔥 {user.currentStreak}d
                           </span>
-                          {user.currentStreak && user.currentStreak > 0 && (
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-orange-500/20 text-orange-400 font-bold">
-                              🔥 {user.currentStreak}d
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-400 truncate block font-mono">
-                          {user.email}
+                        ) : null}
+
+                        <span className="text-xs font-semibold text-slate-200 hidden xl:inline max-w-[90px] truncate">
+                          {user.displayName?.split(' ')[0] || 'User'}
                         </span>
-                      </div>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                      </button>
 
-                      <div className="space-y-0.5">
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onOpenAttendance();
-                          }}
-                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-left cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Flame className="w-3.5 h-3.5 text-orange-400" />
-                            <span>My Attendance & Streak</span>
+                      {/* Profile Dropdown */}
+                      {isProfileMenuOpen && (
+                        <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-800 bg-slate-900 p-2.5 shadow-2xl space-y-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-white truncate block">
+                                {user.displayName || 'Google User'}
+                              </span>
+                              {user.currentStreak && user.currentStreak > 0 && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-orange-500/20 text-orange-400 font-bold">
+                                  🔥 {user.currentStreak}d
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 truncate block font-mono">
+                              {user.email}
+                            </span>
                           </div>
-                          <span className="text-[10px] font-mono text-orange-400 font-bold">
-                            🔥 {user.currentStreak || 1}d
-                          </span>
-                        </button>
 
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onNavigate(AppState.SAVED_QUIZZES);
-                          }}
-                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2">
-                            <Database className="w-3.5 h-3.5 text-purple-400" />
-                            <span>Cloud Quiz Vault</span>
+                          <div className="space-y-0.5">
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onOpenAttendance();
+                              }}
+                              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-left cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Flame className="w-3.5 h-3.5 text-orange-400" />
+                                <span>My Attendance & Streak</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-orange-400 font-bold">
+                                🔥 {user.currentStreak || 1}d
+                              </span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onNavigate(AppState.SAVED_QUIZZES);
+                              }}
+                              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2">
+                                <Database className="w-3.5 h-3.5 text-purple-400" />
+                                <span>Cloud Quiz Vault</span>
+                              </div>
+                              <span className="text-[10px] font-mono text-purple-400 font-bold">
+                                {savedQuizzesCount}/50
+                              </span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onNavigate(AppState.LEADERBOARD);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
+                            >
+                              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Leaderboard Rankings</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onNavigate(AppState.CHAT);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-colors text-left cursor-pointer"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
+                              <span>Study Chat & AI Tutor</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onNavigate(AppState.HISTORY);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                            >
+                              <History className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Quiz History & Analytics</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                if (onOpenDocs) onOpenDocs();
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors text-left cursor-pointer"
+                            >
+                              <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+                              <span>Student & Study Guide</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onOpenFeedback();
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                            >
+                              <Bug className="w-3.5 h-3.5 text-rose-400" />
+                              <span>Report Bug & Feedback</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setIsProfileMenuOpen(false);
+                                onOpenAdminAuth();
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>Admin Portal</span>
+                            </button>
+
+                            <div className="pt-1 border-t border-slate-800">
+                              <button
+                                onClick={() => {
+                                  setIsProfileMenuOpen(false);
+                                  onSignOut();
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                              >
+                                <LogOut className="w-3.5 h-3.5" />
+                                <span>Sign Out</span>
+                              </button>
+                            </div>
                           </div>
-                          <span className="text-[10px] font-mono text-purple-400 font-bold">
-                            {savedQuizzesCount}/50
-                          </span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onNavigate(AppState.LEADERBOARD);
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
-                        >
-                          <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Leaderboard Rankings</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onNavigate(AppState.CHAT);
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-colors text-left cursor-pointer"
-                        >
-                          <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
-                          <span>Study Chat & AI Tutor</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onNavigate(AppState.HISTORY);
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
-                        >
-                          <History className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Quiz History & Analytics</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            if (onOpenDocs) onOpenDocs();
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors text-left cursor-pointer"
-                        >
-                          <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>Student & Study Guide</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onOpenFeedback();
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
-                        >
-                          <Bug className="w-3.5 h-3.5 text-rose-400" />
-                          <span>Report Bug & Feedback</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setIsProfileMenuOpen(false);
-                            onOpenAdminAuth();
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
-                        >
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Admin Portal</span>
-                        </button>
-
-                        <div className="pt-1 border-t border-slate-800">
-                          <button
-                            onClick={() => {
-                              setIsProfileMenuOpen(false);
-                              onSignOut();
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
-                          >
-                            <LogOut className="w-3.5 h-3.5" />
-                            <span>Sign Out</span>
-                          </button>
                         </div>
-                      </div>
+                      )}
                     </div>
+                  ) : (
+                    <button
+                      onClick={onSignIn}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+                      title="Sign In with Google"
+                    >
+                      <LogIn className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="hidden sm:inline">Sign In</span>
+                    </button>
                   )}
-                </div>
+                </>
               ) : (
-                <button
-                  onClick={onSignIn}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
-                  title="Sign In with Google"
-                >
-                  <LogIn className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">Sign In</span>
-                </button>
+                /* Unauthenticated Landing State: Guide and Prominent Sign In button */
+                <div className="flex items-center gap-2">
+                  {onOpenDocs && (
+                    <button
+                      onClick={onOpenDocs}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
+                      title="Open Student & Educator Guide"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-teal-400" />
+                      <span className="hidden sm:inline">Guide</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={onGoToLogin || onSignIn}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                    title="Sign In with Google Account"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>Sign In</span>
+                  </button>
+                </div>
               )}
 
             </div>
@@ -526,7 +557,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </header>
 
       {/* Responsive Mobile Bottom Navigation Bar */}
-      {!isLogin && currentView !== AppState.CHAT && currentView !== AppState.QUIZ && currentView !== AppState.ADMIN && (
+      {!isLogin && isAuthenticated && currentView !== AppState.CHAT && currentView !== AppState.QUIZ && currentView !== AppState.ADMIN && (
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/80 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl">
           <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
             <button
