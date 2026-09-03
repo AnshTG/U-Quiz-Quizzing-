@@ -242,15 +242,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Right Section: Actions & Profile */}
           <div className="flex items-center gap-2 shrink-0">
             
-            {/* Documentation / Manual Trigger */}
+            {/* Documentation / Guide Trigger */}
             {onOpenDocs && (
               <button
                 onClick={onOpenDocs}
                 className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
-                title="Open Platform Manual & Documentation"
+                title="Open Student & Educator Guide"
               >
                 <BookOpen className="w-3.5 h-3.5 text-teal-400" />
-                <span className="hidden lg:inline">Manual</span>
+                <span className="hidden lg:inline">Guide</span>
               </button>
             )}
 
@@ -409,7 +409,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 transition-colors text-left cursor-pointer"
                       >
                         <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Platform Manual & Docs</span>
+                        <span>Student & Study Guide</span>
                       </button>
 
                       <button

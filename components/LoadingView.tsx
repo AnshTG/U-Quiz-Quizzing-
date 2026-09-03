@@ -85,7 +85,7 @@ export const LoadingView: React.FC<LoadingViewProps> = ({ config, onCancel }) =>
 
           {elapsedSeconds > 15 && (
             <p className="text-xs text-amber-300/80 font-mono animate-pulse">
-              ⚡ Serverless AI is parsing textbook concepts and formatting equations...
+              ⚡ Preparing your textbook questions, formulas, and step-by-step solutions...
             </p>
           )}
         </div>

@@ -61,12 +61,46 @@ googleProvider.setCustomParameters({
 
 export const MAX_CLOUD_QUIZZES_LIMIT = 10;
 
+// Helper to detect Firestore FieldValue transforms (increment, serverTimestamp, etc.)
+export const isFirestoreFieldValue = (val: any): boolean => {
+  if (!val || typeof val !== 'object') return false;
+  return Boolean(
+    val._methodName || 
+    val._delegate || 
+    val.constructor?.name === 'FieldValue' || 
+    val.constructor?.name === 'NumericIncrementTransform' ||
+    val.constructor?.name === 'ServerTimestampTransform'
+  );
+};
+
+// Helper to safely extract numeric values even from corrupted serialized increment objects
+export const extractNumericStat = (val: any, fallback = 0): number => {
+  if (typeof val === 'number') {
+    return isNaN(val) ? fallback : val;
+  }
+  if (typeof val === 'string') {
+    const parsed = parseFloat(val);
+    return isNaN(parsed) ? fallback : parsed;
+  }
+  if (val && typeof val === 'object') {
+    if (typeof val.ar === 'number') return val.ar;
+    if (Array.isArray(val.ar) && typeof val.ar[0] === 'number') return val.ar[0];
+    if (typeof val._operand === 'number') return val._operand;
+    if (typeof val.value === 'number') return val.value;
+  }
+  return fallback;
+};
+
 // Helper to deeply sanitize objects for Firestore (removes undefined fields and replaces with null or deletes them)
 export const sanitizeForFirestore = (obj: any): any => {
   if (obj === undefined) {
     return null;
   }
   if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  // CRITICAL: Preserve Firestore FieldValue transforms intact!
+  if (isFirestoreFieldValue(obj)) {
     return obj;
   }
   if (Array.isArray(obj)) {
@@ -125,13 +159,13 @@ export const signInWithGoogle = async (): Promise<UserProfile | null> => {
       photoURL: user.photoURL,
       createdAt: existingData.createdAt || new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
-      quizzesCompleted: existingData.quizzesCompleted || 0,
-      totalQuestionsAnswered: existingData.totalQuestionsAnswered || 0,
-      totalScore: existingData.totalScore || 0,
-      savedQuizzesCount: existingData.savedQuizzesCount || 0,
-      currentStreak: existingData.currentStreak || 1,
+      quizzesCompleted: extractNumericStat(existingData.quizzesCompleted, 0),
+      totalQuestionsAnswered: extractNumericStat(existingData.totalQuestionsAnswered, 0),
+      totalScore: extractNumericStat(existingData.totalScore, 0),
+      savedQuizzesCount: extractNumericStat(existingData.savedQuizzesCount, 0),
+      currentStreak: extractNumericStat(existingData.currentStreak, 1),
       lastCheckInDate: existingData.lastCheckInDate || todayDate,
-      attendanceDaysCount: existingData.attendanceDaysCount || 1,
+      attendanceDaysCount: extractNumericStat(existingData.attendanceDaysCount, 1),
     };
 
     await setDoc(userRef, {
@@ -184,13 +218,13 @@ export const listenToAuthChanges = (callback: (user: UserProfile | null) => void
             photoURL: data.photoURL || user.photoURL,
             createdAt: data.createdAt,
             lastLoginAt: data.lastLoginAt,
-            quizzesCompleted: data.quizzesCompleted || 0,
-            totalQuestionsAnswered: data.totalQuestionsAnswered || 0,
-            totalScore: data.totalScore || 0,
-            savedQuizzesCount: data.savedQuizzesCount || 0,
-            currentStreak: data.currentStreak || 1,
+            quizzesCompleted: extractNumericStat(data.quizzesCompleted, 0),
+            totalQuestionsAnswered: extractNumericStat(data.totalQuestionsAnswered, 0),
+            totalScore: extractNumericStat(data.totalScore, 0),
+            savedQuizzesCount: extractNumericStat(data.savedQuizzesCount, 0),
+            currentStreak: extractNumericStat(data.currentStreak, 1),
             lastCheckInDate: data.lastCheckInDate,
-            attendanceDaysCount: data.attendanceDaysCount || 1,
+            attendanceDaysCount: extractNumericStat(data.attendanceDaysCount, 1),
             isBanned: data.isBanned || false,
             banReason: data.banReason || '',
           };
@@ -469,13 +503,44 @@ export const saveQuizResultToCloud = async (
     if (userId && !userId.startsWith('guest_')) {
       try {
         const userRef = doc(db, 'users', userId);
-        await setDoc(userRef, sanitizeForFirestore({
-          lastQuizAt: new Date().toISOString(),
-          quizzesCompleted: increment(1),
-          totalQuestionsAnswered: increment(result.total),
-          totalScore: increment(result.score),
-          lastActive: new Date().toISOString()
-        }), { merge: true });
+        const userSnap = await getDoc(userRef).catch(() => null);
+        let currScore = 0;
+        let currQuizzes = 0;
+        let currQuestions = 0;
+        let hasCorruptField = false;
+
+        if (userSnap && userSnap.exists()) {
+          const uData = userSnap.data();
+          if (
+            (uData.totalScore && typeof uData.totalScore === 'object' && !isFirestoreFieldValue(uData.totalScore)) ||
+            (uData.quizzesCompleted && typeof uData.quizzesCompleted === 'object' && !isFirestoreFieldValue(uData.quizzesCompleted)) ||
+            (uData.totalQuestionsAnswered && typeof uData.totalQuestionsAnswered === 'object' && !isFirestoreFieldValue(uData.totalQuestionsAnswered))
+          ) {
+            hasCorruptField = true;
+            currScore = extractNumericStat(uData.totalScore, 0);
+            currQuizzes = extractNumericStat(uData.quizzesCompleted, 0);
+            currQuestions = extractNumericStat(uData.totalQuestionsAnswered, 0);
+          }
+        }
+
+        if (hasCorruptField) {
+          // Heal the document by overwriting corrupted map with clean numeric sums
+          await setDoc(userRef, {
+            lastQuizAt: new Date().toISOString(),
+            quizzesCompleted: currQuizzes + 1,
+            totalQuestionsAnswered: currQuestions + result.total,
+            totalScore: currScore + result.score,
+            lastActive: new Date().toISOString()
+          }, { merge: true });
+        } else {
+          await setDoc(userRef, {
+            lastQuizAt: new Date().toISOString(),
+            quizzesCompleted: increment(1),
+            totalQuestionsAnswered: increment(result.total),
+            totalScore: increment(result.score),
+            lastActive: new Date().toISOString()
+          }, { merge: true });
+        }
       } catch (statErr) {
         console.warn('User stat increment notice:', statErr);
       }
@@ -894,6 +959,56 @@ export const verifyAdminPassword = async (password: string): Promise<boolean> =>
 };
 
 /**
+ * Helper to normalize and sanitize a UserProfile document from Firestore,
+ * ensuring numeric fields are ALWAYS pure numbers and repairing corrupted records.
+ */
+export const normalizeUserProfileFromDoc = (docSnap: any): UserProfile => {
+  const data = typeof docSnap.data === 'function' ? docSnap.data() : docSnap;
+  const uid = docSnap.id || data.uid || '';
+
+  const quizzesCompleted = extractNumericStat(data.quizzesCompleted ?? data.quizCount ?? data.quizzes, 0);
+  const totalScore = extractNumericStat(data.totalScore ?? data.score ?? data.points, 0);
+  const totalQuestionsAnswered = extractNumericStat(data.totalQuestionsAnswered ?? data.totalQuestions ?? (quizzesCompleted > 0 ? quizzesCompleted * 5 : 0), 0);
+  const savedQuizzesCount = extractNumericStat(data.savedQuizzesCount, 0);
+  const currentStreak = extractNumericStat(data.currentStreak, 1);
+  const attendanceDaysCount = extractNumericStat(data.attendanceDaysCount, 0);
+
+  // Background heal if corrupted object was found in the raw document
+  if (
+    (data.totalScore && typeof data.totalScore === 'object' && !isFirestoreFieldValue(data.totalScore)) ||
+    (data.quizzesCompleted && typeof data.quizzesCompleted === 'object' && !isFirestoreFieldValue(data.quizzesCompleted)) ||
+    (data.totalQuestionsAnswered && typeof data.totalQuestionsAnswered === 'object' && !isFirestoreFieldValue(data.totalQuestionsAnswered))
+  ) {
+    if (docSnap.ref) {
+      setDoc(docSnap.ref, {
+        totalScore,
+        quizzesCompleted,
+        totalQuestionsAnswered,
+        currentStreak,
+        attendanceDaysCount
+      }, { merge: true }).catch(() => {});
+    }
+  }
+
+  return {
+    uid,
+    email: data.email || null,
+    displayName: data.displayName || 'Scholar',
+    photoURL: data.photoURL || null,
+    createdAt: data.createdAt || data.lastLoginAt || new Date().toISOString(),
+    lastLoginAt: data.lastLoginAt || data.updatedAt,
+    updatedAt: data.updatedAt,
+    quizzesCompleted,
+    totalQuestionsAnswered,
+    totalScore,
+    savedQuizzesCount,
+    currentStreak,
+    lastCheckInDate: data.lastCheckInDate,
+    attendanceDaysCount
+  };
+};
+
+/**
  * Real-time subscription to all users for Admin
  */
 export const subscribeToAllUsersForAdmin = (
@@ -904,23 +1019,7 @@ export const subscribeToAllUsersForAdmin = (
     return onSnapshot(usersCol, (snapshot) => {
       const users: UserProfile[] = [];
       snapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        users.push({
-          uid: docSnap.id,
-          email: data.email || null,
-          displayName: data.displayName || 'Anonymous User',
-          photoURL: data.photoURL || null,
-          createdAt: data.createdAt || data.lastLoginAt || new Date().toISOString(),
-          lastLoginAt: data.lastLoginAt || data.updatedAt,
-          updatedAt: data.updatedAt,
-          quizzesCompleted: data.quizzesCompleted || 0,
-          totalQuestionsAnswered: data.totalQuestionsAnswered || 0,
-          totalScore: data.totalScore || 0,
-          savedQuizzesCount: data.savedQuizzesCount || 0,
-          currentStreak: data.currentStreak || 0,
-          lastCheckInDate: data.lastCheckInDate,
-          attendanceDaysCount: data.attendanceDaysCount || 0
-        });
+        users.push(normalizeUserProfileFromDoc(docSnap));
       });
       callback(users);
     }, (error) => {
@@ -940,23 +1039,7 @@ export const fetchAllUsersForAdmin = async (): Promise<UserProfile[]> => {
     const snapshot = await getDocs(usersCol);
     const users: UserProfile[] = [];
     snapshot.forEach(docSnap => {
-      const data = docSnap.data();
-      users.push({
-        uid: docSnap.id,
-        email: data.email || null,
-        displayName: data.displayName || 'Anonymous User',
-        photoURL: data.photoURL || null,
-        createdAt: data.createdAt || data.lastLoginAt || new Date().toISOString(),
-        lastLoginAt: data.lastLoginAt || data.updatedAt,
-        updatedAt: data.updatedAt,
-        quizzesCompleted: data.quizzesCompleted || 0,
-        totalQuestionsAnswered: data.totalQuestionsAnswered || 0,
-        totalScore: data.totalScore || 0,
-        savedQuizzesCount: data.savedQuizzesCount || 0,
-        currentStreak: data.currentStreak || 0,
-        lastCheckInDate: data.lastCheckInDate,
-        attendanceDaysCount: data.attendanceDaysCount || 0
-      });
+      users.push(normalizeUserProfileFromDoc(docSnap));
     });
     return users;
   } catch (error) {
@@ -1307,13 +1390,31 @@ const processLeaderboardSnapshot = (
   snapshotDocs.forEach((docSnap) => {
     const data = typeof docSnap.data === 'function' ? docSnap.data() : docSnap;
     const uid = docSnap.id || data.uid;
-    const quizzesCompleted = Number(data.quizzesCompleted) || 0;
-    const totalScore = Number(data.totalScore) || 0;
-    const totalQuestionsAnswered = Number(data.totalQuestionsAnswered) || 0;
+    const quizzesCompleted = extractNumericStat(data.quizzesCompleted ?? data.quizCount ?? data.quizzes, 0);
+    const totalScore = extractNumericStat(data.totalScore ?? data.score ?? data.points, 0);
+    const totalQuestionsAnswered = extractNumericStat(data.totalQuestionsAnswered ?? data.totalQuestions ?? (quizzesCompleted > 0 ? quizzesCompleted * 5 : 0), 0);
 
-    const accuracy = totalQuestionsAnswered > 0 
-      ? Math.min(100, Math.round((totalScore / totalQuestionsAnswered) * 100))
-      : 0;
+    let accuracy = 0;
+    if (totalQuestionsAnswered > 0 && totalScore > 0) {
+      accuracy = Math.min(100, Math.round((totalScore / totalQuestionsAnswered) * 100));
+    } else if (quizzesCompleted > 0 && totalScore > 0) {
+      accuracy = Math.min(100, Math.round((totalScore / (quizzesCompleted * 5)) * 100));
+    }
+
+    // Self-heal corrupted objects in background
+    if (
+      (data.totalScore && typeof data.totalScore === 'object' && !isFirestoreFieldValue(data.totalScore)) ||
+      (data.quizzesCompleted && typeof data.quizzesCompleted === 'object' && !isFirestoreFieldValue(data.quizzesCompleted)) ||
+      (data.totalQuestionsAnswered && typeof data.totalQuestionsAnswered === 'object' && !isFirestoreFieldValue(data.totalQuestionsAnswered))
+    ) {
+      if (docSnap.ref) {
+        setDoc(docSnap.ref, {
+          totalScore,
+          quizzesCompleted,
+          totalQuestionsAnswered
+        }, { merge: true }).catch(() => {});
+      }
+    }
 
     let displayName = data.displayName || '';
     if (!displayName && data.email) {

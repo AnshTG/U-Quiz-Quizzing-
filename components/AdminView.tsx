@@ -49,9 +49,30 @@ import {
   adminDeleteAllFeedbacks,
   adminPurgeResolvedFeedbacks,
   getISTDateString,
-  getISTTimeString
+  getISTTimeString,
+  extractNumericStat
 } from '../services/firebase';
 import { MathText } from './MathText';
+import { ErrorBoundary } from './ErrorBoundary';
+
+// Defensive numeric extractor to prevent React object children crashes
+const safeNum = (val: any, fallback = 0): number => {
+  return extractNumericStat(val, fallback);
+};
+
+// Safe date formatter for timestamps/strings/objects
+const safeFormatDate = (val: any, fallback = 'Recent'): string => {
+  if (!val) return fallback;
+  if (typeof val === 'object' && typeof val.seconds === 'number') {
+    return new Date(val.seconds * 1000).toLocaleDateString();
+  }
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? fallback : d.toLocaleDateString();
+  } catch {
+    return fallback;
+  }
+};
 import { 
   Users, 
   TrendingUp, 
@@ -286,13 +307,16 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
 
   // Filtered Scholars List
   const filteredUsers = useMemo(() => {
+    if (!users || !Array.isArray(users)) return [];
     if (!searchQuery.trim()) return users;
     const q = searchQuery.toLowerCase();
-    return users.filter(u => 
-      u.displayName?.toLowerCase().includes(q) ||
-      u.email?.toLowerCase().includes(q) ||
-      u.uid.toLowerCase().includes(q)
-    );
+    return users.filter(u => {
+      if (!u) return false;
+      const name = String(u.displayName || '').toLowerCase();
+      const email = String(u.email || '').toLowerCase();
+      const uid = String(u.uid || '').toLowerCase();
+      return name.includes(q) || email.includes(q) || uid.includes(q);
+    });
   }, [users, searchQuery]);
 
   // Filtered Shared Quizzes
@@ -465,10 +489,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
     setIsEditingUserStats(false);
     setEditUserName(u.displayName || '');
     setEditUserEmail(u.email || '');
-    setEditTotalScore(u.totalScore || 0);
-    setEditQuizzesCount(u.quizzesCompleted || 0);
-    setEditQuestionsCount(u.totalQuestionsAnswered || 0);
-    setEditStreak(u.currentStreak || 1);
+    setEditTotalScore(safeNum(u.totalScore, 0));
+    setEditQuizzesCount(safeNum(u.quizzesCompleted, 0));
+    setEditQuestionsCount(safeNum(u.totalQuestionsAnswered, 0));
+    setEditStreak(safeNum(u.currentStreak, 1));
 
     try {
       const [history, savedQuizzes] = await Promise.all([
@@ -892,7 +916,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
               title="Open Platform Documentation & Operating Manual"
             >
               <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Platform Manual</span>
+              <span>Platform Guide</span>
             </button>
           )}
 
@@ -1277,7 +1301,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
                           </span>
                         </td>
                         <td className="px-4 py-3 font-mono text-orange-400 font-bold">
-                          🔥 {rec.currentStreak || 1}d
+                          🔥 {safeNum(rec.currentStreak, 1)}d
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button
@@ -1301,145 +1325,147 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
 
       {/* ===================== TAB 2: SCHOLARS & ACCOUNTS ===================== */}
       {activeTab === 'scholars' && (
-        <div className="space-y-4">
-          
-          {/* Header Action Bar */}
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white">Registered Scholars Directory</h3>
-              <p className="text-xs text-slate-400">Total {users.length} verified accounts logged in via Google Auth</p>
+        <ErrorBoundary fallbackTitle="Scholars Directory Notice" onReset={refreshAllAdminData}>
+          <div className="space-y-4">
+            
+            {/* Header Action Bar */}
+            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">Registered Scholars Directory</h3>
+                <p className="text-xs text-slate-400">Total {users.length} verified accounts logged in via Google Auth</p>
+              </div>
+
+              <button
+                onClick={handleDeleteAllUsers}
+                disabled={actionLoading === 'delete_all_users' || users.length === 0}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete All Scholars</span>
+              </button>
             </div>
 
-            <button
-              onClick={handleDeleteAllUsers}
-              disabled={actionLoading === 'delete_all_users' || users.length === 0}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete All Scholars</span>
-            </button>
-          </div>
-
-          {/* Scholars Table */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xl">
-            {filteredUsers.length === 0 ? (
-              <div className="p-12 text-center space-y-2">
-                <Users className="w-10 h-10 text-slate-600 mx-auto" />
-                <p className="text-sm font-semibold text-slate-300">No scholars found</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
-                    <tr>
-                      <th className="px-4 py-3">Scholar & Avatar</th>
-                      <th className="px-4 py-3">Email Address</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Score & Quizzes</th>
-                      <th className="px-4 py-3">Streak</th>
-                      <th className="px-4 py-3">Last Active</th>
-                      <th className="px-4 py-3 text-right">Admin Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {filteredUsers.map((u) => (
-                      <tr key={u.uid} className={`hover:bg-slate-800/40 transition-colors ${u.isBanned ? 'bg-rose-950/20' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {u.photoURL ? (
-                              <img 
-                                src={u.photoURL} 
-                                alt={u.displayName || ''} 
-                                referrerPolicy="no-referrer"
-                                className={`w-8 h-8 rounded-full object-cover border shrink-0 ${u.isBanned ? 'border-rose-500' : 'border-emerald-400/30'}`} 
-                              />
-                            ) : (
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0 ${u.isBanned ? 'bg-rose-900/50 text-rose-300' : 'bg-slate-800 text-emerald-400'}`}>
-                                {u.displayName ? u.displayName.charAt(0) : 'U'}
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-white truncate">{u.displayName || 'Google Scholar'}</span>
-                                {u.isBanned && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
-                                    BANNED
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-slate-500 font-mono">UID: {u.uid.substring(0, 8)}...</span>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3 font-mono text-emerald-400 font-medium">
-                          {u.email || 'No email attached'}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          {u.isBanned ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
-                              Suspended
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                              Active
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <div className="font-bold text-white font-mono">{u.totalScore || 0} pts</div>
-                          <div className="text-[10px] text-slate-400">{u.quizzesCompleted || 0} quizzes • {u.totalQuestionsAnswered || 0} Qs</div>
-                        </td>
-
-                        <td className="px-4 py-3 font-mono text-orange-400 font-bold">
-                          🔥 {u.currentStreak || 1}d
-                        </td>
-
-                        <td className="px-4 py-3 text-slate-400 text-[11px] font-mono">
-                          {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Recent'}
-                        </td>
-
-                        <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
-                          {/* Ban / Unban Button */}
-                          <button
-                            onClick={() => handleBanToggle(u.uid, !!u.isBanned, u.displayName || 'Scholar')}
-                            disabled={actionLoading === `ban_${u.uid}`}
-                            className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
-                              u.isBanned
-                                ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
-                                : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30'
-                            }`}
-                            title={u.isBanned ? 'Lift Ban' : 'Ban User'}
-                          >
-                            {u.isBanned ? 'Unban' : 'Ban'}
-                          </button>
-
-                          <button
-                            onClick={() => handleInspectUser(u)}
-                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-colors cursor-pointer"
-                          >
-                            Inspect
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteUser(u.uid, u.displayName || 'Scholar')}
-                            className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
-                            title="Delete Scholar Account"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+            {/* Scholars Table */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xl">
+              {filteredUsers.length === 0 ? (
+                <div className="p-12 text-center space-y-2">
+                  <Users className="w-10 h-10 text-slate-600 mx-auto" />
+                  <p className="text-sm font-semibold text-slate-300">No scholars found</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950/80 text-slate-400 uppercase font-mono text-[10px] border-b border-slate-800">
+                      <tr>
+                        <th className="px-4 py-3">Scholar & Avatar</th>
+                        <th className="px-4 py-3">Email Address</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Score & Quizzes</th>
+                        <th className="px-4 py-3">Streak</th>
+                        <th className="px-4 py-3">Last Active</th>
+                        <th className="px-4 py-3 text-right">Admin Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {filteredUsers.map((u) => (
+                        <tr key={u.uid} className={`hover:bg-slate-800/40 transition-colors ${u.isBanned ? 'bg-rose-950/20' : ''}`}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              {u.photoURL ? (
+                                <img 
+                                  src={u.photoURL} 
+                                  alt={u.displayName || ''} 
+                                  referrerPolicy="no-referrer"
+                                  className={`w-8 h-8 rounded-full object-cover border shrink-0 ${u.isBanned ? 'border-rose-500' : 'border-emerald-400/30'}`} 
+                                />
+                              ) : (
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shrink-0 ${u.isBanned ? 'bg-rose-900/50 text-rose-300' : 'bg-slate-800 text-emerald-400'}`}>
+                                  {u.displayName ? String(u.displayName).charAt(0) : 'U'}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-white truncate">{u.displayName || 'Google Scholar'}</span>
+                                  {u.isBanned && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                                      BANNED
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-slate-500 font-mono">UID: {String(u.uid || '').substring(0, 8)}...</span>
+                              </div>
+                            </div>
+                          </td>
 
-        </div>
+                          <td className="px-4 py-3 font-mono text-emerald-400 font-medium">
+                            {u.email || 'No email attached'}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {u.isBanned ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                                Suspended
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                Active
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-white font-mono">{safeNum(u.totalScore)} pts</div>
+                            <div className="text-[10px] text-slate-400">{safeNum(u.quizzesCompleted)} quizzes • {safeNum(u.totalQuestionsAnswered)} Qs</div>
+                          </td>
+
+                          <td className="px-4 py-3 font-mono text-orange-400 font-bold">
+                            🔥 {safeNum(u.currentStreak, 1)}d
+                          </td>
+
+                          <td className="px-4 py-3 text-slate-400 text-[11px] font-mono">
+                            {safeFormatDate(u.lastLoginAt)}
+                          </td>
+
+                          <td className="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
+                            {/* Ban / Unban Button */}
+                            <button
+                              onClick={() => handleBanToggle(u.uid, !!u.isBanned, u.displayName || 'Scholar')}
+                              disabled={actionLoading === `ban_${u.uid}`}
+                              className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+                                u.isBanned
+                                  ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                  : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/30'
+                              }`}
+                              title={u.isBanned ? 'Lift Ban' : 'Ban User'}
+                            >
+                              {u.isBanned ? 'Unban' : 'Ban'}
+                            </button>
+
+                            <button
+                              onClick={() => handleInspectUser(u)}
+                              className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition-colors cursor-pointer"
+                            >
+                              Inspect
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteUser(u.uid, u.displayName || 'Scholar')}
+                              className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                              title="Delete Scholar Account"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </ErrorBoundary>
       )}
 
       {/* ===================== TAB: ALL ASSESSMENTS & QUIZZES ===================== */}
@@ -2540,19 +2566,19 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
               ) : (
                 <div className="grid grid-cols-4 gap-3 text-center">
                   <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
-                    <div className="text-emerald-400 font-bold font-mono text-sm">{selectedUser.totalScore || 0}</div>
+                    <div className="text-emerald-400 font-bold font-mono text-sm">{safeNum(selectedUser.totalScore)}</div>
                     <span className="text-[10px] text-slate-500">Total Points</span>
                   </div>
                   <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
-                    <div className="text-purple-400 font-bold font-mono text-sm">{selectedUser.quizzesCompleted || 0}</div>
+                    <div className="text-purple-400 font-bold font-mono text-sm">{safeNum(selectedUser.quizzesCompleted)}</div>
                     <span className="text-[10px] text-slate-500">Quizzes</span>
                   </div>
                   <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
-                    <div className="text-sky-400 font-bold font-mono text-sm">{selectedUser.totalQuestionsAnswered || 0}</div>
+                    <div className="text-sky-400 font-bold font-mono text-sm">{safeNum(selectedUser.totalQuestionsAnswered)}</div>
                     <span className="text-[10px] text-slate-500">Questions</span>
                   </div>
                   <div className="p-2 rounded-xl bg-slate-900 border border-slate-800/80">
-                    <div className="text-orange-400 font-bold font-mono text-sm">🔥 {selectedUser.currentStreak || 1}d</div>
+                    <div className="text-orange-400 font-bold font-mono text-sm">🔥 {safeNum(selectedUser.currentStreak, 1)}d</div>
                     <span className="text-[10px] text-slate-500">Streak</span>
                   </div>
                 </div>

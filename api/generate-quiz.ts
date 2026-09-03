@@ -154,6 +154,7 @@ export default async function handler(req: any, res: any) {
       
       TEXT & MATH RENDERING RULES (CRITICAL):
       - Mathematical formulas and equations: Write using clean LaTeX enclosed in single dollar signs ($...$) or standard notation (e.g., $x^2 + 5x + 6 = 0$, $\\sqrt{50}$, $\\frac{1}{2}$, $90^{\\circ}$, $\\pi$).
+      - Chemistry formulas and equations: Format chemical formulas with proper subscripts (e.g., H₂O, CO₂, H₂SO₄, Fe₂O₃, Ca(OH)₂, FeSO₄·7H₂O) or mhchem LaTeX notation (e.g., $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{FeSO4.7H2O}$, $\\ce{SO4^{2-}}$, $\\ce{Fe^{2+}}$).
       - Fractions: Always write fractions in LaTeX inside dollar signs: $\\frac{a}{b}$.
       - Roots: Always write roots in LaTeX inside dollar signs: $\\sqrt{x}$ or $\\sqrt[3]{x}$.
       - Degrees: Always format angles and temperatures as $90^{\\circ}$ or $37^{\\circ}\\text{C}$.

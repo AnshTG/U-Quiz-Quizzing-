@@ -3,27 +3,24 @@ import {
   BookOpen, 
   Sparkles, 
   CalendarCheck, 
-  ShieldCheck, 
-  Database, 
-  MessageSquare, 
   Trophy, 
-  Server, 
-  HelpCircle, 
   X, 
   CheckCircle2, 
   Layers, 
-  Clock, 
   Flame, 
-  Search, 
-  Globe, 
   QrCode, 
-  Lock, 
-  Sliders, 
-  ChevronRight,
-  ExternalLink,
-  Code2,
-  FileText,
-  LogIn
+  GraduationCap,
+  Lightbulb,
+  Award,
+  HelpCircle,
+  Clock,
+  Compass,
+  Zap,
+  MessageSquare,
+  Check,
+  Bookmark,
+  Share2,
+  Brain
 } from 'lucide-react';
 
 interface DocumentationModalProps {
@@ -34,11 +31,9 @@ interface DocumentationModalProps {
 
 export const DocumentationModal: React.FC<DocumentationModalProps> = ({
   isOpen,
-  onClose,
-  isAdmin = false
+  onClose
 }) => {
-  const [activeSection, setActiveSection] = useState<'overview' | 'curriculum' | 'ai_engine' | 'attendance' | 'scholar_portal' | 'admin_portal' | 'deployment'>('overview');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSection, setActiveSection] = useState<'overview' | 'curriculum' | 'quizzes' | 'attendance' | 'vault_challenges'>('overview');
 
   if (!isOpen) return null;
 
@@ -55,14 +50,14 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg sm:text-xl font-bold font-display text-white truncate">
-                  U-Quiz Platform Manual & Documentation
+                  U-Quiz Student & Educator Guide
                 </h2>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold uppercase tracking-wider hidden sm:inline-block">
-                  v2.5 Full Edition
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold uppercase tracking-wider hidden sm:inline-block">
+                  Complete Handbook
                 </span>
               </div>
               <p className="text-xs text-slate-400 truncate">
-                Comprehensive operational guide for Students, Educators, and System Administrators
+                Everything you need to master NCERT subjects, build daily study streaks, and challenge friends
               </p>
             </div>
           </div>
@@ -71,7 +66,7 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({
             <button
               onClick={onClose}
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
-              title="Close Documentation"
+              title="Close Guide"
             >
               <X className="w-5 h-5" />
             </button>
@@ -82,480 +77,551 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({
         <div className="px-4 sm:px-6 py-2.5 border-b border-slate-800 bg-slate-950/60 overflow-x-auto flex items-center gap-1.5 shrink-0 no-scrollbar">
           <button
             onClick={() => setActiveSection('overview')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
               activeSection === 'overview'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>1. Architecture</span>
+            <Compass className="w-3.5 h-3.5" />
+            <span>1. Getting Started</span>
           </button>
 
           <button
             onClick={() => setActiveSection('curriculum')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
               activeSection === 'curriculum'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>2. NCERT Curriculum</span>
+            <span>2. NCERT Syllabus (Classes 1–12)</span>
           </button>
 
           <button
-            onClick={() => setActiveSection('ai_engine')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-              activeSection === 'ai_engine'
+            onClick={() => setActiveSection('quizzes')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeSection === 'quizzes'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
-            <span>3. AI Generation Engine</span>
+            <span>3. Taking Quizzes & Explanations</span>
           </button>
 
           <button
             onClick={() => setActiveSection('attendance')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
               activeSection === 'attendance'
                 ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <CalendarCheck className="w-3.5 h-3.5" />
-            <span>4. Auto-Attendance</span>
+            <span>4. Daily Attendance & Streaks</span>
           </button>
 
           <button
-            onClick={() => setActiveSection('scholar_portal')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-              activeSection === 'scholar_portal'
+            onClick={() => setActiveSection('vault_challenges')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeSection === 'vault_challenges'
                 ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`}
           >
             <Trophy className="w-3.5 h-3.5" />
-            <span>5. Scholar Portal & Vault</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('admin_portal')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-              activeSection === 'admin_portal'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>6. Admin & Teacher Operations</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('deployment')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-              activeSection === 'deployment'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-          >
-            <Server className="w-3.5 h-3.5" />
-            <span>7. Vercel & Cloud Hosting</span>
+            <span>5. Saved Vault & Challenge Codes</span>
           </button>
         </div>
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-8 text-slate-300 text-sm leading-relaxed">
           
-          {/* ================= SECTION 1: ARCHITECTURE OVERVIEW ================= */}
+          {/* ================= CHAPTER 1: GETTING STARTED ================= */}
           {activeSection === 'overview' && (
             <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-2">
-                <span className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider">Chapter 1</span>
-                <h3 className="text-xl font-bold text-white font-display">System Overview & Core Philosophy</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  <strong className="text-white">U-Quiz</strong> is an intelligent, real-time NCERT learning and assessment platform built for Indian K-12 students (Classes 1–12), competitive exam aspirants (NEET, JEE, Olympiads), and teachers. The platform pairs cutting-edge generative AI models with rigorous NCERT syllabus mappings, real-time cloud data persistence, zero-touch automated attendance tracking, and full administrative oversight.
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 1
+                  </span>
+                  <span className="text-xs text-slate-400">• Student & Parent Orientation</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Welcome to U-Quiz: Your NCERT Learning Companion
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  <strong className="text-white">U-Quiz</strong> is an interactive learning and self-assessment platform crafted specifically for Indian school students from <strong className="text-emerald-400">Class 1 through Class 12</strong>. Whether you are preparing for periodic school tests, CBSE Board Exams, Olympiads, or foundational competitive exams (like NEET and JEE), U-Quiz gives you unlimited practice questions, instant step-by-step textbook explanations, and daily revision tracking.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">1</div>
-                  <h4 className="text-sm font-bold text-white">Full-Stack Cloud Core</h4>
-                  <p className="text-xs text-slate-400">
-                    Dual Express.js API backend and Vite client. Seamlessly handles AI question generation, streaming mentor chat, and Firestore cloud synchronization.
-                  </p>
-                </div>
+              {/* 3 Step Quick Start Guide */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-emerald-400" />
+                  <span>How to Start Practicing in 3 Simple Steps</span>
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-sm">
+                      1
+                    </div>
+                    <h5 className="text-sm font-bold text-white">Select Class & Subject</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Choose your grade (Class 1 to 12) and subject from the Home dashboard or Curriculum directory. You can pick specific NCERT chapters or create an all-chapter mix.
+                    </p>
+                  </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold">2</div>
-                  <h4 className="text-sm font-bold text-white">Automated Zero-Touch Daily Tracker</h4>
-                  <p className="text-xs text-slate-400">
-                    Automatically records daily attendance, check-in timestamps in IST (<code className="text-emerald-400">Asia/Kolkata</code>), and active study streaks upon login and quiz completion without requiring manual button clicks.
-                  </p>
-                </div>
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-sm">
+                      2
+                    </div>
+                    <h5 className="text-sm font-bold text-white">Customize Quiz Settings</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Pick how many questions you want (5, 10, 15, or 20) and select your target strength level: <span className="text-emerald-400 font-semibold">Foundational</span>, <span className="text-amber-400 font-semibold">Standard</span>, or <span className="text-rose-400 font-semibold">Exemplar</span>.
+                    </p>
+                  </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">3</div>
-                  <h4 className="text-sm font-bold text-white">Full Power Admin Control</h4>
-                  <p className="text-xs text-slate-400">
-                    Direct access for instructors to view every student assessment attempt, live attendance registers, challenge codes, chat moderation, user ban controls, and platform maintenance toggles.
-                  </p>
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-sm">
+                      3
+                    </div>
+                    <h5 className="text-sm font-bold text-white">Solve & Learn</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Answer with immediate feedback or standard exam mode. Review step-by-step textbook solutions for every single question to master the underlying concepts.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800/80 space-y-3">
+              {/* Guest vs Sign In Benefits */}
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
                 <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Key Platform Capabilities</span>
+                  <GraduationCap className="w-4 h-4 text-emerald-400" />
+                  <span>Guest Mode vs. Creating a Free Scholar Account</span>
                 </h4>
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-400">
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800/80 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-slate-200">
+                      <span className="w-2 h-2 rounded-full bg-slate-400" />
+                      <span>Guest Mode (No Sign-In Required)</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      You can instantly generate and practice unlimited quizzes right away. Your quiz scores and attendance for the current browser session are saved on your device.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/30 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-emerald-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Signed-In Scholar Account (Recommended)</span>
+                    </div>
+                    <ul className="space-y-1 text-slate-300">
+                      <li>• Saves up to 50 custom quizzes in your personal Vault</li>
+                      <li>• Synchronizes your daily study streak across phones, tablets & laptops</li>
+                      <li>• Features your name on the Global Scholar Leaderboard</li>
+                      <li>• Allows bookmarking difficult questions for pre-exam revision</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Effective Study Tips */}
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Lightbulb className="w-4 h-4 text-amber-400" />
+                  <span>Pro Tips for Daily Study Success</span>
+                </h4>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-400">
                   <li className="flex items-start gap-2">
-                    <span className="text-emerald-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">Classes 1–12 Coverage:</strong> Physics, Chemistry, Biology, Mathematics, Social Science, Science, English, Hindi, Sanskrit, and Environmental Studies.</span>
+                    <span className="text-emerald-400 font-bold">✓</span>
+                    <span><strong className="text-slate-200">Daily 10-Minute Habit:</strong> Taking just one 5 or 10-question quiz every day reinforces memory retention by over 80% compared to last-minute cramming.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-emerald-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">AI Fallback Resilience:</strong> Automatic failover across Gemini 2.5 Flash, Gemini 2.0 Flash, and Gemini 3.7 Flash for guaranteed 99.9% uptime.</span>
+                    <span className="text-emerald-400 font-bold">✓</span>
+                    <span><strong className="text-slate-200">Review Before Moving On:</strong> Always read the step-by-step solution for any question you answered incorrectly to understand the formula or concept.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-emerald-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">Mathematical Rendering:</strong> Full KaTeX/LaTeX support for complex fractions, square roots, chemical formulas, and geometric theorems.</span>
+                    <span className="text-emerald-400 font-bold">✓</span>
+                    <span><strong className="text-slate-200">Progressive Challenge:</strong> Start with <strong className="text-emerald-400">Foundational</strong> when learning a new chapter, then advance to <strong className="text-amber-400">Standard</strong> and <strong className="text-rose-400">Exemplar</strong>.</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-emerald-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">Cloud Challenge Vault:</strong> Save up to 50 custom quizzes and share 6-digit challenge links instantly.</span>
+                    <span className="text-emerald-400 font-bold">✓</span>
+                    <span><strong className="text-slate-200">Challenge Study Groups:</strong> Share 6-digit challenge codes with your classmates to make revision fun and collaborative.</span>
                   </li>
                 </ul>
               </div>
             </div>
           )}
 
-          {/* ================= SECTION 2: NCERT CURRICULUM ================= */}
+          {/* ================= CHAPTER 2: NCERT CURRICULUM ================= */}
           {activeSection === 'curriculum' && (
             <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-2">
-                <span className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider">Chapter 2</span>
-                <h3 className="text-xl font-bold text-white font-display">NCERT Curriculum Mapping (Classes 1–12)</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  Every quiz topic and chapter is mapped directly to the National Council of Educational Research and Training (NCERT) textbook frameworks, ensuring 100% compliance with CBSE board patterns and state board syllabi.
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 2
+                  </span>
+                  <span className="text-xs text-slate-400">• Comprehensive Syllabus Breakdown</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Complete NCERT Curriculum Coverage (Classes 1 to 12)
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Every quiz subject, chapter, and question is mapped directly to the official NCERT textbook guidelines and CBSE curriculum frameworks. This guarantees that every minute you spend on U-Quiz directly supports your school syllabus and board examinations.
                 </p>
               </div>
 
+              {/* Grade Band Table */}
               <div className="space-y-3">
-                <h4 className="text-sm font-bold text-white">Grade Level & Subject Structure</h4>
+                <h4 className="text-sm font-bold text-white">Grade Bands & Subject Specialization</h4>
                 <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 font-mono text-[11px]">
-                        <th className="p-3">Grade Band</th>
-                        <th className="p-3">Included Classes</th>
-                        <th className="p-3">Primary Subjects</th>
-                        <th className="p-3">Assessment Focus</th>
+                        <th className="p-3.5">School Wing</th>
+                        <th className="p-3.5">Grades</th>
+                        <th className="p-3.5">Key Subjects Covered</th>
+                        <th className="p-3.5">Learning & Exam Focus</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 text-slate-300">
                       <tr>
-                        <td className="p-3 font-bold text-emerald-400">Primary (1–5)</td>
-                        <td className="p-3 font-mono">Class 1, 2, 3, 4, 5</td>
-                        <td className="p-3">Mathematics, Environmental Studies (EVS), English, Hindi</td>
-                        <td className="p-3 text-slate-400">Visual concepts, basic arithmetic, nature exploration, vocabulary</td>
+                        <td className="p-3.5 font-bold text-emerald-400">Primary Wing</td>
+                        <td className="p-3.5 font-mono">Classes 1, 2, 3, 4, 5</td>
+                        <td className="p-3.5">Mathematics, Environmental Studies (EVS), English, Hindi</td>
+                        <td className="p-3.5 text-slate-400">Visual problem solving, everyday arithmetic, nature appreciation, vocabulary and sentence building.</td>
                       </tr>
                       <tr>
-                        <td className="p-3 font-bold text-teal-400">Middle School (6–8)</td>
-                        <td className="p-3 font-mono">Class 6, 7, 8</td>
-                        <td className="p-3">Science, Mathematics, Social Science, History, Geography, Civics, Sanskrit</td>
-                        <td className="p-3 text-slate-400">NCERT textbook exercises, experimental concepts, foundational algebra</td>
+                        <td className="p-3.5 font-bold text-teal-400">Middle School</td>
+                        <td className="p-3.5 font-mono">Classes 6, 7, 8</td>
+                        <td className="p-3.5">Science, Mathematics, Social Science (History, Civics, Geography), Sanskrit</td>
+                        <td className="p-3.5 text-slate-400">Foundational scientific experiments, basic algebraic equations, geometric constructions, and historical timelines.</td>
                       </tr>
                       <tr>
-                        <td className="p-3 font-bold text-cyan-400">Secondary (9–10)</td>
-                        <td className="p-3 font-mono">Class 9, 10</td>
-                        <td className="p-3">Science (PCB combined), Mathematics, Social Science, Economics, Civics</td>
-                        <td className="p-3 text-slate-400">CBSE Board exam question formats, case-based questions, theorem proofs</td>
+                        <td className="p-3.5 font-bold text-cyan-400">Secondary Wing</td>
+                        <td className="p-3.5 font-mono">Classes 9, 10</td>
+                        <td className="p-3.5">Science (Physics, Chemistry, Biology), Mathematics, Social Science (Economics, Civics, History, Geography)</td>
+                        <td className="p-3.5 text-slate-400">CBSE 10th Board Exam pattern questions, assertion-reasoning, case-based questions, and numerical derivations.</td>
                       </tr>
                       <tr>
-                        <td className="p-3 font-bold text-purple-400">Senior Secondary (11–12)</td>
-                        <td className="p-3 font-mono">Class 11, 12</td>
-                        <td className="p-3">Physics, Chemistry, Biology, Mathematics, Economics, History, Geography</td>
-                        <td className="p-3 text-slate-400">NCERT Exemplar problems, JEE Main/NEET foundational MCQs, derivations</td>
+                        <td className="p-3.5 font-bold text-purple-400">Senior Secondary</td>
+                        <td className="p-3.5 font-mono">Classes 11, 12</td>
+                        <td className="p-3.5">Physics, Chemistry, Biology, Mathematics, Economics, History, Geography</td>
+                        <td className="p-3.5 text-slate-400">NCERT Exemplar problems, CBSE 12th Board Exam preparation, and foundational concepts for NEET & JEE Main.</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                <h4 className="text-sm font-bold text-white">Three Assessment Strength Levels</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400">Foundational (Easy)</span>
-                    <p className="text-[11px] text-slate-400 pt-1">Direct textbook definition recall, key terms, formula recognition, and fundamental properties.</p>
+              {/* Three Challenge Levels Explained */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-white">Three Quiz Challenge Levels</h4>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                        Foundational
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">Level 1</span>
+                    </div>
+                    <h5 className="text-sm font-bold text-white pt-1">Core Concepts & Definitions</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Ideal for when you are starting a chapter. Tests direct textbook definitions, key terms, formula recognition, and fundamental facts.
+                    </p>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-400">Standard (Medium)</span>
-                    <p className="text-[11px] text-slate-400 pt-1">Application of concepts, numerical calculations, multi-step reasoning, and chapter interlinking.</p>
+
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                        Standard
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">Level 2</span>
+                    </div>
+                    <h5 className="text-sm font-bold text-white pt-1">Application & Calculations</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Standard school exam level. Involves solving numerical problems, applying multi-step reasoning, and connecting related concepts across chapters.
+                    </p>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-400">Exemplar (Hard)</span>
-                    <p className="text-[11px] text-slate-400 pt-1">Olympiad & competitive exam level questions, assertion-reasoning, and in-depth problem solving.</p>
+
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
+                        Exemplar
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-mono">Level 3</span>
+                    </div>
+                    <h5 className="text-sm font-bold text-white pt-1">Higher-Order Thinking</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Based on NCERT Exemplar books, Olympiad questions, and competitive exam foundations. Features complex multi-concept challenges and assertion-reasoning.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ================= SECTION 3: AI GENERATION ENGINE ================= */}
-          {activeSection === 'ai_engine' && (
+          {/* ================= CHAPTER 3: TAKING QUIZZES ================= */}
+          {activeSection === 'quizzes' && (
             <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-2">
-                <span className="text-xs font-mono text-emerald-400 font-bold uppercase tracking-wider">Chapter 3</span>
-                <h3 className="text-xl font-bold text-white font-display">AI Assessment Synthesis & Mentor Engine</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  U-Quiz utilizes Google's latest Gemini models running behind secure serverless API proxies to synthesize 100% original, syllabus-accurate questions, multiple-choice options, and comprehensive step-by-step explanations.
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 3
+                  </span>
+                  <span className="text-xs text-slate-400">• Assessment Mastery & Explanations</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Interactive Quizzes & Step-by-Step Explanations
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Discover how the quiz screen works, how mathematical and scientific formulas are clearly formatted, and how to analyze your results to turn weak areas into strengths.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-emerald-400" />
-                    <span>Multi-Model Fallback Chain</span>
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span>Smart Question Interface</span>
                   </h4>
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    To eliminate rate limits and API disruptions, the backend employs a priority tier:
-                  </p>
-                  <ol className="space-y-1.5 text-xs font-mono text-slate-300">
-                    <li className="flex items-center gap-2"><span className="text-emerald-400 font-bold">1.</span> <code>gemini-2.5-flash</code> (Primary Engine - Ultra Fast)</li>
-                    <li className="flex items-center gap-2"><span className="text-teal-400 font-bold">2.</span> <code>gemini-2.0-flash</code> (High-Performance Backup)</li>
-                    <li className="flex items-center gap-2"><span className="text-cyan-400 font-bold">3.</span> <code>gemini-flash-latest</code> (Standard Global Endpoint)</li>
-                    <li className="flex items-center gap-2"><span className="text-purple-400 font-bold">4.</span> <code>gemini-3.7-flash</code> (Next-Gen Reasoning Backup)</li>
-                  </ol>
+                  <ul className="space-y-2 text-xs text-slate-400">
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">•</span>
+                      <span><strong className="text-slate-200">Question Navigation Bar:</strong> Easily jump between questions, check which ones you have answered, and track remaining time.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">•</span>
+                      <span><strong className="text-slate-200">Instant Solution Mode:</strong> When enabled, you immediately see the explanation after selecting an answer, perfect for self-study and learning.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">•</span>
+                      <span><strong className="text-slate-200">Exam Mode:</strong> Simulates a real timed test where explanations and total scores are revealed upon final submission.</span>
+                    </li>
+                  </ul>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Code2 className="w-4 h-4 text-teal-400" />
-                    <span>Strict JSON Schema & Validation</span>
+                    <Brain className="w-4 h-4 text-teal-400" />
+                    <span>Clear Math & Science Equations</span>
                   </h4>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Every generated question passes through recursive JSON sanitizers that strip markdown fences, validate option counts (A, B, C, D), verify unambiguous correct keys, and ensure clean LaTeX mathematical notations (<code className="text-teal-300">$...$</code> and <code className="text-teal-300">$$...$$</code>).
+                    All complex equations are formatted cleanly on your screen for maximum readability:
                   </p>
+                  <ul className="space-y-1.5 text-xs text-slate-300">
+                    <li className="flex items-center gap-2">• Fractions, square roots, and powers (e.g. <span className="font-mono text-teal-300">x = (-b ± √(b² - 4ac)) / 2a</span>)</li>
+                    <li className="flex items-center gap-2">• Chemical reactions and balanced equations (e.g. <span className="font-mono text-teal-300">2H₂ + O₂ → 2H₂O</span>)</li>
+                    <li className="flex items-center gap-2">• Physics units, vectors, and trigonometric identities</li>
+                  </ul>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                <h4 className="text-sm font-bold text-white">Study Chat & AI NCERT Doubt Mentor</h4>
-                <p className="text-xs text-slate-400">
-                  Scholars can select their specific Class (1–12) and Subject in the <strong className="text-white">Study Chat</strong> view to ask questions, solve homework doubts, and receive instant explanations. Instructors and peers can participate in public study threads with subject tagging.
+              {/* Scorecard & Review Explanation */}
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Award className="w-4 h-4 text-purple-400" />
+                  <span>Understanding Your Scorecard & Performance Analytics</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <span className="text-xs font-bold text-emerald-400">Accuracy & Percentage</span>
+                    <p className="text-[11px] text-slate-400">See your overall score, percentage rank, and accuracy rating out of total attempted questions.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <span className="text-xs font-bold text-teal-400">Pace & Time Spent</span>
+                    <p className="text-[11px] text-slate-400">Review total time taken and average seconds spent per question to optimize your speed for school exams.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <span className="text-xs font-bold text-amber-400">Chapter Retake & Save</span>
+                    <p className="text-[11px] text-slate-400">Save the quiz directly into your Cloud Vault or instantly retake it to achieve a 100% perfect score.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Study Chat Mentorship */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-slate-950 to-slate-950 border border-purple-500/20 space-y-2">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-purple-400" />
+                  <span>Study Chat & AI NCERT Doubt Mentor</span>
+                </h4>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Stuck on a tricky homework question or textbook problem? Open the <strong className="text-white">Study Chat</strong> from the top navigation bar, choose your Class and Subject, and ask your question. The AI Study Mentor provides clear, friendly, step-by-step guidance without giving away answers directly, helping you understand the concept deeply.
                 </p>
               </div>
             </div>
           )}
 
-          {/* ================= SECTION 4: AUTO ATTENDANCE ================= */}
+          {/* ================= CHAPTER 4: AUTOMATIC ATTENDANCE ================= */}
           {activeSection === 'attendance' && (
             <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-slate-950 border border-teal-500/20 space-y-2">
-                <span className="text-xs font-mono text-teal-400 font-bold uppercase tracking-wider">Chapter 4</span>
-                <h3 className="text-xl font-bold text-white font-display">Automated Zero-Touch Attendance System</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  U-Quiz eliminates manual "Mark Present" friction. Daily attendance and revision streak tracking are 100% automated upon student activity.
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-slate-950 border border-teal-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 4
+                  </span>
+                  <span className="text-xs text-slate-400">• Habit Building & Streak Tracking</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Automatic Daily Attendance & Study Streaks
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Building consistent daily study habits is the key to academic excellence. U-Quiz automatically tracks your attendance and maintains your active revision streak without requiring any manual check-in clicks.
                 </p>
               </div>
 
+              {/* 3 Pillars of Automated Attendance */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold">
-                    <LogIn className="w-4 h-4" />
+                    1
                   </div>
-                  <h4 className="text-sm font-bold text-white">1. Daily Session Login</h4>
-                  <p className="text-xs text-slate-400">
-                    When a scholar opens the app and authenticates, the system checks today's date in IST. If not already recorded, check-in is logged automatically.
+                  <h4 className="text-sm font-bold text-white">Daily Login Check-In</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Whenever you open U-Quiz and sign in during the day, your daily study session is automatically recognized and recorded in Indian Standard Time (IST).
                   </p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold">
-                    <CheckCircle2 className="w-4 h-4" />
+                    2
                   </div>
-                  <h4 className="text-sm font-bold text-white">2. Quiz & Assessment Completion</h4>
-                  <p className="text-xs text-slate-400">
-                    Submitting any assessment automatically marks attendance with the subject attempted and score attained, updating the student's cloud record.
+                  <h4 className="text-sm font-bold text-white">Quiz Completion Log</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Completing any assessment automatically updates your study log with the subject practiced, score achieved, and questions answered.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="w-8 h-8 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold">
-                    <Flame className="w-4 h-4" />
+                    3
                   </div>
-                  <h4 className="text-sm font-bold text-white">3. Continuous Study Streak</h4>
-                  <p className="text-xs text-slate-400">
-                    Consecutive daily check-ins increment the scholar's active streak flame (<code className="text-orange-400">🔥 Streak</code>), visible on leaderboards and user profiles.
+                  <h4 className="text-sm font-bold text-white">Active Streak Flame (🔥)</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Practicing on consecutive calendar days grows your Streak Flame (<span className="text-orange-400 font-bold">🔥 5d Streak</span>), visible on your profile and leaderboards.
                   </p>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-                <h4 className="text-sm font-bold text-white">Timezone & Cloud Synchronization Architecture</h4>
-                <ul className="space-y-2 text-xs text-slate-400">
+              {/* Attendance Details */}
+              <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <CalendarCheck className="w-4 h-4 text-teal-400" />
+                  <span>How the Attendance Calendar Works</span>
+                </h4>
+                <ul className="space-y-2.5 text-xs text-slate-400 leading-relaxed">
                   <li className="flex items-start gap-2">
                     <span className="text-teal-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">IST Normalization:</strong> All dates are calculated using <code className="text-teal-300">en-CA</code> format with <code className="text-teal-300">timeZone: 'Asia/Kolkata'</code> (<code className="text-white">YYYY-MM-DD</code>) ensuring perfect synchronization across students in any time zone.</span>
+                    <span><strong className="text-slate-200">Indian Standard Time (IST) Reset:</strong> A new attendance day begins at 12:00 AM midnight IST. Whether you practice in the morning or evening, your study day is accurately counted.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-teal-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">Deterministic Document Keys:</strong> Attendance records use <code className="text-teal-300">/attendance/{'{userId}'}_{'{YYYY-MM-DD}'}</code> to guarantee idempotency and prevent duplicate records per calendar day.</span>
+                    <span><strong className="text-slate-200">Zero-Click Convenience:</strong> You never have to search for a "Mark Present" button. The moment you start learning, your attendance is safely logged.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-teal-400 font-bold">•</span>
-                    <span><strong className="text-slate-200">Admin Real-Time Visibility:</strong> Instructors can inspect live attendance across all scholars with date filters, activity type breakdowns, and scholar search.</span>
+                    <span><strong className="text-slate-200">Attendance History Inspection:</strong> Click the Calendar / Streak icon in the top navigation bar at any time to view your full history of active study days and total quizzes completed.</span>
                   </li>
                 </ul>
               </div>
             </div>
           )}
 
-          {/* ================= SECTION 5: SCHOLAR PORTAL ================= */}
-          {activeSection === 'scholar_portal' && (
+          {/* ================= CHAPTER 5: VAULT, CHALLENGES & LEADERBOARD ================= */}
+          {activeSection === 'vault_challenges' && (
             <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-purple-500/10 via-emerald-500/10 to-slate-950 border border-purple-500/20 space-y-2">
-                <span className="text-xs font-mono text-purple-400 font-bold uppercase tracking-wider">Chapter 5</span>
-                <h3 className="text-xl font-bold text-white font-display">Scholar Portal, Vault & Challenge Codes</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  Explore how students generate quizzes, save assessments to their Cloud Vault, challenge classmates with 6-digit codes, and climb the Leaderboard.
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-purple-500/10 via-emerald-500/10 to-slate-950 border border-purple-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 5
+                  </span>
+                  <span className="text-xs text-slate-400">• Social Learning & Revision Vault</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Quiz Vault, Challenge Codes & Global Leaderboard
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Explore how to build your personal library of saved practice tests, challenge your classmates with 6-digit codes, and climb the ranks from NCERT Novice to Grandmaster Scholar.
                 </p>
               </div>
 
+              {/* 3 Main Sections */}
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Database className="w-4 h-4 text-purple-400" />
-                    <span>Cloud Quiz Vault (Up to 50 Saved Quizzes)</span>
-                  </h4>
+                
+                {/* Cloud Vault */}
+                <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                      <Bookmark className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      Cloud Quiz Vault (Save Up to 50 Quizzes)
+                    </h4>
+                  </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Scholars can save generated quizzes to their personal Cloud Vault. Saved quizzes preserve exact questions, options, and explanations so students can retake them anytime or review them before school examinations.
+                    When you generate a great quiz or want to save a tricky question set for final exam revision, click <strong className="text-purple-300">"Save to Vault"</strong>. Your saved quizzes retain all questions, options, and full step-by-step solutions. You can access them anytime from the <strong className="text-white">"Quiz Vault"</strong> navigation tab to retake them or review answers.
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <QrCode className="w-4 h-4 text-emerald-400" />
-                    <span>6-Digit Challenge Sharing</span>
-                  </h4>
+                {/* 6-Digit Challenge Codes */}
+                <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                      <Share2 className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      6-Digit Challenge Codes & Group Study
+                    </h4>
+                  </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Any quiz can be published to the <strong className="text-white">Public Challenge Vault</strong> with a unique 6-digit code or shareable direct URL. Classmates can enter the code in the "Join Code" topbar button to compete on the exact same question set.
+                    Turn revision into a friendly competition! From your Quiz Results or Vault, click <strong className="text-emerald-300">"Share Challenge"</strong> to generate a unique 6-digit code (e.g. <span className="font-mono text-emerald-400 font-bold">842910</span>) or direct link.
                   </p>
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 text-xs text-slate-300 space-y-1">
+                    <strong className="text-white block">How your friends join:</strong>
+                    <span>Classmates simply click <strong className="text-emerald-400">"Join Code"</strong> in the top navigation bar, enter your 6-digit code, and take the exact same test to compare scores.</span>
+                  </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-amber-400" />
-                    <span>Global Scholar Leaderboard</span>
-                  </h4>
+                {/* Scholar Leaderboard & Ranks */}
+                <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                      <Trophy className="w-4 h-4" />
+                    </div>
+                    <h4 className="text-sm font-bold text-white">
+                      Global Scholar Leaderboard & Academic Ranks
+                    </h4>
+                  </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Points are awarded based on accuracy, quiz completion volume, and daily attendance streaks. Scholar ranks range from <strong className="text-emerald-400">NCERT Novice</strong> to <strong className="text-amber-400">Grandmaster Scholar</strong>.
+                    Earn Scholar Points by answering questions correctly, finishing assessments, and keeping your daily study streak active. Climb through prestigious scholar tiers:
                   </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= SECTION 6: ADMIN PORTAL ================= */}
-          {activeSection === 'admin_portal' && (
-            <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-slate-950 border border-amber-500/20 space-y-2">
-                <span className="text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">Chapter 6</span>
-                <h3 className="text-xl font-bold text-white font-display">Administrator Control Center & Teacher Operations</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  Comprehensive administrator console for managing scholars, inspecting assessments, reviewing attendance registers, moderating chats, and controlling global platform state.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-cyan-400" />
-                    <span>Universal Assessment Matrix</span>
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Live chronological and scholar-grouped view of all quizzes taken across the platform. Instructors can inspect student answers, review question explanations, adjust recorded scores, and delete invalid attempts.
-                  </p>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block font-mono">Tier 1</span>
+                      <strong className="text-emerald-400 text-xs">NCERT Novice</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block font-mono">Tier 2</span>
+                      <strong className="text-teal-400 text-xs">Concept Builder</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block font-mono">Tier 3</span>
+                      <strong className="text-purple-400 text-xs">Master Scholar</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-center">
+                      <span className="text-[10px] text-slate-400 block font-mono">Tier 4</span>
+                      <strong className="text-amber-400 text-xs">Grandmaster</strong>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <CalendarCheck className="w-4 h-4 text-teal-400" />
-                    <span>Live Attendance Auditor</span>
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Full attendance log with date picker filter, activity filter (Login, Quiz, Chat), and user search. Allows teachers to verify daily participation for classroom grading.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span>Scholar Management & Moderation</span>
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Inspect individual scholar accounts, edit total points and streaks, ban disruptive accounts, and moderate public study chat messages.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-amber-400" />
-                    <span>Maintenance Mode & God-Mode</span>
-                  </h4>
-                  <p className="text-xs text-slate-400">
-                    Activate global maintenance mode to temporarily gate students with custom announcements while admins maintain full bypass privileges to test and update resources.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ================= SECTION 7: DEPLOYMENT & HOSTING ================= */}
-          {activeSection === 'deployment' && (
-            <div className="space-y-6">
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-cyan-500/10 via-teal-500/10 to-slate-950 border border-cyan-500/20 space-y-2">
-                <span className="text-xs font-mono text-cyan-400 font-bold uppercase tracking-wider">Chapter 7</span>
-                <h3 className="text-xl font-bold text-white font-display">Vercel & Cloud Hosting Guidelines</h3>
-                <p className="text-xs sm:text-sm text-slate-300">
-                  Best practices for deploying U-Quiz on Vercel, Cloud Run, and container environments with high performance and zero configuration errors.
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white">1. Environment Variables Configuration</h4>
-                  <p className="text-xs text-slate-400">
-                    Ensure the following variables are declared in your Vercel Project Settings &gt; Environment Variables:
-                  </p>
-                  <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-400 overflow-x-auto">
-{`# Server-side Gemini API Secret
-GEMINI_API_KEY=your_gemini_api_key_here
-
-# Firebase Web Config (Optional / Defaults in client config)
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_PROJECT_ID=...`}
-                  </pre>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white">2. Vercel Serverless Function Routing</h4>
-                  <p className="text-xs text-slate-400">
-                    The platform includes <code className="text-cyan-400">api/index.ts</code> and <code className="text-cyan-400">vercel.json</code> configured to route all <code className="text-cyan-400">/api/*</code> requests automatically to serverless Gemini endpoints while serving the single-page application smoothly.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
-                  <h4 className="text-sm font-bold text-white">3. Responsive Viewport & Navbar Behavior</h4>
-                  <p className="text-xs text-slate-400">
-                    All views (including Study Chat and Admin Portal) use dynamic viewport units (<code className="text-teal-300">100dvh</code>) and sticky headers to ensure that the topbar and navigation controls remain visible and functional across all screen sizes and mobile browsers.
-                  </p>
-                </div>
               </div>
             </div>
           )}
@@ -566,13 +632,13 @@ VITE_FIREBASE_PROJECT_ID=...`}
         <div className="p-4 sm:p-5 border-t border-slate-800 bg-slate-950/90 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0 text-xs">
           <div className="flex items-center gap-2 text-slate-400">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>U-Quiz NCERT Assessment System • Documentation Ready</span>
+            <span>U-Quiz Student Guide • Ready for Learning</span>
           </div>
           <button
             onClick={onClose}
-            className="w-full sm:w-auto px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-all cursor-pointer shadow-md shadow-emerald-500/20"
+            className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-all cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95"
           >
-            Done Reading
+            Start Practicing
           </button>
         </div>
 

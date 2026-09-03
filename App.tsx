@@ -252,7 +252,9 @@ export default function App() {
         return;
       }
       console.error('Quiz Generation Error:', err);
-      setError(err.message || 'Failed to generate assessment. Please check your API key configuration and try again.');
+      setError(err.message?.includes('API key') 
+        ? 'Unable to generate questions at this moment. Please try again in a few moments or select a different topic.'
+        : err.message || 'Unable to generate assessment. Please check your internet connection and try again.');
       setView(AppState.SETUP);
     }
   };

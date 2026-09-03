@@ -583,7 +583,8 @@ const rawNCERTData: Record<string, Record<string, string[]>> = {
       "9: Circles (Angle Subtended by Chords, Perpendicular from Centre & Cyclic Quadrilaterals)",
       "10: Heron's Formula (Calculation of Area of Triangles)",
       "11: Surface Areas and Volumes (Right Circular Cones, Spheres & Hemispheres)",
-      "12: Statistics (Graphical Representation: Histograms & Frequency Polygons)"
+      "12: Statistics (Graphical Representation: Histograms & Frequency Polygons)",
+      "13: Probability (Empirical and Experimental Probability, Real-Life Trials, Frequency of Outcomes, Coin Tossing & Die Rolling Experiments, and Event Probability P(E) = Number of trials in which event happened / Total number of trials)"
     ],
     "Science": [
       "1: Matter in Our Surroundings (States of Matter, Evaporation, Latent Heat & Sublimation)",
