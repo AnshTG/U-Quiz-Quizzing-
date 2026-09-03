@@ -470,6 +470,7 @@ export default function App() {
             onOpenFeedback={() => setIsFeedbackModalOpen(true)}
             onOpenDocs={() => setIsDocumentationModalOpen(true)}
             isAdminUnlocked={isAdminUnlocked}
+            isLoginScreen={!user && !isAdminUnlocked}
           />
 
           {/* Dismissable Global Error Toast */}
