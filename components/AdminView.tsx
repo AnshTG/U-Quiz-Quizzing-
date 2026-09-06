@@ -117,7 +117,9 @@ import {
   LifeBuoy,
   RotateCw,
   Globe,
-  ExternalLink
+  ExternalLink,
+  Copy,
+  Link2
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -184,6 +186,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
   const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
   const [customMaintenanceMsg, setCustomMaintenanceMsg] = useState<string>('');
   const [estimatedDuration, setEstimatedDuration] = useState<string>('');
+
+  // Shared challenges copy link state
+  const [copiedQuizLinkId, setCopiedQuizLinkId] = useState<string | null>(null);
+  const [copiedQuizCodeId, setCopiedQuizCodeId] = useState<string | null>(null);
 
   const todayIST = getISTDateString();
 
@@ -622,6 +628,77 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       alert('Failed to delete shared quiz.');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  // Helper to get actual challenge URL
+  const getSharedChallengeUrl = (quizId: string) => {
+    return `https://uquizzes.vercel.app?quizId=${encodeURIComponent(quizId)}`;
+  };
+
+  // Copy Actual Shared Challenge URL
+  const handleCopySharedLink = async (quizId: string, title?: string) => {
+    const url = getSharedChallengeUrl(quizId);
+    let copied = false;
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        copied = true;
+      }
+    } catch {
+      // If clipboard API failed (e.g. iframe permission), fall through to textarea execCommand
+    }
+
+    if (!copied) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = url;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (copied) {
+      setCopiedQuizLinkId(quizId);
+      showToast(`Copied challenge link to clipboard!`);
+      setTimeout(() => {
+        setCopiedQuizLinkId(prev => (prev === quizId ? null : prev));
+      }, 2500);
+    } else {
+      window.prompt('Copy the actual challenge link:', url);
+    }
+  };
+
+  // Copy Shared Challenge 6-char/Id Code
+  const handleCopySharedCode = async (quizId: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(quizId);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = quizId;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedQuizCodeId(quizId);
+      showToast(`Copied challenge code: ${quizId}`);
+      setTimeout(() => {
+        setCopiedQuizCodeId(prev => (prev === quizId ? null : prev));
+      }, 2500);
+    } catch (err) {
+      console.error('Failed to copy challenge code:', err);
     }
   };
 
@@ -1825,10 +1902,17 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       {/* ===================== TAB 3: SHARED CHALLENGES ===================== */}
       {activeTab === 'shared' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-white">Community Challenge Vault</h3>
-              <p className="text-xs text-slate-400">Total {sharedQuizzes.length} public challenge quizzes created by scholars</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white">Community Challenge Vault</h3>
+                <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-mono font-bold">
+                  {sharedQuizzes.length} Total
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Public challenge quizzes created by scholars. Copy the actual link to share or test any challenge directly.
+              </p>
             </div>
 
             <button
@@ -1841,32 +1925,140 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredSharedQuizzes.map((quiz) => (
-              <div key={quiz.id} className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 shadow-lg">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30 text-[10px] font-mono font-bold">
-                      Code: {quiz.id}
-                    </span>
-                    <h4 className="font-bold text-sm text-white mt-1.5">{quiz.title}</h4>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteSharedQuiz(quiz.id)}
-                    className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+          {filteredSharedQuizzes.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-slate-900/50 border border-slate-800 space-y-3">
+              <Database className="w-10 h-10 text-slate-600 mx-auto" />
+              <div className="text-sm font-semibold text-white">No Shared Challenges Found</div>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                {searchQuery ? `No challenge matches "${searchQuery}". Try clearing search.` : 'No community challenge quizzes have been published yet.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredSharedQuizzes.map((quiz) => {
+                const challengeUrl = getSharedChallengeUrl(quiz.id);
+                const isLinkCopied = copiedQuizLinkId === quiz.id;
+                const isCodeCopied = copiedQuizCodeId === quiz.id;
 
-                <div className="text-xs text-slate-400 space-y-1 font-mono">
-                  <div>{quiz.config.class} • {quiz.config.subject} • {quiz.config.strength}</div>
-                  <div>{quiz.questions?.length || 0} Questions • {quiz.playsCount || 0} Plays</div>
-                  <div className="text-slate-500 text-[10px]">Author: {quiz.creatorName || 'Anonymous Scholar'}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+                return (
+                  <div 
+                    key={quiz.id} 
+                    className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-4 shadow-lg hover:border-slate-700/80 transition-all"
+                  >
+                    <div className="space-y-3">
+                      {/* Code Badge, Copy Code & Delete */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-mono font-bold">
+                              Code: {quiz.id}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopySharedCode(quiz.id)}
+                              className="px-1.5 py-0.5 rounded hover:bg-purple-500/20 text-purple-400 hover:text-purple-200 border border-purple-500/20 transition-colors text-[10px] font-medium flex items-center gap-1 cursor-pointer"
+                              title="Copy 6-char challenge access code"
+                            >
+                              {isCodeCopied ? (
+                                <>
+                                  <Check className="w-2.5 h-2.5 text-emerald-400" />
+                                  <span className="text-emerald-400">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-2.5 h-2.5" />
+                                  <span>Copy Code</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <h4 className="font-bold text-sm text-white mt-1.5 line-clamp-2" title={quiz.title}>
+                            {quiz.title}
+                          </h4>
+                        </div>
+
+                        <button
+                          onClick={() => handleDeleteSharedQuiz(quiz.id)}
+                          className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors shrink-0"
+                          title="Delete Shared Quiz"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Metadata Details */}
+                      <div className="text-xs text-slate-400 space-y-1 font-mono bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60">
+                        <div className="text-slate-300 font-medium">{quiz.config.class} • {quiz.config.subject} • {quiz.config.strength}</div>
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span>{quiz.questions?.length || 0} Questions</span>
+                          <span className="text-purple-400 font-semibold">{quiz.playsCount || 0} Plays</span>
+                        </div>
+                        <div className="text-slate-500 text-[10px] truncate">Author: {quiz.creatorName || 'Anonymous Scholar'}</div>
+                      </div>
+
+                      {/* Actual Link Preview */}
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                          <span>Actual Link</span>
+                          {isLinkCopied && (
+                            <span className="text-emerald-400 font-bold lowercase tracking-normal flex items-center gap-1">
+                              <Check className="w-3 h-3" /> copied!
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+                          <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span 
+                            className="text-[11px] font-mono text-slate-300 truncate flex-1 select-all cursor-pointer"
+                            title={challengeUrl}
+                            onClick={() => handleCopySharedLink(quiz.id, quiz.title)}
+                          >
+                            {challengeUrl}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons: Copy Actual Link & Open in Tab */}
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCopySharedLink(quiz.id, quiz.title)}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          isLinkCopied
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                            : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md shadow-purple-600/20 active:scale-[0.98]'
+                        }`}
+                        title="Copy the actual direct URL to share with scholars"
+                      >
+                        {isLinkCopied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Link Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Link2 className="w-3.5 h-3.5" />
+                            <span>Copy Actual Link</span>
+                          </>
+                        )}
+                      </button>
+
+                      <a
+                        href={challengeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition-colors flex items-center justify-center shrink-0"
+                        title="Open challenge in new tab"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

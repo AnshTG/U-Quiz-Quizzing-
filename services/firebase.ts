@@ -1527,22 +1527,25 @@ export const fetchLeaderboardTopUsers = async (
 export const sendPublicChatMessage = async (
   user: UserProfile,
   messageText: string,
-  subjectTag: string = 'General'
+  subjectTag: string = 'General',
+  imageUrl?: string,
+  imageName?: string,
+  customMessageId?: string
 ): Promise<ChatMessage> => {
   if (!user || !user.uid) {
     throw new Error('You must be signed in to participate in the public study chat.');
   }
 
-  const trimmed = messageText.trim();
-  if (!trimmed) {
-    throw new Error('Message cannot be empty.');
+  const trimmed = (messageText || '').trim();
+  if (!trimmed && !imageUrl) {
+    throw new Error('Please enter a message or attach an image to share.');
   }
 
-  if (trimmed.length > 1000) {
-    throw new Error('Message exceeds the 1000 character limit.');
+  if (trimmed.length > 2000) {
+    throw new Error('Message exceeds the 2000 character limit.');
   }
 
-  const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const messageId = customMessageId || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const chatMsg: ChatMessage = {
     id: messageId,
     userId: user.uid,
@@ -1551,11 +1554,13 @@ export const sendPublicChatMessage = async (
     message: trimmed,
     timestamp: Date.now(),
     createdAt: new Date().toISOString(),
-    subjectTag: subjectTag || 'General'
+    subjectTag: subjectTag || 'General',
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(imageName ? { imageName } : {})
   };
 
   const msgRef = doc(db, 'publicChat', messageId);
-  await setDoc(msgRef, chatMsg);
+  await setDoc(msgRef, sanitizeForFirestore(chatMsg));
 
   // Automatically record attendance for participating in study chat
   if (user && user.uid) {

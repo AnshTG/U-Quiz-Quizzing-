@@ -138,11 +138,13 @@
         "userName": { "type": "string" },
         "userPhoto": { "type": "string" },
         "message": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "imageName": { "type": "string" },
         "timestamp": { "type": "number" },
         "createdAt": { "type": "string" },
         "subjectTag": { "type": "string" }
       },
-      "required": ["id", "userId", "userName", "message", "timestamp"]
+      "required": ["id", "userId", "userName", "timestamp"]
     },
     "UserFeedback": {
       "title": "UserFeedback",

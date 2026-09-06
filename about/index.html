@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>About U Quiz - NCERT AI Quizzing Platform & Pedagogy</title>
+  <meta name="description" content="Learn about U Quiz, our alignment with the 2026-27 National Curriculum Framework for School Education (NCF-SE), and our Gemini Flash Lite AI engine built for CBSE students and teachers.">
+  <meta name="keywords" content="About U Quiz, NCF-SE 2026, NCERT AI Quizzing, CBSE Learning Tech, AI Education India">
+  <link rel="canonical" href="https://uquizzes.vercel.app/about">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="About U Quiz - NCERT AI Quizzing Platform">
+  <meta property="og:description" content="A high-precision assessment engine strictly aligned with the rationalized NCERT curriculum for secondary school students.">
+  <meta property="og:url" content="https://uquizzes.vercel.app/about">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+
+  <style>
+    :root {
+      --font-display: 'Outfit', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    html, body {
+      font-family: var(--font-body);
+      background-color: #090d14;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+    }
+    h1, h2, h3, h4, .font-display { font-family: var(--font-display); }
+  </style>
+</head>
+<body class="bg-[#090d14] text-slate-100 min-h-screen">
+  
+  <!-- Semantic Crawlable HTML Content -->
+  <div id="root">
+    <header class="border-b border-slate-800 bg-slate-950/80 px-6 py-4">
+      <div class="max-w-6xl mx-auto flex items-center justify-between">
+        <a href="/" class="flex items-center gap-3">
+          <span class="text-xl font-black text-emerald-400 font-display">U Quiz</span>
+          <span class="text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">About</span>
+        </a>
+        <nav class="flex items-center gap-4 text-xs font-semibold text-slate-300">
+          <a href="/" class="hover:text-emerald-400">Home</a>
+          <a href="/curriculum" class="hover:text-emerald-400">Curriculum</a>
+          <a href="/guide" class="hover:text-emerald-400">Study Guide</a>
+          <a href="/about" class="text-emerald-400 font-bold">About</a>
+          <a href="/login" class="px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400">Sign In</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-6 py-12 space-y-10">
+      <section class="space-y-3">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
+          Pedagogy & Curriculum Integrity
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-white">
+          About the U Quiz Platform
+        </h1>
+        <p class="text-sm text-slate-400">
+          U Quiz is engineered to eliminate rote memorization by providing high-quality, conceptual multiple-choice questions grounded strictly in the National Council of Educational Research and Training (NCERT) textbooks.
+        </p>
+      </section>
+
+      <section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+          <h2 class="text-base font-bold text-white">Strict 2026-27 Rationalization</h2>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Every prompt sent to our AI model is constrained by NCERT rationalized content guidelines. Dropped chapters (like Periodic Classification or Sources of Energy) are omitted, ensuring students never waste time on unexaminable material.
+          </p>
+        </div>
+        <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+          <h2 class="text-base font-bold text-white">High-Speed AI Question Generation</h2>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Powered by Google's Gemini Flash Lite model with structured JSON Schema output. Questions generate in under 3 seconds with guaranteed 4 unique options, verified correct answers, and thorough conceptual explanations.
+          </p>
+        </div>
+      </section>
+
+      <section class="p-6 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+        <h2 class="text-base font-bold text-white">Privacy and Accessibility</h2>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          U Quiz respects learner privacy. All user profiles and quiz histories are protected by Firebase Firestore security rules, allowing students to learn without invasive tracking or advertisements.
+        </p>
+      </section>
+
+      <div class="text-center pt-6">
+        <a href="/curriculum" class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20">
+          View Chapter Directory & Start Learning →
+        </a>
+      </div>
+    </main>
+
+    <footer class="border-t border-slate-800 py-8 px-6 text-center text-xs text-slate-500">
+      <p>© 2026 U Quiz • <a href="/" class="hover:text-emerald-400">Home</a> • <a href="/curriculum" class="hover:text-emerald-400">Curriculum</a> • <a href="/sitemap.xml" class="hover:text-emerald-400">Sitemap</a></p>
+    </footer>
+  </div>
+
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

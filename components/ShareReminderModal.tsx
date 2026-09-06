@@ -38,9 +38,6 @@ export const ShareReminderModal: React.FC<ShareReminderModalProps> = ({
 
   // Build the target link
   const getBaseUrl = () => {
-    if (typeof window !== 'undefined' && window.location.hostname.includes('localhost')) {
-      return window.location.origin;
-    }
     return 'https://uquizzes.vercel.app';
   };
 

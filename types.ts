@@ -140,6 +140,10 @@ export interface ChatMessage {
   createdAt: string;
   subjectTag?: string;
   reactions?: Record<string, string[]>; // emoji -> array of userIds
+  imageUrl?: string;
+  imageName?: string;
+  isPending?: boolean;
+  sendFailed?: boolean;
 }
 
 export interface GeminiChatMessage {

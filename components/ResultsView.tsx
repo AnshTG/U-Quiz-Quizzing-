@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import { QuizConfig, Question, AppState, UserProfile, SavedQuizRecord, QuizResultRecord } from '../types';
 import { MathText } from './MathText';
 import { ScorecardExportModal } from './ScorecardExportModal';
+import { RationaleExportModal } from './RationaleExportModal';
 import { ShareQuizModal } from './ShareQuizModal';
 import { SaveQuizModal } from './SaveQuizModal';
 import { ShareReminderModal } from './ShareReminderModal';
@@ -66,10 +67,17 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   const [filterMode, setFilterMode] = useState<'all' | 'incorrect' | 'correct'>('all');
   const [copied, setCopied] = useState(false);
   const [isExportImageModalOpen, setIsExportImageModalOpen] = useState(false);
+  const [isRationaleExportModalOpen, setIsRationaleExportModalOpen] = useState(false);
+  const [selectedRationaleIndex, setSelectedRationaleIndex] = useState(0);
   const [isShareQuizModalOpen, setIsShareQuizModalOpen] = useState(false);
   const [isSaveQuizModalOpen, setIsSaveQuizModalOpen] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [savedSuccessMessage, setSavedSuccessMessage] = useState<string | null>(null);
+
+  const handleOpenRationaleExport = (index: number = 0) => {
+    setSelectedRationaleIndex(index);
+    setIsRationaleExportModalOpen(true);
+  };
 
   // Compute results
   let correctCount = 0;
@@ -278,7 +286,16 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-lime-400 hover:from-emerald-300 hover:to-lime-300 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/25 transition-all hover:scale-[1.02] cursor-pointer"
           >
             <Image className="w-4 h-4" />
-            <span>Share Result in Image Format</span>
+            <span>Share Scorecard Image</span>
+          </button>
+
+          {/* Save Quiz Rationale Solution in Image Format */}
+          <button
+            onClick={() => handleOpenRationaleExport(0)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-teal-500/25 transition-all hover:scale-[1.02] cursor-pointer"
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>Save Solution Rationale Image</span>
           </button>
 
           {/* Store Quiz to Cloud Vault (50 limit) */}
@@ -526,10 +543,21 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                   </div>
 
                   {/* NCERT Concept Rationale Box */}
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-xs space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-emerald-400 font-bold font-mono">
-                      <BookOpen className="w-3.5 h-3.5" />
-                      <span>NCERT Concept Rationale:</span>
+                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-xs space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 text-emerald-400 font-bold font-mono">
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>NCERT Concept Rationale:</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRationaleExport(idx)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold transition-all cursor-pointer hover:scale-105 active:scale-95"
+                        title="Save this question's complete rationale solution in high-resolution image format"
+                      >
+                        <Image className="w-3.5 h-3.5" />
+                        <span>Save Solution as Image</span>
+                      </button>
                     </div>
                     <div className="text-slate-300 leading-relaxed">
                       <MathText content={q.explanation} />
@@ -543,6 +571,18 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
         </div>
 
       </div>
+
+      {/* Export Question Rationale Solution Image Modal */}
+      {isRationaleExportModalOpen && (
+        <RationaleExportModal
+          config={config}
+          questions={questions}
+          userAnswers={userAnswers}
+          initialQuestionIndex={selectedRationaleIndex}
+          user={user}
+          onClose={() => setIsRationaleExportModalOpen(false)}
+        />
+      )}
 
       {/* Export Scorecard Image Modal */}
       {isExportImageModalOpen && (

@@ -8,6 +8,12 @@ import {
   getISTTimeString 
 } from '../services/firebase';
 import { sendGeminiStudyQuery } from '../services/geminiService';
+import { 
+  compressImageForChat, 
+  CompressedImageResult, 
+  formatFileSize, 
+  downloadImage 
+} from '../services/imageCompression';
 import { MathText } from './MathText';
 import { 
   Users, 
@@ -31,7 +37,15 @@ import {
   Lightbulb,
   ThumbsUp,
   Heart,
-  Plus
+  Plus,
+  Image as ImageIcon,
+  Paperclip,
+  Upload,
+  X,
+  Download,
+  Maximize2,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -112,11 +126,23 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
 
   // ---------------- PUBLIC CHAT STATE ----------------
   const [publicMessages, setPublicMessages] = useState<ChatMessage[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
   const [publicInput, setPublicInput] = useState('');
   const [publicTag, setPublicTag] = useState('General');
   const [isSendingPublic, setIsSendingPublic] = useState(false);
   const [publicError, setPublicError] = useState<string | null>(null);
   const [showScrollBottomPublic, setShowScrollBottomPublic] = useState(false);
+  const [draftImage, setDraftImage] = useState<CompressedImageResult | null>(null);
+  const [isCompressingImage, setIsCompressingImage] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    name?: string;
+    author?: string;
+    time?: string;
+  } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const publicMessagesEndRef = useRef<HTMLDivElement>(null);
   const publicScrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -132,6 +158,17 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     return () => document.removeEventListener('click', handleDocumentClick);
   }, []);
 
+  // Close lightbox on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && lightboxImage) {
+        setLightboxImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxImage]);
+
   // Persist Gemini chat history
   useEffect(() => {
     try {
@@ -141,10 +178,13 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     }
   }, [geminiMessages]);
 
-  // Subscribe to real-time Public Chat
+  // Subscribe to real-time Public Chat and reconcile optimistic pending messages
   useEffect(() => {
     const unsub = listenToPublicChat((msgs) => {
       setPublicMessages(msgs);
+      // Clean up pending messages that have been confirmed and delivered by Firestore
+      const deliveredIds = new Set(msgs.map(m => m.id));
+      setPendingMessages(prev => prev.filter(p => !deliveredIds.has(p.id)));
     }, 100);
     return () => unsub();
   }, []);
@@ -246,7 +286,70 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     setActiveReactionPickerId(null);
   };
 
-  // Send message to Public Room
+  // Process image file
+  const processImageFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setPublicError('Please select a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+    try {
+      setIsCompressingImage(true);
+      setPublicError(null);
+      const result = await compressImageForChat(file);
+      setDraftImage(result);
+    } catch (err: any) {
+      console.error('Image compression failed:', err);
+      setPublicError(err.message || 'Could not process selected image.');
+    } finally {
+      setIsCompressingImage(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processImageFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleChatPaste = async (e: React.ClipboardEvent) => {
+    if (activeTab !== 'public') return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          await processImageFile(file);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (activeTab !== 'public') return;
+    e.preventDefault();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    if (activeTab !== 'public') return;
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      await processImageFile(file);
+    }
+  };
+
+  // Send message to Public Room with optimistic Pending status & Image Sharing
   const handleSendPublic = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!user) {
@@ -254,19 +357,95 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
       return;
     }
     const text = publicInput.trim();
-    if (!text || isSendingPublic) return;
+    const image = draftImage;
+    if (!text && !image) return;
+    if (isSendingPublic) return;
+
+    // Generate unique ID that will match between client optimistic state and Firestore doc
+    const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    
+    // Create optimistic pending message
+    const pendingMsg: ChatMessage = {
+      id: messageId,
+      userId: user.uid,
+      userName: user.displayName || 'Scholar',
+      userPhoto: user.photoURL || null,
+      message: text,
+      imageUrl: image ? image.dataUrl : undefined,
+      imageName: image ? image.name : undefined,
+      timestamp: Date.now(),
+      createdAt: new Date().toISOString(),
+      subjectTag: publicTag,
+      isPending: true,
+      sendFailed: false
+    };
+
+    // Optimistically update UI immediately - message appears right away with pending clock
+    setPendingMessages(prev => [...prev, pendingMsg]);
+    setPublicInput('');
+    setDraftImage(null);
+    setPublicError(null);
+
+    // Scroll to bottom immediately
+    setTimeout(() => {
+      publicMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 40);
 
     try {
       setIsSendingPublic(true);
-      setPublicError(null);
-      await sendPublicChatMessage(user, text, publicTag);
-      setPublicInput('');
+      await sendPublicChatMessage(
+        user,
+        text,
+        publicTag,
+        image ? image.dataUrl : undefined,
+        image ? image.name : undefined,
+        messageId
+      );
     } catch (err: any) {
       console.error('Public chat send error:', err);
-      setPublicError(err.message || 'Failed to send message.');
+      // Mark as failed in optimistic state so user can retry
+      setPendingMessages(prev =>
+        prev.map(m => (m.id === messageId ? { ...m, isPending: false, sendFailed: true } : m))
+      );
+      setPublicError(err.message || 'Failed to deliver message. Tap retry.');
     } finally {
       setIsSendingPublic(false);
     }
+  };
+
+  // Retry sending a failed message
+  const handleRetrySend = async (msg: ChatMessage) => {
+    if (!user) {
+      onSignIn();
+      return;
+    }
+    // Set back to pending state
+    setPendingMessages(prev =>
+      prev.map(m => (m.id === msg.id ? { ...m, isPending: true, sendFailed: false } : m))
+    );
+    setPublicError(null);
+
+    try {
+      await sendPublicChatMessage(
+        user,
+        msg.message,
+        msg.subjectTag || 'General',
+        msg.imageUrl,
+        msg.imageName,
+        msg.id
+      );
+    } catch (err: any) {
+      console.error('Retry error:', err);
+      setPendingMessages(prev =>
+        prev.map(m => (m.id === msg.id ? { ...m, isPending: false, sendFailed: true } : m))
+      );
+      setPublicError('Retry failed: ' + (err.message || 'Network error'));
+    }
+  };
+
+  // Dismiss a failed pending message
+  const handleDismissPending = (id: string) => {
+    setPendingMessages(prev => prev.filter(m => m.id !== id));
   };
 
   // React to Public Chat Message
@@ -312,7 +491,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     }
   };
 
-  const filteredPublicMessages = publicMessages;
+  // Merge confirmed messages and any pending/failed messages not yet in publicMessages
+  const confirmedIds = new Set(publicMessages.map(m => m.id));
+  const unconfirmedPending = pendingMessages.filter(p => !confirmedIds.has(p.id));
+  const filteredPublicMessages = [...publicMessages, ...unconfirmedPending];
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0b141a] text-[#e9edef] select-text overflow-hidden">
@@ -647,8 +829,24 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
           <div
             ref={publicScrollContainerRef}
             onScroll={handlePublicScroll}
-            className="space-y-3.5"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className="space-y-3.5 relative min-h-[350px]"
           >
+            {/* Drag & Drop Visual Overlay */}
+            {isDraggingOver && (
+              <div className="absolute inset-0 z-40 bg-[#0b141a]/90 backdrop-blur-sm border-2 border-dashed border-[#00a884] m-2 rounded-2xl flex flex-col items-center justify-center gap-3 text-center pointer-events-none animate-fade-in">
+                <div className="w-14 h-14 rounded-2xl bg-[#00a884]/20 text-[#00a884] flex items-center justify-center border border-[#00a884]/40">
+                  <Upload className="w-7 h-7 animate-bounce" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-bold text-white">Drop Diagram or Image Here</h4>
+                  <p className="text-xs text-[#8696a0]">NCERT diagrams, formulas, and notes are automatically optimized</p>
+                </div>
+              </div>
+            )}
+
             {filteredPublicMessages.length === 0 ? (
               <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-[#8696a0]">
                 <div className="w-12 h-12 rounded-2xl bg-[#202c33] border border-[#2a3942] flex items-center justify-center mb-3 text-[#00a884]">
@@ -656,7 +854,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                 </div>
                 <h3 className="text-sm font-bold text-[#e9edef]">No Messages in Study Stream</h3>
                 <p className="text-xs text-[#8696a0] max-w-sm mt-1">
-                  Be the first scholar to post a doubt, study tip, or NCERT question!
+                  Be the first scholar to post a doubt, study tip, diagram, or NCERT question!
                 </p>
               </div>
             ) : (
@@ -674,28 +872,30 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                   >
                     <div className={`relative flex items-center ${isMe ? 'flex-row-reverse' : 'flex-row'} gap-1 max-w-[92%] sm:max-w-[80%]`}>
                       
-                      {/* Action trigger on hover */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 px-1">
-                        <button
-                          type="button"
-                          onClick={() => setActiveReactionPickerId(isPickerOpen ? null : msg.id)}
-                          className="reaction-trigger-btn p-1.5 rounded-full bg-[#202c33] hover:bg-[#374248] text-[#8696a0] hover:text-[#00a884] border border-[#2a3942] shadow-md transition-all cursor-pointer active:scale-95"
-                          title="React with Emoji"
-                        >
-                          <Smile className="w-3.5 h-3.5" />
-                        </button>
-                        
-                        {isMe && (
+                      {/* Action trigger on hover (only for non-pending messages) */}
+                      {!msg.isPending && (
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 px-1">
                           <button
                             type="button"
-                            onClick={() => handleDeletePublicMessage(msg.id)}
-                            className="p-1.5 rounded-full bg-[#202c33] hover:bg-rose-500/20 text-[#8696a0] hover:text-rose-400 border border-[#2a3942] shadow-md transition-all cursor-pointer"
-                            title="Delete message"
+                            onClick={() => setActiveReactionPickerId(isPickerOpen ? null : msg.id)}
+                            className="reaction-trigger-btn p-1.5 rounded-full bg-[#202c33] hover:bg-[#374248] text-[#8696a0] hover:text-[#00a884] border border-[#2a3942] shadow-md transition-all cursor-pointer active:scale-95"
+                            title="React with Emoji"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Smile className="w-3.5 h-3.5" />
                           </button>
-                        )}
-                      </div>
+                          
+                          {isMe && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePublicMessage(msg.id)}
+                              className="p-1.5 rounded-full bg-[#202c33] hover:bg-rose-500/20 text-[#8696a0] hover:text-rose-400 border border-[#2a3942] shadow-md transition-all cursor-pointer"
+                              title="Delete message"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Reaction Picker Popup */}
                       {isPickerOpen && (
@@ -714,7 +914,9 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
 
                       {/* Speech Bubble */}
                       <div
-                        className={`relative px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-md ${
+                        className={`relative px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-md transition-opacity duration-200 ${
+                          msg.isPending ? 'opacity-90' : 'opacity-100'
+                        } ${
                           isMe
                             ? 'bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none'
                             : 'bg-[#202c33] text-[#e9edef] border border-[#2a3942]/60 rounded-2xl rounded-tl-none'
@@ -734,21 +936,88 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                           </div>
                         )}
 
-                        {/* Message content */}
-                        <div className="text-sm leading-relaxed">
-                          <MathText content={msg.message} />
-                        </div>
+                        {/* Shared Image if present */}
+                        {msg.imageUrl && (
+                          <div
+                            className="mb-2 overflow-hidden rounded-xl bg-black/40 border border-[#2a3942]/80 relative group/img cursor-pointer max-w-sm"
+                            onClick={() => !msg.isPending && setLightboxImage({
+                              url: msg.imageUrl!,
+                              name: msg.imageName,
+                              author: msg.userName,
+                              time: istTime
+                            })}
+                          >
+                            <img 
+                              src={msg.imageUrl} 
+                              alt={msg.imageName || 'Shared Diagram or Problem'} 
+                              className="max-h-72 w-auto object-cover rounded-xl transition-transform duration-200 group-hover/img:scale-[1.01]"
+                              loading="lazy"
+                            />
+                            {/* Hover zoom overlay (when not pending) */}
+                            {!msg.isPending && (
+                              <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                                <div className="px-2.5 py-1.5 rounded-full bg-slate-900/85 text-white backdrop-blur-sm shadow-lg flex items-center gap-1.5 text-xs font-semibold">
+                                  <Maximize2 className="w-3.5 h-3.5" />
+                                  <span>View full size</span>
+                                </div>
+                              </div>
+                            )}
+                            {/* Uploading overlay when pending */}
+                            {msg.isPending && (
+                              <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1.5 text-xs text-white font-medium">
+                                <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
+                                <span className="text-[11px] font-mono">Uploading image...</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
 
-                        {/* WhatsApp Time & Status */}
-                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-[#8696a0] select-none font-mono">
+                        {/* Message content */}
+                        {msg.message && (
+                          <div className="text-sm leading-relaxed break-words">
+                            <MathText content={msg.message} />
+                          </div>
+                        )}
+
+                        {/* WhatsApp Time & Delivery Status Indicator */}
+                        <div className="flex items-center justify-end gap-1.5 mt-1 text-[10px] text-[#8696a0] select-none font-mono">
                           <span>{istTime}</span>
                           {isMe && (
-                            <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                            msg.sendFailed ? (
+                              <div className="flex items-center gap-1 text-rose-400 font-sans font-medium" title="Failed to deliver">
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                                <span>Failed</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRetrySend(msg)}
+                                  className="underline hover:text-rose-300 ml-1 cursor-pointer font-bold"
+                                >
+                                  Retry
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDismissPending(msg.id)}
+                                  className="hover:text-white ml-0.5 cursor-pointer"
+                                  title="Dismiss"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : msg.isPending ? (
+                              <div className="flex items-center gap-1 text-amber-300 font-sans font-medium" title="Pending: Sending to public chat...">
+                                <Clock className="w-3 h-3 animate-spin text-amber-300" />
+                                <span className="text-[10px]">Sending...</span>
+                              </div>
+                            ) : (
+                              <span title="Delivered to study stream">
+                                <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                              </span>
+                            )
                           )}
                         </div>
 
                         {/* Attached WhatsApp Reaction Badges */}
-                        {hasReactions && (
+                        {hasReactions && !msg.isPending && (
                           <div className={`absolute -bottom-3 ${isMe ? 'right-2' : 'left-2'} flex items-center gap-1 z-10`}>
                             {Object.entries(reactions).map(([emoji, usersArr]) => {
                               const userReacted = user ? usersArr.includes(user.uid) : false;
@@ -856,6 +1125,48 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
           </form>
         ) : (
           <div className="max-w-5xl mx-auto">
+            {/* Draft Image Preview bar */}
+            {draftImage && (
+              <div className="mb-2 p-2 rounded-2xl bg-[#111b21] border border-[#2a3942] flex items-center justify-between gap-3 shadow-lg animate-fade-in">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div 
+                    className="relative w-12 h-12 rounded-xl overflow-hidden bg-black/50 border border-[#2a3942] shrink-0 cursor-pointer"
+                    onClick={() => setLightboxImage({ url: draftImage.dataUrl, name: draftImage.name, author: user?.displayName || 'You' })}
+                  >
+                    <img 
+                      src={draftImage.dataUrl} 
+                      alt="Draft preview" 
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-xs">
+                      {draftImage.name}
+                    </span>
+                    <span className="text-[11px] text-emerald-400 font-mono">
+                      {draftImage.width}×{draftImage.height} • {formatFileSize(draftImage.sizeKb)} • Ready to share
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDraftImage(null)}
+                  className="p-1.5 rounded-full hover:bg-[#202c33] text-[#8696a0] hover:text-white transition-colors cursor-pointer shrink-0"
+                  title="Remove image"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Image Optimizing Banner */}
+            {isCompressingImage && (
+              <div className="mb-2 px-3 py-2 rounded-xl bg-[#111b21] border border-[#00a884]/30 flex items-center gap-2 text-xs text-[#00a884] animate-pulse">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Optimizing diagram/image for fast transmission...</span>
+              </div>
+            )}
+
             {publicError && (
               <div className="text-xs text-rose-400 px-3 pb-1.5 flex items-center justify-between">
                 <span>{publicError}</span>
@@ -865,20 +1176,42 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
 
             {user ? (
               <form onSubmit={handleSendPublic} className="flex items-center gap-2">
+                {/* Hidden File Input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                {/* Attach Image Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-2.5 rounded-full hover:bg-[#374248] transition-colors cursor-pointer shrink-0 ${
+                    draftImage ? 'text-[#00a884] bg-[#2a3942]' : 'text-[#8696a0] hover:text-[#00a884]'
+                  }`}
+                  title="Attach Diagram or Screenshot (or paste with Ctrl+V)"
+                >
+                  <ImageIcon className="w-5 h-5" />
+                </button>
+
                 {/* Input Field */}
                 <input
                   type="text"
                   value={publicInput}
                   onChange={(e) => setPublicInput(e.target.value)}
-                  placeholder={`Message scholars in Public Room...`}
-                  maxLength={1000}
+                  onPaste={handleChatPaste}
+                  placeholder={draftImage ? "Add a question or caption (optional)..." : "Message scholars in Public Room (or paste image)..."}
+                  maxLength={2000}
                   className="flex-1 bg-[#2a3942] border-none rounded-2xl px-4 py-3 text-sm text-[#e9edef] placeholder:text-[#8696a0] focus:outline-none focus:ring-1 focus:ring-[#00a884]"
                 />
 
                 {/* WhatsApp Send Button */}
                 <button
                   type="submit"
-                  disabled={!publicInput.trim() || isSendingPublic}
+                  disabled={(!publicInput.trim() && !draftImage) || isSendingPublic}
                   className="p-3 rounded-full bg-[#00a884] hover:bg-[#02906f] text-slate-950 font-bold shadow-md shadow-emerald-500/20 hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100 transition-all cursor-pointer shrink-0"
                   title="Send Message"
                 >
@@ -889,7 +1222,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
               <div className="flex items-center justify-between p-2.5 rounded-2xl bg-[#2a3942] border border-[#374248]">
                 <div className="flex items-center gap-2 text-xs text-[#d1d7db] pl-2">
                   <GraduationCap className="w-4 h-4 text-[#00a884] shrink-0" />
-                  <span>Sign in with Google to post questions and chat with fellow scholars.</span>
+                  <span>Sign in with Google to post questions, diagrams, and chat with fellow scholars.</span>
                 </div>
                 <button
                   onClick={onSignIn}
@@ -902,6 +1235,62 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
           </div>
         )}
       </footer>
+
+      {/* ===================== FULL-SCREEN IMAGE LIGHTBOX MODAL ===================== */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-fade-in"
+          onClick={() => setLightboxImage(null)}
+        >
+          {/* Top Bar */}
+          <div 
+            className="w-full max-w-5xl flex items-center justify-between mb-3 text-white shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center font-bold text-xs">
+                {lightboxImage.author ? lightboxImage.author[0]?.toUpperCase() : 'S'}
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold">{lightboxImage.author || 'Scholar'}</h4>
+                <span className="text-xs text-slate-400">{lightboxImage.time || 'Public Study Room'}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => downloadImage(lightboxImage.url, lightboxImage.name || 'study_diagram.jpg')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#202c33] hover:bg-[#374248] text-xs font-semibold text-emerald-400 border border-[#2a3942] transition-colors cursor-pointer"
+                title="Download image file"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="p-2 rounded-xl bg-[#202c33] hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 border border-[#2a3942] transition-colors cursor-pointer"
+                title="Close (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Image Container */}
+          <div 
+            className="max-w-5xl max-h-[82vh] overflow-hidden rounded-2xl border border-[#2a3942] shadow-2xl bg-black/60 flex items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage.url}
+              alt={lightboxImage.name || 'Enlarged study diagram'}
+              className="max-h-[82vh] max-w-full object-contain rounded-xl"
+            />
+          </div>
+        </div>
+      )}
 
     </div>
   );

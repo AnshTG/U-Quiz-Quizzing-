@@ -1,11 +1,7 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
@@ -312,16 +308,98 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development vs static build in production
+  // Search Engine Crawling & Discovery Routes
+  app.get("/robots.txt", (_req, res) => {
+    res.type("text/plain").send(`User-agent: *
+Allow: /
+
+Sitemap: https://uquizzes.vercel.app/sitemap.xml
+`);
+  });
+
+  app.get("/sitemap.xml", (_req, res) => {
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://uquizzes.vercel.app/</loc>
+    <lastmod>2026-09-03</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://uquizzes.vercel.app/curriculum</loc>
+    <lastmod>2026-09-03</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://uquizzes.vercel.app/results</loc>
+    <lastmod>2026-09-05</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://uquizzes.vercel.app/guide</loc>
+    <lastmod>2026-09-03</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://uquizzes.vercel.app/login</loc>
+    <lastmod>2026-09-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://uquizzes.vercel.app/about</loc>
+    <lastmod>2026-09-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+</urlset>`);
+  });
+
+  // Multi-page crawlable application routing (Dev Vite Middleware vs Production Static Build)
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
+    // Route clean URLs to their respective crawlable HTML page entry points
+    app.use((req, _res, next) => {
+      const cleanPath = req.path.replace(/\/$/, "");
+      if (cleanPath === "/login") {
+        req.url = "/login/index.html";
+      } else if (cleanPath === "/curriculum") {
+        req.url = "/curriculum/index.html";
+      } else if (cleanPath === "/results" || cleanPath === "/result") {
+        req.url = "/results/index.html";
+      } else if (cleanPath === "/guide") {
+        req.url = "/guide/index.html";
+      } else if (cleanPath === "/about") {
+        req.url = "/about/index.html";
+      }
+      next();
+    });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+    app.get(["/login", "/login/"], (_req, res) => {
+      res.sendFile(path.join(distPath, "login", "index.html"));
+    });
+    app.get(["/curriculum", "/curriculum/"], (_req, res) => {
+      res.sendFile(path.join(distPath, "curriculum", "index.html"));
+    });
+    app.get(["/results", "/results/", "/result", "/result/"], (_req, res) => {
+      res.sendFile(path.join(distPath, "results", "index.html"));
+    });
+    app.get(["/guide", "/guide/"], (_req, res) => {
+      res.sendFile(path.join(distPath, "guide", "index.html"));
+    });
+    app.get(["/about", "/about/"], (_req, res) => {
+      res.sendFile(path.join(distPath, "about", "index.html"));
+    });
     app.get("*all", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

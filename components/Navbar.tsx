@@ -128,17 +128,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             <div 
-              onClick={() => isAuthenticated && onNavigate(AppState.HOME)}
-              className={`flex items-center gap-2.5 ${isAuthenticated ? 'cursor-pointer group' : 'cursor-default'} select-none shrink-0`}
+              onClick={() => onNavigate(AppState.HOME)}
+              className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0"
             >
-              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-md shadow-emerald-500/20 ${isAuthenticated ? 'group-hover:shadow-emerald-500/40 group-hover:scale-105' : ''} transition-all duration-300`}>
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-lime-400 p-0.5 shadow-md shadow-emerald-500/20 group-hover:shadow-emerald-500/40 group-hover:scale-105 transition-all duration-300">
                 <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
                   <span className="font-extrabold text-base text-emerald-400 font-display">U</span>
                 </div>
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-lg font-bold font-display tracking-tight text-white ${isAuthenticated ? 'group-hover:text-emerald-400' : ''} transition-colors`}>
+                  <span className="text-lg font-bold font-display tracking-tight text-white group-hover:text-emerald-400 transition-colors">
                     U Quiz
                   </span>
                   <span className="px-1.5 py-0.2 text-[9px] font-bold font-mono tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded">
@@ -152,99 +152,153 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Center: Desktop Navigation Tabs (Only for Authenticated Users) */}
-          {isAuthenticated && !isLogin && (
-            <nav className="hidden md:flex items-center gap-1 bg-slate-900/70 p-1 rounded-xl border border-slate-800/80">
-              <button
-                onClick={() => onNavigate(AppState.HOME)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  currentView === AppState.HOME
-                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <GraduationCap className="w-3.5 h-3.5" />
-                <span>Home</span>
-              </button>
+          {/* Center: Desktop Navigation Tabs */}
+          {!isLogin && (
+            isAuthenticated ? (
+              <nav className="hidden md:flex items-center gap-1 bg-slate-900/70 p-1 rounded-xl border border-slate-800/80">
+                <button
+                  onClick={() => onNavigate(AppState.HOME)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.HOME
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  <span>Home</span>
+                </button>
 
-              <button
-                onClick={() => onNavigate(AppState.CURRICULUM)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  currentView === AppState.CURRICULUM
-                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Curriculum</span>
-              </button>
+                <button
+                  onClick={() => onNavigate(AppState.CURRICULUM)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.CURRICULUM
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Curriculum</span>
+                </button>
 
-              <button
-                onClick={() => onNavigate(AppState.SAVED_QUIZZES)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  currentView === AppState.SAVED_QUIZZES
-                    ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <Database className="w-3.5 h-3.5 text-purple-400" />
-                <span>Vault</span>
-                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
-                  currentView === AppState.SAVED_QUIZZES 
-                    ? 'bg-slate-950 text-purple-300 font-bold' 
-                    : 'bg-slate-800 text-purple-300'
-                }`}>
-                  {savedQuizzesCount}
-                </span>
-              </button>
-
-              <button
-                onClick={() => onNavigate(AppState.LEADERBOARD)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  currentView === AppState.LEADERBOARD
-                    ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                    : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
-                }`}
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                <span>Leaderboard</span>
-              </button>
-
-              <button
-                id="nav-chat-btn"
-                onClick={() => onNavigate(AppState.CHAT)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  currentView === AppState.CHAT
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
-                <span>Study Chat</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-              </button>
-
-              <button
-                onClick={() => onNavigate(AppState.HISTORY)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  currentView === AppState.HISTORY
-                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                <History className="w-3.5 h-3.5" />
-                <span>History</span>
-                {historyCount > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                    currentView === AppState.HISTORY 
-                      ? 'bg-slate-950 text-emerald-400 font-bold' 
-                      : 'bg-slate-800 text-slate-300'
+                <button
+                  onClick={() => onNavigate(AppState.SAVED_QUIZZES)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.SAVED_QUIZZES
+                      ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Database className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Vault</span>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-md ${
+                    currentView === AppState.SAVED_QUIZZES 
+                      ? 'bg-slate-950 text-purple-300 font-bold' 
+                      : 'bg-slate-800 text-purple-300'
                   }`}>
-                    {historyCount}
+                    {savedQuizzesCount}
                   </span>
+                </button>
+
+                <button
+                  onClick={() => onNavigate(AppState.LEADERBOARD)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.LEADERBOARD
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                      : 'text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                  }`}
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Leaderboard</span>
+                </button>
+
+                <button
+                  id="nav-chat-btn"
+                  onClick={() => onNavigate(AppState.CHAT)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.CHAT
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Study Chat</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
+                </button>
+
+                <button
+                  onClick={() => onNavigate(AppState.HISTORY)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.HISTORY
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>History</span>
+                  {historyCount > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      currentView === AppState.HISTORY 
+                        ? 'bg-slate-950 text-emerald-400 font-bold' 
+                        : 'bg-slate-800 text-slate-300'
+                    }`}>
+                      {historyCount}
+                    </span>
+                  )}
+                </button>
+              </nav>
+            ) : (
+              <nav className="hidden md:flex items-center gap-1 bg-slate-900/70 p-1 rounded-xl border border-slate-800/80">
+                <a
+                  href="/"
+                  onClick={(e) => { e.preventDefault(); onNavigate(AppState.HOME); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.HOME
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  <span>Overview</span>
+                </a>
+
+                <a
+                  href="/curriculum"
+                  onClick={(e) => { e.preventDefault(); onNavigate(AppState.CURRICULUM); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.CURRICULUM
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>NCERT Syllabus</span>
+                </a>
+
+                <a
+                  href="/results"
+                  onClick={(e) => { e.preventDefault(); onNavigate(AppState.RESULTS); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    currentView === AppState.RESULTS
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800/60'
+                  }`}
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Results &amp; Solutions</span>
+                </a>
+
+                {onOpenDocs && (
+                  <a
+                    href="/guide"
+                    onClick={(e) => { e.preventDefault(); onOpenDocs(); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-all cursor-pointer"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>Study Guide</span>
+                  </a>
                 )}
-              </button>
-            </nav>
+              </nav>
+            )
           )}
 
           {/* Right Section: Actions & Profile */}

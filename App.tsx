@@ -33,24 +33,49 @@ import { LoginView } from './components/LoginView';
 import { LandingHomeView } from './components/LandingHomeView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
+import { PRE_SAVED_BENCHMARK_QUIZZES } from './data/presavedQuizzes';
 import { AlertCircle, X, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 const STORAGE_KEY = 'uquiz_ncert_history_v1';
 
 export default function App() {
-  const [view, setView] = useState<AppState>(AppState.HOME);
+  const [view, setView] = useState<AppState>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      if (path.includes('/curriculum')) return AppState.CURRICULUM;
+      if (path.includes('/results') || path.includes('/result')) return AppState.RESULTS;
+      if (path.includes('/leaderboard')) return AppState.LEADERBOARD;
+      if (path.includes('/history')) return AppState.HISTORY;
+      if (path.includes('/vault') || path.includes('/saved-quizzes')) return AppState.SAVED_QUIZZES;
+      if (path.includes('/chat')) return AppState.CHAT;
+      if (path.includes('/setup')) return AppState.SETUP;
+    }
+    return AppState.HOME;
+  });
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState<boolean>(true);
   const [savedQuizzesCount, setSavedQuizzesCount] = useState<number>(0);
-  const [showLoginScreen, setShowLoginScreen] = useState<boolean>(false);
+  const [showLoginScreen, setShowLoginScreen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      return path.includes('/login') || path.includes('/signin');
+    }
+    return false;
+  });
   
   // Admin authentication state
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState<boolean>(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
-  const [isDocumentationModalOpen, setIsDocumentationModalOpen] = useState<boolean>(false);
+  const [isDocumentationModalOpen, setIsDocumentationModalOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      return path.includes('/guide');
+    }
+    return false;
+  });
 
   // Shared challenge state
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -157,6 +182,45 @@ export default function App() {
     }
   }, []);
 
+  // Sync browser URL with application state for multi-page crawlable navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path.includes('/login')) {
+        setShowLoginScreen(true);
+      } else if (path.includes('/curriculum')) {
+        setShowLoginScreen(false);
+        setView(AppState.CURRICULUM);
+      } else if (path.includes('/results') || path.includes('/result')) {
+        setShowLoginScreen(false);
+        setView(AppState.RESULTS);
+      } else if (path.includes('/guide')) {
+        setIsDocumentationModalOpen(true);
+      } else if (path.includes('/leaderboard')) {
+        setShowLoginScreen(false);
+        setView(AppState.LEADERBOARD);
+      } else if (path.includes('/history')) {
+        setShowLoginScreen(false);
+        setView(AppState.HISTORY);
+      } else if (path.includes('/vault')) {
+        setShowLoginScreen(false);
+        setView(AppState.SAVED_QUIZZES);
+      } else if (path.includes('/chat')) {
+        setShowLoginScreen(false);
+        setView(AppState.CHAT);
+      } else if (path.includes('/setup')) {
+        setShowLoginScreen(false);
+        setView(AppState.SETUP);
+      } else {
+        setShowLoginScreen(false);
+        setView(AppState.HOME);
+        setIsDocumentationModalOpen(false);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   // Sync history to local storage
   useEffect(() => {
     try {
@@ -168,8 +232,56 @@ export default function App() {
 
   const navigateTo = (newView: AppState) => {
     setView(newView);
+    setShowLoginScreen(false);
     setError(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      let targetPath = '/';
+      if (newView === AppState.CURRICULUM) targetPath = '/curriculum';
+      else if (newView === AppState.RESULTS) targetPath = '/results';
+      else if (newView === AppState.LEADERBOARD) targetPath = '/leaderboard';
+      else if (newView === AppState.HISTORY) targetPath = '/history';
+      else if (newView === AppState.SAVED_QUIZZES) targetPath = '/vault';
+      else if (newView === AppState.CHAT) targetPath = '/chat';
+      else if (newView === AppState.SETUP) targetPath = '/setup';
+      else if (newView === AppState.HOME) targetPath = '/';
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, '', targetPath);
+      }
+    } catch {}
+  };
+
+  const goToLogin = () => {
+    setShowLoginScreen(true);
+    setError(null);
+    try {
+      if (window.location.pathname !== '/login') {
+        window.history.pushState(null, '', '/login');
+      }
+    } catch {}
+  };
+
+  const backToHome = () => {
+    setShowLoginScreen(false);
+    navigateTo(AppState.HOME);
+  };
+
+  const openDocs = () => {
+    setIsDocumentationModalOpen(true);
+    try {
+      if (window.location.pathname !== '/guide') {
+        window.history.pushState(null, '', '/guide');
+      }
+    } catch {}
+  };
+
+  const closeDocs = () => {
+    setIsDocumentationModalOpen(false);
+    try {
+      if (window.location.pathname === '/guide') {
+        window.history.pushState(null, '', '/');
+      }
+    } catch {}
   };
 
   // Google Sign In handler
@@ -328,6 +440,11 @@ export default function App() {
     });
 
     setView(AppState.RESULTS);
+    try {
+      if (window.location.pathname !== '/results') {
+        window.history.pushState(null, '', '/results');
+      }
+    } catch {}
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -395,6 +512,29 @@ export default function App() {
 
   // If user is accessing Admin Panel
   const isViewingAdmin = view === AppState.ADMIN;
+
+  // Active or Fallback Results for crawlable results page and direct navigation
+  const activeOrFallbackConfig = questions.length > 0 
+    ? currentConfig 
+    : (history.length > 0 ? history[0].config : PRE_SAVED_BENCHMARK_QUIZZES[0].config);
+
+  const activeOrFallbackQuestions = questions.length > 0 
+    ? questions 
+    : (history.length > 0 ? history[0].questions : PRE_SAVED_BENCHMARK_QUIZZES[0].questions);
+
+  const activeOrFallbackUserAnswers = questions.length > 0 
+    ? userAnswers 
+    : (history.length > 0 ? history[0].userAnswers : [
+        PRE_SAVED_BENCHMARK_QUIZZES[0].questions[0].correctAnswer,
+        PRE_SAVED_BENCHMARK_QUIZZES[0].questions[1].correctAnswer,
+        PRE_SAVED_BENCHMARK_QUIZZES[0].questions[2].options[0],
+        PRE_SAVED_BENCHMARK_QUIZZES[0].questions[3].correctAnswer,
+        PRE_SAVED_BENCHMARK_QUIZZES[0].questions[4].correctAnswer,
+      ]);
+
+  const activeOrFallbackTimeSpent = timeSpentSeconds > 0 
+    ? timeSpentSeconds 
+    : (history.length > 0 ? history[0].timeSpentSeconds : 144);
 
   // Immediate Zero-Flicker Initial Boot Loader:
   // Prevents any premature flash of Home or Login screens before maintenance/auth status is confirmed
@@ -471,10 +611,10 @@ export default function App() {
             onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
             onOpenAttendance={() => setIsAttendanceModalOpen(true)}
             onOpenFeedback={() => setIsFeedbackModalOpen(true)}
-            onOpenDocs={() => setIsDocumentationModalOpen(true)}
+            onOpenDocs={openDocs}
             isAdminUnlocked={isAdminUnlocked}
             isLoginScreen={!user && !isAdminUnlocked && showLoginScreen}
-            onGoToLogin={() => setShowLoginScreen(true)}
+            onGoToLogin={goToLogin}
           />
 
           {/* Dismissable Global Error Toast */}
@@ -504,12 +644,12 @@ export default function App() {
               <AdminView 
                 onExitAdmin={() => {
                   setIsAdminUnlocked(false);
-                  setView(AppState.HOME);
+                  navigateTo(AppState.HOME);
                 }} 
                 onEnterMainWebsite={() => {
                   navigateTo(AppState.HOME);
                 }}
-                onOpenDocs={() => setIsDocumentationModalOpen(true)}
+                onOpenDocs={openDocs}
               />
             ) : isAuthChecking ? (
               <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 px-4">
@@ -529,14 +669,49 @@ export default function App() {
                 <LoginView
                   onSignIn={handleSignIn}
                   onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
-                  onBackToHome={() => setShowLoginScreen(false)}
+                  onBackToHome={backToHome}
                   error={error}
+                />
+              ) : view === AppState.CURRICULUM ? (
+                /* Crawlable & Accessible NCERT Curriculum Directory */
+                <CurriculumView
+                  onStartChapterQuiz={(config) => {
+                    setCurrentConfig(config);
+                    goToLogin();
+                  }}
+                  onOpenCustomSetup={() => goToLogin()}
+                  onBackHome={backToHome}
+                />
+              ) : view === AppState.LEADERBOARD ? (
+                /* Crawlable Academic Leaderboard & Hall of Fame */
+                <LeaderboardView
+                  user={user}
+                  onNavigate={navigateTo}
+                  onStartQuiz={goToLogin}
+                  onSignIn={goToLogin}
+                />
+              ) : view === AppState.RESULTS ? (
+                /* Dedicated Crawlable NCERT Results & Rationale Solution View */
+                <ResultsView
+                  config={activeOrFallbackConfig}
+                  questions={activeOrFallbackQuestions}
+                  userAnswers={activeOrFallbackUserAnswers}
+                  timeSpentSeconds={activeOrFallbackTimeSpent}
+                  user={user}
+                  history={history}
+                  onRetakeSame={() => goToLogin()}
+                  onRetakeMissed={() => goToLogin()}
+                  onNewQuiz={() => goToLogin()}
+                  onNavigateCurriculum={() => navigateTo(AppState.CURRICULUM)}
+                  onNavigateLeaderboard={() => navigateTo(AppState.LEADERBOARD)}
+                  onSignIn={goToLogin}
+                  onBackHome={backToHome}
                 />
               ) : (
                 /* Home Screen with Rich App Description, Curriculum Highlights & Take to Login CTA */
                 <LandingHomeView
-                  onTakeToLogin={() => setShowLoginScreen(true)}
-                  onOpenDocs={() => setIsDocumentationModalOpen(true)}
+                  onTakeToLogin={goToLogin}
+                  onOpenDocs={openDocs}
                   onOpenAdminAuth={() => setIsAdminAuthModalOpen(true)}
                 />
               )
@@ -583,12 +758,12 @@ export default function App() {
                   />
                 )}
 
-                {view === AppState.RESULTS && questions.length > 0 && (
+                {view === AppState.RESULTS && (
                   <ResultsView
-                    config={currentConfig}
-                    questions={questions}
-                    userAnswers={userAnswers}
-                    timeSpentSeconds={timeSpentSeconds}
+                    config={activeOrFallbackConfig}
+                    questions={activeOrFallbackQuestions}
+                    userAnswers={activeOrFallbackUserAnswers}
+                    timeSpentSeconds={activeOrFallbackTimeSpent}
                     user={user}
                     history={history}
                     onRetakeSame={handleRetakeSame}
@@ -698,7 +873,7 @@ export default function App() {
       {isDocumentationModalOpen && (
         <DocumentationModal
           isOpen={isDocumentationModalOpen}
-          onClose={() => setIsDocumentationModalOpen(false)}
+          onClose={closeDocs}
           isAdmin={isAdminUnlocked}
         />
       )}
