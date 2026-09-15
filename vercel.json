@@ -13,6 +13,14 @@
       "destination": "/api/generate-quiz"
     },
     {
+      "source": "/ocr",
+      "destination": "/api/ocr"
+    },
+    {
+      "source": "/fetch-url",
+      "destination": "/api/fetch-url"
+    },
+    {
       "source": "/chat",
       "destination": "/api/chat"
     },

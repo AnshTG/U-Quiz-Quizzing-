@@ -15,7 +15,8 @@ import {
   Compass,
   BookMarked,
   Trophy,
-  MessageSquare
+  MessageSquare,
+  PenTool
 } from 'lucide-react';
 
 interface HomeViewProps {
@@ -175,8 +176,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
               onClick={() => onNavigate(AppState.SETUP)}
               className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-emerald-400 to-lime-400 text-slate-950 font-bold text-base shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all group cursor-pointer"
             >
-              <span>Build Custom Quiz</span>
+              <span>Build NCERT Quiz</span>
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
+
+            <button
+              onClick={() => onNavigate(AppState.SETUP)}
+              className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 font-semibold text-base transition-all cursor-pointer shadow-lg shadow-cyan-500/10"
+            >
+              <PenTool className="w-5 h-5 text-cyan-400" />
+              <span>Quiz from Notes & PDF (OCR)</span>
             </button>
 
             <button

@@ -23,9 +23,17 @@ import {
   CheckCircle2,
   HelpCircle,
   Layers,
-  GraduationCap
+  GraduationCap,
+  FileText,
+  PenTool,
+  Globe,
+  ShieldCheck,
+  Wand2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ShareReminderModal } from './ShareReminderModal';
+import { CustomSourceUploader, CustomSourceData } from './CustomSourceUploader';
 
 interface SetupViewProps {
   initialConfig?: Partial<QuizConfig>;
@@ -38,6 +46,11 @@ export const SetupView: React.FC<SetupViewProps> = ({
   onGenerateQuiz,
   onCancel,
 }) => {
+  // Mode: NCERT Curriculum or Custom Sources
+  const [generationMode, setGenerationMode] = useState<'syllabus' | 'custom'>(
+    initialConfig?.sourceType && initialConfig.sourceType !== 'syllabus' ? 'custom' : 'syllabus'
+  );
+
   // STRICT REQUIREMENT: Do not preselect options anywhere unless explicitly provided in initialConfig
   const [selectedClass, setSelectedClass] = useState<string | null>(
     initialConfig?.class || null
@@ -60,6 +73,23 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const [questionType, setQuestionType] = useState<'single' | 'multiple' | 'both'>(
     initialConfig?.questionType || 'single'
   );
+
+  // Custom Instructions state
+  const [customInstructions, setCustomInstructions] = useState<string>(
+    initialConfig?.customInstructions || ''
+  );
+  const [showInstructionsPanel, setShowInstructionsPanel] = useState<boolean>(
+    !!initialConfig?.customInstructions
+  );
+
+  // Custom Source Data (Notes OCR, PDF, Webpage, Paste Text)
+  const [customSourceData, setCustomSourceData] = useState<CustomSourceData>({
+    sourceType: (initialConfig?.sourceType as any) || 'notes',
+    sourceTitle: initialConfig?.sourceTitle || '',
+    sourceContent: initialConfig?.sourceContent || '',
+    sourceFileBase64: initialConfig?.sourceFileBase64,
+    sourceMimeType: initialConfig?.sourceMimeType,
+  });
 
   const [topicSearch, setTopicSearch] = useState<string>('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -130,9 +160,57 @@ export const SetupView: React.FC<SetupViewProps> = ({
     setSelectedTopics([]);
   };
 
+  const handleAddInstructionChip = (text: string) => {
+    setShowInstructionsPanel(true);
+    setCustomInstructions(prev => {
+      const trimmed = prev.trim();
+      if (!trimmed) return text;
+      if (trimmed.includes(text)) return trimmed;
+      return `${trimmed}; ${text}`;
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (generationMode === 'custom') {
+      const hasContent = !!customSourceData.sourceContent.trim() || !!customSourceData.sourceFileBase64;
+      if (!hasContent) {
+        setValidationError('Please upload a notes image, PDF document, webpage link, or paste study content in the Custom Source section.');
+        return;
+      }
+      if (!strength) {
+        setValidationError('Please choose a Difficulty Level (Easy, Medium, or Hard).');
+        return;
+      }
+      if (!quantity) {
+        setValidationError('Please choose the Number of Questions (5, 10, 15, 20, or 25).');
+        return;
+      }
+      if (timeLimitMinutes === null) {
+        setValidationError('Please select a Timer mode (Untimed or timed test).');
+        return;
+      }
+
+      onGenerateQuiz({
+        class: selectedClass || 'Custom Study',
+        subject: selectedSubject || 'Custom Assessment',
+        topics: [customSourceData.sourceTitle || `${customSourceData.sourceType.toUpperCase()} Notes`],
+        strength,
+        quantity,
+        timeLimitMinutes,
+        questionType,
+        sourceType: customSourceData.sourceType,
+        sourceTitle: customSourceData.sourceTitle || 'Custom Study Material',
+        sourceContent: customSourceData.sourceContent,
+        sourceFileBase64: customSourceData.sourceFileBase64,
+        sourceMimeType: customSourceData.sourceMimeType,
+        customInstructions: customInstructions.trim() || undefined,
+      });
+      return;
+    }
+
+    // Standard syllabus mode
     if (!selectedClass) {
       setValidationError('Please select a Grade Level / Class.');
       return;
@@ -166,21 +244,31 @@ export const SetupView: React.FC<SetupViewProps> = ({
       quantity,
       timeLimitMinutes,
       questionType,
+      sourceType: 'syllabus',
+      customInstructions: customInstructions.trim() || undefined,
     });
   };
 
   // Check how many configuration steps are completed
-  const completedSteps = [
-    !!selectedClass,
-    !!selectedSubject,
-    selectedTopics.length > 0,
-    !!strength,
-    !!quantity,
-    timeLimitMinutes !== null,
-    !!questionType,
-  ].filter(Boolean).length;
+  const completedSteps = generationMode === 'custom'
+    ? [
+        (!!customSourceData.sourceContent.trim() || !!customSourceData.sourceFileBase64),
+        !!strength,
+        !!quantity,
+        timeLimitMinutes !== null,
+        !!questionType,
+      ].filter(Boolean).length
+    : [
+        !!selectedClass,
+        !!selectedSubject,
+        selectedTopics.length > 0,
+        !!strength,
+        !!quantity,
+        timeLimitMinutes !== null,
+        !!questionType,
+      ].filter(Boolean).length;
 
-  const totalSteps = 7;
+  const totalSteps = generationMode === 'custom' ? 5 : 7;
   const isFormComplete = completedSteps === totalSteps;
 
   const quantityOptions = [5, 10, 15, 20, 25];
@@ -210,6 +298,14 @@ export const SetupView: React.FC<SetupViewProps> = ({
     },
   ];
 
+  const QUICK_INSTRUCTION_CHIPS = [
+    'Focus heavily on numerical calculations and step-by-step formulas',
+    'Include practical clinical and experimental case scenarios',
+    'Emphasize high-order thinking (HOTS) and assertion-reasoning questions',
+    'Highlight key definitions, diagram interpretations, and laws',
+    'Include competitive exam / Olympiad level conceptual challenges',
+  ];
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in duration-200">
       
@@ -236,7 +332,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
             </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Choose your grade, subject, chapters, and test conditions. No options are preselected.
+            Generate quizzes from official NCERT syllabus or your own notes, PDFs, and webpage articles.
           </p>
         </div>
 
@@ -248,6 +344,43 @@ export const SetupView: React.FC<SetupViewProps> = ({
         >
           <Bell className="w-4 h-4 text-amber-400" />
           <span>Share Quiz Reminder</span>
+        </button>
+      </div>
+
+      {/* Generation Mode Switcher (NCERT vs. Custom Sources) */}
+      <div className="mb-6 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 grid grid-cols-2 gap-2 shadow-lg">
+        <button
+          type="button"
+          onClick={() => {
+            setGenerationMode('syllabus');
+            setValidationError(null);
+          }}
+          className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+            generationMode === 'syllabus'
+              ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>NCERT Curriculum Mode</span>
+          <span className="hidden sm:inline text-[10px] font-mono opacity-80">(Classes 6–12)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setGenerationMode('custom');
+            setValidationError(null);
+          }}
+          className={`py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+            generationMode === 'custom'
+              ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          <span>Custom Sources & Notes Mode</span>
+          <span className="hidden sm:inline text-[10px] font-mono opacity-80">(OCR, PDF, Web)</span>
         </button>
       </div>
 
@@ -272,199 +405,282 @@ export const SetupView: React.FC<SetupViewProps> = ({
         {/* Left 2 Columns: Main Form Steps */}
         <div className="lg:col-span-2 space-y-6">
 
-          {/* STEP 1: Grade Level / Class */}
-          <div className={`p-6 rounded-3xl border transition-all ${selectedClass ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedClass ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  1
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-white font-display">Grade / Class Level</h3>
-                  <p className="text-xs text-slate-400">Choose the class for official NCERT curriculum content</p>
-                </div>
-              </div>
-              {selectedClass && (
-                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5" /> Selected
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {availableClasses.map((cls) => {
-                const isSelected = selectedClass === cls;
-                return (
-                  <button
-                    key={cls}
-                    type="button"
-                    onClick={() => handleClassChange(cls)}
-                    className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20 scale-105'
-                        : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
-                    }`}
-                  >
-                    {cls}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* STEP 2: Subject Selection */}
-          <div className={`p-6 rounded-3xl border transition-all ${!selectedClass ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedSubject ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedSubject ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  2
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-white font-display">Subject</h3>
-                  <p className="text-xs text-slate-400">Select which subject you would like to test</p>
-                </div>
-              </div>
-              {selectedSubject && (
-                <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5" /> Selected
-                </span>
-              )}
-            </div>
-
-            {!selectedClass ? (
-              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
-                Please select a Grade / Class above (Step 1) to unlock subjects.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {availableSubjects.map((subj) => {
-                  const isSelected = selectedSubject === subj;
-                  const chaptersCount = activeSyllabusData.filter(d => d.className === selectedClass && d.subjectName === subj).length;
-                  return (
-                    <button
-                      key={subj}
-                      type="button"
-                      onClick={() => handleSubjectChange(subj)}
-                      className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                        isSelected
-                          ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30 shadow-sm'
-                          : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/60'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2">
-                          <BookOpen className={`w-4 h-4 ${isSelected ? 'text-emerald-400' : 'text-slate-500'}`} />
-                          <span className="font-bold text-sm text-white">{subj}</span>
-                        </div>
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-700'}`}>
-                          {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                        </div>
-                      </div>
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        {chaptersCount} NCERT Chapters Available
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* STEP 3: Chapter & Topics Selection */}
-          <div className={`p-6 rounded-3xl border transition-all ${!selectedSubject ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedTopics.length > 0 ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedTopics.length > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                  3
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-white font-display">
-                    Chapters & Topics ({selectedTopics.length}/{availableTopics.length} Picked)
-                  </h3>
-                  <p className="text-xs text-slate-400">Select single or multiple chapters to include in the quiz</p>
-                </div>
-              </div>
-
-              {selectedSubject && availableTopics.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSelectAll}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDeselectAll}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    Clear
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {!selectedSubject ? (
-              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 text-center">
-                Please select a Subject (Step 2) to view chapters and topics.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* Search Bar for chapters */}
-                {availableTopics.length > 6 && (
-                  <div className="relative">
-                    <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={topicSearch}
-                      onChange={(e) => setTopicSearch(e.target.value)}
-                      placeholder="Search chapters or concepts..."
-                      className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-                    />
+          {/* ================= MODE 1: NCERT SYLLABUS ================= */}
+          {generationMode === 'syllabus' && (
+            <>
+              {/* STEP 1: Grade Level / Class */}
+              <div className={`p-6 rounded-3xl border transition-all ${selectedClass ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedClass ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                      1
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-white font-display">Grade / Class Level</h3>
+                      <p className="text-xs text-slate-400">Choose the class for official NCERT curriculum content</p>
+                    </div>
                   </div>
-                )}
+                  {selectedClass && (
+                    <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Selected
+                    </span>
+                  )}
+                </div>
 
-                {/* Topics Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto pr-1">
-                  {filteredTopics.map((top) => {
-                    const isSelected = selectedTopics.includes(top);
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                  {availableClasses.map((cls) => {
+                    const isSelected = selectedClass === cls;
                     return (
                       <button
-                        key={top}
+                        key={cls}
                         type="button"
-                        onClick={() => toggleTopic(top)}
-                        className={`p-3 rounded-xl border text-left text-xs font-medium transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                        onClick={() => handleClassChange(cls)}
+                        className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-emerald-500/20 border-emerald-500 text-white'
-                            : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20 scale-105'
+                            : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
                         }`}
                       >
-                        <span className="truncate">{top}</span>
-                        <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-700'}`}>
-                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-                        </div>
+                        {cls}
                       </button>
                     );
                   })}
                 </div>
               </div>
+
+              {/* STEP 2: Subject Selection */}
+              <div className={`p-6 rounded-3xl border transition-all ${!selectedClass ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedSubject ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedSubject ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                      2
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-white font-display">Subject</h3>
+                      <p className="text-xs text-slate-400">Choose the academic subject for {selectedClass || 'your class'}</p>
+                    </div>
+                  </div>
+                  {selectedSubject && (
+                    <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Selected
+                    </span>
+                  )}
+                </div>
+
+                {!selectedClass ? (
+                  <p className="text-xs text-slate-500 italic">Select a Grade Level in Step 1 first.</p>
+                ) : availableSubjects.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No subjects cataloged for {selectedClass}.</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {availableSubjects.map((subj) => {
+                      const isSelected = selectedSubject === subj;
+                      return (
+                        <button
+                          key={subj}
+                          type="button"
+                          onClick={() => handleSubjectChange(subj)}
+                          className={`p-3.5 rounded-2xl border text-left font-bold text-xs transition-all cursor-pointer flex items-center justify-between ${
+                            isSelected
+                              ? 'bg-emerald-500/15 border-emerald-500 text-white ring-1 ring-emerald-500/30'
+                              : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          <span>{subj}</span>
+                          {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* STEP 3: Chapter / Topic Selection */}
+              <div className={`p-6 rounded-3xl border transition-all ${!selectedSubject ? 'opacity-60 bg-slate-900/20 border-slate-850' : selectedTopics.length > 0 ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-900/30 border-dashed border-slate-800'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${selectedTopics.length > 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                      3
+                    </span>
+                    <div>
+                      <h3 className="text-base font-bold text-white font-display">Chapters & Topics</h3>
+                      <p className="text-xs text-slate-400">Select one or more topics to formulate questions from</p>
+                    </div>
+                  </div>
+                  {selectedTopics.length > 0 && (
+                    <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> {selectedTopics.length} Selected
+                    </span>
+                  )}
+                </div>
+
+                {!selectedSubject ? (
+                  <p className="text-xs text-slate-500 italic">Select a Subject in Step 2 first.</p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={topicSearch}
+                          onChange={(e) => setTopicSearch(e.target.value)}
+                          placeholder="Search syllabus chapters..."
+                          className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSelectAll}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer shrink-0 transition-colors"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDeselectAll}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-semibold cursor-pointer shrink-0 transition-colors"
+                      >
+                        Clear
+                      </button>
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+                      {filteredTopics.map((topic) => {
+                        const isSelected = selectedTopics.includes(topic);
+                        return (
+                          <button
+                            key={topic}
+                            type="button"
+                            onClick={() => toggleTopic(topic)}
+                            className={`w-full p-2.5 rounded-xl border text-left text-xs transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                              isSelected
+                                ? 'bg-emerald-500/15 border-emerald-500 text-white font-medium'
+                                : 'bg-slate-950 border-slate-850 text-slate-300 hover:border-slate-700'
+                            }`}
+                          >
+                            <span className="truncate">{topic}</span>
+                            <div className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                              isSelected ? 'bg-emerald-500 border-emerald-400 text-slate-950' : 'border-slate-700'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ================= MODE 2: CUSTOM SOURCES ================= */}
+          {generationMode === 'custom' && (
+            <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/60 space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <span className="w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    1
+                  </span>
+                  <div>
+                    <h3 className="text-base font-bold text-white font-display">Study Material & Notes Source</h3>
+                    <p className="text-xs text-slate-400">Upload notes photos, documents, articles, or paste revision sheets</p>
+                  </div>
+                </div>
+                {(customSourceData.sourceContent || customSourceData.sourceFileBase64) && (
+                  <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Source Linked
+                  </span>
+                )}
+              </div>
+
+              <CustomSourceUploader
+                data={customSourceData}
+                onChange={setCustomSourceData}
+              />
+            </div>
+          )}
+
+          {/* ================= COMMON: CUSTOM INSTRUCTIONS TO AI ================= */}
+          <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/60 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Wand2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white font-display flex items-center gap-2">
+                    <span>Custom Instructions to AI</span>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                      Strictly Bounded
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Guide the pedagogical emphasis, problem style, or specific question focus</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowInstructionsPanel(!showInstructionsPanel)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                {showInstructionsPanel ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Quick Chips */}
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {QUICK_INSTRUCTION_CHIPS.map((chip, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleAddInstructionChip(chip)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-amber-300 text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                >
+                  <span>+ {chip}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Expandable Textarea & Strict Security Notice */}
+            {showInstructionsPanel && (
+              <div className="space-y-3 pt-2 animate-in fade-in duration-200">
+                <textarea
+                  rows={3}
+                  value={customInstructions}
+                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  placeholder="e.g., Emphasize numerical problems with SI units, include 2 assertion-reasoning questions, and focus on practical applications..."
+                  className="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-amber-500 transition-colors leading-relaxed"
+                />
+
+                {/* STRICT SECURITY DIRECTIVE BADGE */}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-start gap-2.5 leading-relaxed">
+                  <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">System Security Boundary: </span>
+                    <span>
+                      Custom instructions strictly govern pedagogical emphasis. System directives, standard 4-option schema, and factual accuracy rules are immutable and cannot be overridden.
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* STEP 4, 5, 6, 7: Assessment Parameters */}
-          <div className="p-6 rounded-3xl border bg-slate-900/60 border-slate-800 space-y-6">
+          {/* ================= TEST CONDITIONS: DIFFICULTY, QUANTITY, FORMAT, TIMER ================= */}
+          <div className="p-6 rounded-3xl border border-slate-800 bg-slate-900/60 space-y-6">
             
-            {/* Step 4: Difficulty */}
+            {/* Step: Difficulty Level */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${strength ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    4
+                    {generationMode === 'custom' ? '2' : '4'}
                   </span>
                   <div>
-                    <h3 className="text-sm font-bold text-white font-display">Cognitive Demand / Difficulty</h3>
-                    <p className="text-xs text-slate-400">Choose question depth from direct recall to analytical NCERT questions</p>
+                    <h3 className="text-sm font-bold text-white font-display">Difficulty Strength</h3>
+                    <p className="text-xs text-slate-400">Calibrate the cognitive demand of questions</p>
                   </div>
                 </div>
                 {strength && (
@@ -474,44 +690,37 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                {(['Easy', 'Medium', 'Hard'] as ('Easy' | 'Medium' | 'Hard')[]).map((lvl) => {
+              <div className="grid grid-cols-3 gap-2.5">
+                {STRENGTHS.map((lvl) => {
                   const isSelected = strength === lvl;
-                  const desc = lvl === 'Easy' 
-                    ? 'Direct definitions & fundamental concepts'
-                    : lvl === 'Medium'
-                    ? 'Standard NCERT exam questions & problem solving'
-                    : 'Application, numericals, assertions & case reasoning';
-
                   return (
                     <button
                       key={lvl}
                       type="button"
-                      onClick={() => setStrength(lvl)}
-                      className={`p-3.5 rounded-2xl border text-center transition-all cursor-pointer flex flex-col items-center gap-1 ${
+                      onClick={() => setStrength(lvl as any)}
+                      className={`p-3 rounded-2xl border text-center font-bold text-xs transition-all cursor-pointer ${
                         isSelected
                           ? lvl === 'Easy'
-                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 ring-1 ring-emerald-500/30'
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/20'
                             : lvl === 'Medium'
-                            ? 'bg-amber-500/20 border-amber-500 text-amber-300 ring-1 ring-amber-500/30'
-                            : 'bg-rose-500/20 border-rose-500 text-rose-300 ring-1 ring-rose-500/30'
-                          : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20'
+                            : 'bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-500/20'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
                       }`}
                     >
-                      <span className="font-bold text-sm">{lvl}</span>
-                      <span className="text-[10px] text-slate-400 line-clamp-2 leading-tight">{desc}</span>
+                      {lvl}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Step 5: Question Quantity */}
+            {/* Step: Number of Questions */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${quantity ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    5
+                    {generationMode === 'custom' ? '3' : '5'}
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Number of Questions</h3>
@@ -546,12 +755,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
 
-            {/* Step 6: Question Format (Single, Multiple, or Both) */}
+            {/* Step: Question Format (Single, Multiple, or Both) */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className="w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    6
+                    {generationMode === 'custom' ? '4' : '6'}
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Question Format</h3>
@@ -588,12 +797,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
               </div>
             </div>
 
-            {/* Step 7: Timer Mode */}
+            {/* Step: Timer Mode */}
             <div className="pt-4 border-t border-slate-800/80">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-xl font-mono text-xs font-bold flex items-center justify-center ${timeLimitMinutes !== null ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                    7
+                    {generationMode === 'custom' ? '5' : '7'}
                   </span>
                   <div>
                     <h3 className="text-sm font-bold text-white font-display">Time Allocation</h3>
@@ -651,32 +860,54 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 </span>
               </div>
               <h2 className="text-lg font-bold text-white font-display mt-1">
-                {selectedClass && selectedSubject ? `${selectedClass} ${selectedSubject}` : 'Configure Your Quiz'}
+                {generationMode === 'custom'
+                  ? (customSourceData.sourceTitle || 'Custom Material Assessment')
+                  : (selectedClass && selectedSubject ? `${selectedClass} ${selectedSubject}` : 'Configure Your Quiz')}
               </h2>
             </div>
 
             {/* Checklist */}
             <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Class Level:</span>
-                <span className={selectedClass ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>
-                  {selectedClass || 'Unselected'}
-                </span>
-              </div>
+              {generationMode === 'syllabus' ? (
+                <>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Class Level:</span>
+                    <span className={selectedClass ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>
+                      {selectedClass || 'Unselected'}
+                    </span>
+                  </div>
 
-              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Subject:</span>
-                <span className={selectedSubject ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>
-                  {selectedSubject || 'Unselected'}
-                </span>
-              </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Subject:</span>
+                    <span className={selectedSubject ? 'text-slate-200 font-semibold' : 'text-slate-600 italic'}>
+                      {selectedSubject || 'Unselected'}
+                    </span>
+                  </div>
 
-              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Chapters Selected:</span>
-                <span className={selectedTopics.length > 0 ? 'text-emerald-400 font-semibold font-mono' : 'text-slate-600 italic'}>
-                  {selectedTopics.length > 0 ? `${selectedTopics.length} Chapters` : 'None Selected'}
-                </span>
-              </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Chapters Selected:</span>
+                    <span className={selectedTopics.length > 0 ? 'text-emerald-400 font-semibold font-mono' : 'text-slate-600 italic'}>
+                      {selectedTopics.length > 0 ? `${selectedTopics.length} Chapters` : 'None Selected'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Source Type:</span>
+                    <span className="text-emerald-400 font-semibold capitalize font-mono">
+                      {customSourceData.sourceType === 'notes' ? 'Handwritten Notes (OCR)' : customSourceData.sourceType === 'pdf' ? 'Document / PDF' : customSourceData.sourceType === 'webpage' ? 'Webpage Link' : 'Pasted Notes'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Content Status:</span>
+                    <span className={customSourceData.sourceContent.trim() || customSourceData.sourceFileBase64 ? 'text-emerald-400 font-semibold font-mono' : 'text-slate-600 italic'}>
+                      {customSourceData.sourceContent.trim() ? `${customSourceData.sourceContent.trim().split(/\s+/).filter(Boolean).length} Words` : customSourceData.sourceFileBase64 ? 'File Attached' : 'Empty'}
+                    </span>
+                  </div>
+                </>
+              )}
 
               <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
                 <span className="text-slate-400">Difficulty:</span>
@@ -699,12 +930,21 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center justify-between py-1">
+              <div className="flex items-center justify-between py-1 border-b border-slate-800/60">
                 <span className="text-slate-400">Time Limit:</span>
                 <span className={timeLimitMinutes !== null ? 'text-purple-400 font-semibold font-mono' : 'text-slate-600 italic'}>
                   {timeLimitMinutes === null ? 'Unselected' : timeLimitMinutes === 0 ? 'Untimed' : `${timeLimitMinutes} Mins`}
                 </span>
               </div>
+
+              {customInstructions && (
+                <div className="py-1">
+                  <span className="text-slate-400 block mb-1">Custom Guidance:</span>
+                  <p className="text-[11px] text-amber-300 font-mono bg-slate-950 p-2 rounded-xl border border-amber-500/20 line-clamp-2">
+                    "{customInstructions}"
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Launch Assessment Button */}
@@ -745,7 +985,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
           config={{
             class: selectedClass || undefined,
             subject: selectedSubject || undefined,
-            topics: selectedTopics,
+            topics: generationMode === 'custom' ? [customSourceData.sourceTitle || 'Custom Material'] : selectedTopics,
             quantity: quantity || undefined,
             strength: strength || undefined,
             timeLimitMinutes: timeLimitMinutes !== null ? timeLimitMinutes : undefined,

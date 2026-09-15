@@ -142,3 +142,105 @@ export const sendGeminiStudyQuery = async (
 
   throw lastError || new Error('Failed to communicate with AI Study Tutor.');
 };
+
+/**
+ * Transcribe handwritten or computer-written notes image using OCR API
+ */
+export const transcribeNotesImage = async (
+  imageBase64: string,
+  mimeType: string = 'image/jpeg',
+  signal?: AbortSignal
+): Promise<{ transcribedText: string; wordCount: number }> => {
+  const endpoints = ['/api/ocr', '/ocr'];
+  let lastError: Error | null = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ imageBase64, mimeType }),
+        signal,
+      });
+
+      if (!res.ok) {
+        const errorDetail = await parseResponseError(res);
+        if ((res.status === 404 || res.status === 405) && endpoint !== endpoints[endpoints.length - 1]) {
+          continue;
+        }
+        throw new Error(errorDetail);
+      }
+
+      const data = await res.json();
+      return {
+        transcribedText: data.transcribedText || '',
+        wordCount: data.wordCount || 0,
+      };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error('Transcription was cancelled.');
+      }
+      lastError = err;
+      if (!err.message?.includes('404') && !err.message?.includes('405')) {
+        break;
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to transcribe notes image. Please try again.');
+};
+
+/**
+ * Fetch and extract readable study text from an article or webpage URL
+ */
+export const fetchWebpageContent = async (
+  url: string,
+  signal?: AbortSignal
+): Promise<{ title: string; text: string; wordCount: number; url: string }> => {
+  const endpoints = ['/api/fetch-url', '/fetch-url'];
+  let lastError: Error | null = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+        signal,
+      });
+
+      if (!res.ok) {
+        const errorDetail = await parseResponseError(res);
+        if ((res.status === 404 || res.status === 405) && endpoint !== endpoints[endpoints.length - 1]) {
+          continue;
+        }
+        throw new Error(errorDetail);
+      }
+
+      const data = await res.json();
+      return {
+        title: data.title || url,
+        text: data.text || '',
+        wordCount: data.wordCount || 0,
+        url: data.url || url,
+      };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        throw new Error('Webpage extraction was cancelled.');
+      }
+      lastError = err;
+      if (!err.message?.includes('404') && !err.message?.includes('405')) {
+        break;
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to fetch webpage content. Please check the URL or paste notes manually.');
+};
+

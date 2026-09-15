@@ -9,6 +9,8 @@ export interface NCERTEntry {
   textbookName?: string;
 }
 
+export type QuizSourceType = 'syllabus' | 'pdf' | 'notes' | 'webpage' | 'text';
+
 export interface QuizConfig {
   class: string;
   subject: string;
@@ -18,6 +20,12 @@ export interface QuizConfig {
   timeLimitMinutes?: number; // 0 = untimed
   syllabusYear?: SyllabusYear;
   questionType?: 'single' | 'multiple' | 'both';
+  customInstructions?: string; // User custom instructions strictly bounded by system instructions
+  sourceType?: QuizSourceType; // Origin of the quiz content: NCERT syllabus or custom source
+  sourceTitle?: string; // Title or file name of the custom source
+  sourceContent?: string; // Transcribed notes, PDF text, or webpage content
+  sourceMimeType?: string; // e.g., 'image/png', 'image/jpeg', 'application/pdf'
+  sourceFileBase64?: string; // Base64 representation of uploaded image or PDF document
 }
 
 export interface Question {
