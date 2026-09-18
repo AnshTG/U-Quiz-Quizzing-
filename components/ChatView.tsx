@@ -56,6 +56,7 @@ interface ChatViewProps {
 }
 
 const SUBJECT_OPTIONS = [
+  'All Subjects',
   'Science',
   'Mathematics',
   'Social Science',
@@ -67,6 +68,7 @@ const SUBJECT_OPTIONS = [
 ];
 
 const CLASS_OPTIONS = [
+  'All Classes (1-12)',
   'Class 1',
   'Class 2',
   'Class 3',
@@ -82,11 +84,11 @@ const CLASS_OPTIONS = [
 ];
 
 const QUICK_AI_SUGGESTIONS = [
-  { label: '⚡ Ohm\'s Law & Circuits', prompt: 'Explain Ohm\'s Law and how resistance depends on length, area, and resistivity with NCERT Class 10 examples.' },
+  { label: '⚡ Ohm\'s Law & Circuits', prompt: 'Explain Ohm\'s Law and how resistance depends on length, area, and resistivity with clear NCERT examples.' },
   { label: '🌿 Photosynthesis Cycle', prompt: 'Explain Light Reaction vs Calvin Cycle in photosynthesis with clear step-by-step NCERT points.' },
   { label: '📐 Trigonometric Identities', prompt: 'Prove the identity sin^2(θ) + cos^2(θ) = 1 and give a shortcut to remember standard angle values.' },
   { label: '🧪 Balancing Chemical Equations', prompt: 'Teach me the systematic step-by-step method to balance chemical equations with 2 examples from NCERT.' },
-  { label: '🎯 High-Yield Exam Tips', prompt: 'What are the top 5 recurring question patterns in Class 10 NCERT Science and how should I write 5-mark answers?' }
+  { label: '🎯 High-Yield Exam Writing', prompt: 'What are the best strategies to structure 3-mark and 5-mark answers according to NCERT CBSE marking rubrics?' }
 ];
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏', '🔥', '💡', '👏'];
@@ -108,15 +110,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         role: 'model',
         content: `**Namaste! I am your AI NCERT Study Mentor & Doubt Solver.**\n\nI can explain concepts across **Classes 1–12 (NCF-SE & NCERT)**, break down mathematical numericals, balance chemical equations, or give you personalized practice questions.\n\n*What topic or chapter would you like to explore today?*`,
         timestamp: Date.now(),
-        subjectContext: 'Science',
-        classContext: 'Class 10',
+        subjectContext: 'All Subjects',
+        classContext: 'All Classes (1-12)',
         reactions: { '💡': 1 }
       }
     ];
   });
   const [geminiInput, setGeminiInput] = useState('');
-  const [selectedClass, setSelectedClass] = useState('Class 10');
-  const [selectedSubject, setSelectedSubject] = useState('Science');
+  const [selectedClass, setSelectedClass] = useState('All Classes (1-12)');
+  const [selectedSubject, setSelectedSubject] = useState('All Subjects');
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showScrollBottomAi, setShowScrollBottomAi] = useState(false);
@@ -242,8 +244,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
 
       const reply = await sendGeminiStudyQuery({
         messages: apiMessages,
-        classContext: selectedClass,
-        subjectContext: selectedSubject,
+        classContext: selectedClass.startsWith('All') ? undefined : selectedClass,
+        subjectContext: selectedSubject.startsWith('All') ? undefined : selectedSubject,
         syllabusYear: '2026-27'
       });
 

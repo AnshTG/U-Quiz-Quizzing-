@@ -20,7 +20,16 @@ import {
   Check,
   Bookmark,
   Share2,
-  Brain
+  Brain,
+  AlertTriangle,
+  Bug,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  FileQuestion,
+  ShieldAlert,
+  WifiOff,
+  Filter
 } from 'lucide-react';
 
 interface DocumentationModalProps {
@@ -29,11 +38,17 @@ interface DocumentationModalProps {
   isAdmin?: boolean;
 }
 
+type DocSection = 'overview' | 'curriculum' | 'quizzes' | 'attendance' | 'vault_challenges' | 'faqs' | 'errors';
+
 export const DocumentationModal: React.FC<DocumentationModalProps> = ({
   isOpen,
   onClose
 }) => {
-  const [activeSection, setActiveSection] = useState<'overview' | 'curriculum' | 'quizzes' | 'attendance' | 'vault_challenges'>('overview');
+  const [activeSection, setActiveSection] = useState<DocSection>('overview');
+  const [faqFilter, setFaqFilter] = useState<string>('all');
+  const [expandedFaqId, setExpandedFaqId] = useState<string | null>(null);
+  const [errorSearchQuery, setErrorSearchQuery] = useState<string>('');
+  const [errorCategoryFilter, setErrorCategoryFilter] = useState<string>('all');
 
   if (!isOpen) return null;
 
@@ -133,6 +148,30 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({
           >
             <Trophy className="w-3.5 h-3.5" />
             <span>5. Saved Vault & Challenge Codes</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('faqs')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeSection === 'faqs'
+                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span>6. Comprehensive FAQs</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('errors')}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeSection === 'errors'
+                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>7. Error Catalog & Troubleshooting</span>
           </button>
         </div>
 
@@ -622,6 +661,417 @@ export const DocumentationModal: React.FC<DocumentationModalProps> = ({
                   </div>
                 </div>
 
+              </div>
+            </div>
+          )}
+
+          {/* ================= CHAPTER 6: FAQS & STUDY TIPS ================= */}
+          {activeSection === 'faqs' && (
+            <div className="space-y-6">
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-slate-950 border border-emerald-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 6
+                  </span>
+                  <span className="text-xs text-slate-400">• Frequently Asked Questions</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Everything You Need to Know About U-Quiz
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Browse quick answers to frequently asked questions about syllabus coverage, custom note quizzes, mathematical notation, attendance streaks, and sharing challenge codes.
+                </p>
+
+                {/* FAQ Category Pills */}
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  {[
+                    { id: 'all', label: 'All Topics' },
+                    { id: 'curriculum', label: 'Curriculum & Books' },
+                    { id: 'custom', label: 'Custom Notes & PDF' },
+                    { id: 'streaks', label: 'Streaks & Attendance' },
+                    { id: 'sharing', label: 'Challenges & QR' },
+                    { id: 'tech', label: 'Math & Tech' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setFaqFilter(tab.id)}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        faqFilter === tab.id
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+                          : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* FAQ Accordion List */}
+              <div className="space-y-3">
+                {[
+                  {
+                    id: 'faq-1',
+                    category: 'curriculum',
+                    question: 'Is the question bank strictly mapped to official NCERT textbooks?',
+                    answer: 'Yes. Every assessment is grounded directly in official NCERT textbooks from Class 1 through Class 12, reflecting the latest 2026-27 rationalized textbook editions. Terminology, scientific notations, chapter classifications, and sample questions align with CBSE examination blueprints.'
+                  },
+                  {
+                    id: 'faq-2',
+                    category: 'custom',
+                    question: 'How do I generate a quiz from my own coaching notes or textbook PDFs?',
+                    answer: 'Click "Quiz from Notes & PDF" or navigate to New Quiz and switch the mode to "Custom Source". You can paste typed or copied revision notes directly, or drag and drop a PDF or picture of a textbook page (up to 10MB). Our multimodal vision engine reads the text and formulas to create bespoke questions targeting your exact notes.'
+                  },
+                  {
+                    id: 'faq-3',
+                    category: 'tech',
+                    question: 'Why do formulas, fractions, and chemical reactions look so clean?',
+                    answer: 'U-Quiz integrates KaTeX, the premier high-performance mathematical typesetting library. Formulas, superscripts, subscripts, fractions, algebraic equations, calculus integrals, and balanced chemical reactions are rendered dynamically with typographic clarity across desktop and mobile devices.'
+                  },
+                  {
+                    id: 'faq-4',
+                    category: 'curriculum',
+                    question: 'What are the three difficulty levels: Foundational, Standard, and Exemplar?',
+                    answer: 'Foundational (Level 1) focuses on direct factual recall, definitions, and basic formula identification. Standard (Level 2) represents standard school term exam questions requiring multi-step numerical calculation and concept application. Exemplar (Level 3) is based on NCERT Exemplar problems, featuring higher-order thinking (HOTS), assertion-reasoning, and Olympiad/foundation level problems.'
+                  },
+                  {
+                    id: 'faq-5',
+                    category: 'streaks',
+                    question: 'How does daily attendance and study streak tracking work?',
+                    answer: 'Attendance is automatically marked as "Present" the moment you begin taking a quiz or revision test. Daily streaks follow Indian Standard Time (IST, UTC+5:30) with midnight (12:00 AM) cutoff. Practicing on consecutive calendar days increments your Streak Flame (🔥). Multiple quizzes taken on the same day add to your total score and XP, but advance your streak once per day.'
+                  },
+                  {
+                    id: 'faq-6',
+                    category: 'sharing',
+                    question: 'How do I challenge my friends or students with a 6-digit code or QR code?',
+                    answer: 'After completing any quiz or opening a test in your Quiz Vault, click "Share Challenge". U-Quiz generates a unique 6-digit code (e.g. 748291) and a downloadable QR code. Your classmates can simply click "Join Code" in the top bar or scan the QR code to take the exact same test and compare their score against yours.'
+                  },
+                  {
+                    id: 'faq-7',
+                    category: 'custom',
+                    question: 'Can I upload pictures of handwritten notes or diagrams?',
+                    answer: 'Yes! You can upload clear, legible photos (PNG, JPEG, WebP) of handwritten notes or printed classroom handouts. For best results, ensure the photo is well-lit and oriented upright. If handwriting is difficult to read, you can also copy and paste the text directly into the "Paste Notes" tab.'
+                  },
+                  {
+                    id: 'faq-8',
+                    category: 'curriculum',
+                    question: 'Can I select multiple chapters or create an all-chapter mock exam?',
+                    answer: 'Yes! In the Custom Quiz Configurator, you can toggle between selecting individual chapters (multi-select any combination you want) or checking "Select All Chapters" to generate a full-length cumulative term examination.'
+                  },
+                  {
+                    id: 'faq-9',
+                    category: 'tech',
+                    question: 'Will I lose my progress if my internet connection briefly drops?',
+                    answer: 'No! Once a quiz has loaded into your browser, all questions, timer controls, and option selections operate fully in client memory. You can complete your test uninterrupted. When your connection reconnects, your results and attendance will automatically sync to your cloud profile.'
+                  },
+                  {
+                    id: 'faq-10',
+                    category: 'sharing',
+                    question: 'How many quizzes can I save in my Cloud Quiz Vault?',
+                    answer: 'Every scholar account can store up to 50 complete quizzes in their Cloud Vault, including all questions, correct answers, and in-depth textbook explanations. You can revisit, retake, or generate fresh challenge codes from your Vault anytime.'
+                  }
+                ]
+                  .filter(faq => faqFilter === 'all' || faq.category === faqFilter)
+                  .map(faq => {
+                    const isExpanded = expandedFaqId === faq.id;
+                    return (
+                      <div
+                        key={faq.id}
+                        className="rounded-2xl border border-slate-800 bg-slate-950 overflow-hidden transition-colors"
+                      >
+                        <button
+                          onClick={() => setExpandedFaqId(isExpanded ? null : faq.id)}
+                          className="w-full flex items-center justify-between gap-4 p-4 sm:p-5 text-left hover:bg-slate-900/60 transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-mono text-xs flex items-center justify-center shrink-0">
+                              Q
+                            </span>
+                            <span className="text-sm font-bold text-white leading-snug">
+                              {faq.question}
+                            </span>
+                          </div>
+                          <div className="p-1 rounded-lg bg-slate-900 text-slate-400 shrink-0">
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="px-5 pb-5 pt-1 text-xs text-slate-300 leading-relaxed border-t border-slate-900 bg-slate-900/30">
+                            {faq.answer}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* ================= CHAPTER 7: ERROR CATALOG & TROUBLESHOOTING ================= */}
+          {activeSection === 'errors' && (
+            <div className="space-y-6">
+              <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-rose-500/10 via-amber-500/10 to-slate-950 border border-rose-500/20 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    Chapter 7
+                  </span>
+                  <span className="text-xs text-slate-400">• Technical Diagnostics & Solutions</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
+                  Error Code Directory & Instant Troubleshooting
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Encountered an issue while uploading notes, taking an exam, or joining a challenge code? Search our error database below to find the exact root cause and step-by-step resolution.
+                </p>
+
+                {/* Search & Category Filter Bar */}
+                <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={errorSearchQuery}
+                      onChange={(e) => setErrorSearchQuery(e.target.value)}
+                      placeholder="Search error code (e.g. ERR_EMPTY_FILE, 10MB, QR, Streak)..."
+                      className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                    {[
+                      { id: 'all', label: 'All Errors' },
+                      { id: 'upload', label: 'Upload & OCR' },
+                      { id: 'network', label: 'Network & Cloud' },
+                      { id: 'challenge', label: 'Challenge Codes' },
+                      { id: 'auth', label: 'Auth & Streaks' }
+                    ].map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setErrorCategoryFilter(cat.id)}
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                          errorCategoryFilter === cat.id
+                            ? 'bg-rose-500 text-white shadow-sm shadow-rose-500/20'
+                            : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Cards Grid */}
+              <div className="space-y-4">
+                {[
+                  {
+                    code: 'ERR_EMPTY_FILE',
+                    category: 'upload',
+                    severity: 'High',
+                    title: 'Empty File or Non-Text Scan Detected',
+                    symptom: 'Upload fails immediately with "Uploaded file appears to be empty or corrupted".',
+                    rootCause: 'The selected PDF contains 0 readable pages, is password protected, or is a 0-byte file.',
+                    solution: [
+                      'Verify that the PDF opens normally in your browser or Adobe Reader.',
+                      'If the PDF is password-protected, remove the password before uploading.',
+                      'If the file is an unsearchable photocopy, switch to the "Paste Notes" tab and paste the text directly.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_FILE_TOO_LARGE',
+                    category: 'upload',
+                    severity: 'Medium',
+                    title: 'File Size Exceeds 10MB Limit',
+                    symptom: 'Upload dialog rejects file with "File size exceeds 10MB limit".',
+                    rootCause: 'High-resolution full-book scans often exceed the 10MB browser memory threshold.',
+                    solution: [
+                      'Extract only the specific chapter pages (1 to 10 pages) rather than the whole 300-page textbook.',
+                      'Compress the PDF using any free PDF compressor tool before uploading.',
+                      'Alternatively, take a clear photo of just the chapter summary pages.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_UNSUPPORTED_FORMAT',
+                    category: 'upload',
+                    severity: 'Medium',
+                    title: 'Unsupported File Extension',
+                    symptom: 'Upload error: "Unsupported file type. Please upload PDF, PNG, JPG, or WebP".',
+                    rootCause: 'Uploaded file is a Word document (.docx), PowerPoint (.pptx), rich text (.rtf), or compressed archive (.zip).',
+                    solution: [
+                      'Export or Save As PDF from Microsoft Word or Google Docs before uploading.',
+                      'Or copy all text from the document and paste directly into the "Paste Notes" tab.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_CHALLENGE_NOT_FOUND',
+                    category: 'challenge',
+                    severity: 'Medium',
+                    title: 'Invalid or Expired Challenge Code',
+                    symptom: 'Joining with a 6-digit code displays "Challenge not found or has expired".',
+                    rootCause: 'The 6-digit code was mistyped, or the creator has deleted the quiz from their Vault.',
+                    solution: [
+                      'Check the 6 digits carefully (e.g. ensure 0 is not typed as letter O, or 1 as letter l).',
+                      'Ask the host/educator to open their Quiz Vault and verify the active 6-digit code.',
+                      'Scan the host\'s shared QR code directly using your mobile phone camera for instant joining.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_GEMINI_RATE_LIMIT',
+                    category: 'network',
+                    severity: 'Medium',
+                    title: 'AI Assessment Generator Busy',
+                    symptom: 'Generation pauses or displays "AI generator is busy. Retrying in a few seconds...".',
+                    rootCause: 'Burst rate limits on the backend Gemini model during peak revision hours (e.g. evenings before board exams).',
+                    solution: [
+                      'Wait 5 to 10 seconds; the system includes built-in exponential backoff and will usually succeed on automatic retry.',
+                      'Try selecting 10 or 15 questions instead of 50 questions for faster multi-token completion.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_NETWORK_OFFLINE',
+                    category: 'network',
+                    severity: 'High',
+                    title: 'Network Disconnected During Quiz',
+                    symptom: 'Internet icon displays offline indicator or toast shows "Connection lost".',
+                    rootCause: 'Local Wi-Fi or mobile data drop.',
+                    solution: [
+                      'DO NOT CLOSE OR REFRESH YOUR BROWSER TAB! The current quiz is entirely preserved in browser memory.',
+                      'Continue answering all questions normally.',
+                      'When your device reconnects to Wi-Fi/4G/5G, click "Submit Assessment" to automatically sync results.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_AUTH_POPUP_BLOCKED',
+                    category: 'auth',
+                    severity: 'Medium',
+                    title: 'Google Sign-In Popup Blocked',
+                    symptom: 'Clicking "Sign In with Google" produces no popup window or flashes briefly.',
+                    rootCause: 'Browser popup blocker, incognito mode third-party cookie restrictions, or iframe sandbox policy.',
+                    solution: [
+                      'Look at your browser URL bar for a "Pop-up blocked" icon and click "Always allow popups for this site".',
+                      'If viewing inside an embedded preview iframe, click the "Open in new window" button at the top right.',
+                      'Ensure third-party cookies are not strictly blocked for accounts.google.com.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_STREAK_DESYNC_TIMEZONE',
+                    category: 'auth',
+                    severity: 'Low',
+                    title: 'Streak Flame (🔥) Not Increasing on Same Day',
+                    symptom: 'Taking a 2nd or 3rd test today does not increase the streak number.',
+                    rootCause: 'Streaks only advance once per calendar day (12:00 AM Midnight IST cutoff).',
+                    solution: [
+                      'This is expected behavior! Multiple tests taken on the same calendar day reinforce your mastery and add Scholar Points to the Leaderboard.',
+                      'To advance your streak from e.g. 5 days to 6 days, take your next quiz on the following calendar day.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_KATEX_RENDER_FALLBACK',
+                    category: 'network',
+                    severity: 'Low',
+                    title: 'Mathematical Formula Displaying as Raw Code',
+                    symptom: 'An equation appears as raw LaTeX text (e.g. \\frac{a}{b}) rather than formatted graphics.',
+                    rootCause: 'Unescaped backslashes in generated questions or complex non-standard chemical structures.',
+                    solution: [
+                      'U-Quiz features an automatic fail-safe parser: if KaTeX encounters an unrecognized macro, it immediately displays the readable unicode equivalent.',
+                      'The question remains 100% solvable without any missing terms.'
+                    ]
+                  },
+                  {
+                    code: 'ERR_BLANK_NOTES_INPUT',
+                    category: 'upload',
+                    severity: 'Medium',
+                    title: 'Blank or Insufficient Notes Input',
+                    symptom: 'Generator reports "Please provide at least 20 words of notes to generate a quiz".',
+                    rootCause: 'The input textbox contained only a few words, which is insufficient for AI to formulate multi-question exams.',
+                    solution: [
+                      'Provide at least 2-3 paragraphs or 50+ words of textbook notes, summaries, or key formulas.',
+                      'Include key terms, definitions, and concepts you want to be tested on.'
+                    ]
+                  }
+                ]
+                  .filter(err => {
+                    const matchesCat = errorCategoryFilter === 'all' || err.category === errorCategoryFilter;
+                    const query = errorSearchQuery.trim().toLowerCase();
+                    if (!query) return matchesCat;
+                    const matchesSearch = 
+                      err.code.toLowerCase().includes(query) ||
+                      err.title.toLowerCase().includes(query) ||
+                      err.symptom.toLowerCase().includes(query) ||
+                      err.rootCause.toLowerCase().includes(query) ||
+                      err.solution.some(s => s.toLowerCase().includes(query));
+                    return matchesCat && matchesSearch;
+                  })
+                  .map(err => (
+                    <div
+                      key={err.code}
+                      className="p-5 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-colors space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <div className={`p-2 rounded-xl flex items-center justify-center ${
+                            err.severity === 'High'
+                              ? 'bg-rose-500/20 text-rose-400'
+                              : err.severity === 'Medium'
+                              ? 'bg-amber-500/20 text-amber-400'
+                              : 'bg-teal-500/20 text-teal-400'
+                          }`}>
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-white">
+                                {err.code}
+                              </span>
+                              <span className={`px-2 py-0.2 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
+                                err.severity === 'High'
+                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                  : err.severity === 'Medium'
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                  : 'bg-teal-500/20 text-teal-400 border border-teal-500/30'
+                              }`}>
+                                {err.severity} Impact
+                              </span>
+                            </div>
+                            <h4 className="text-sm font-bold text-slate-100">
+                              {err.title}
+                            </h4>
+                          </div>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-400 capitalize">
+                          {err.category}
+                        </span>
+                      </div>
+
+                      {/* Symptom & Cause */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 space-y-1">
+                          <strong className="text-rose-400 block font-semibold">Observed Symptom:</strong>
+                          <p className="text-slate-300 leading-relaxed">{err.symptom}</p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 space-y-1">
+                          <strong className="text-amber-400 block font-semibold">Underlying Root Cause:</strong>
+                          <p className="text-slate-300 leading-relaxed">{err.rootCause}</p>
+                        </div>
+                      </div>
+
+                      {/* Solutions */}
+                      <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 space-y-1.5 text-xs">
+                        <strong className="text-emerald-400 flex items-center gap-1.5 font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Recommended Resolution Steps:</span>
+                        </strong>
+                        <ul className="space-y-1 text-slate-300 pl-5 list-disc">
+                          {err.solution.map((step, sIdx) => (
+                            <li key={sIdx} className="leading-relaxed">
+                              {step}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

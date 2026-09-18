@@ -61,12 +61,21 @@ export function sanitizeAndFormatMath(rawContent: string): string {
   text = text.replace(/\u2103/g, '°C');
   text = text.replace(/\u2109/g, '°F');
 
-  // 3. Fix corrupt fraction expressions (e.g. f\f22\7, \f\f22\7, f\f22/7, \f\f\frac{1}{2}, f\f\frac{1}{2})
+  // 3. Fix corrupt fraction expressions and /f variations (e.g. /f{a}{b}, /f 1 2, /f 22/7, f\f22\7, \f\f22\7, f\f22/7, \f\f\frac{1}{2}, f\f\frac{1}{2})
+  text = text.replace(/\/frac\{([^{}]+)\}\{([^{}]+)\}/gi, '\\frac{$1}{$2}');
+  text = text.replace(/\/f\{([^{}]+)\}\{([^{}]+)\}/gi, '\\frac{$1}{$2}');
+  text = text.replace(/(^|[\s$(=+,-])\/f\s*\{([^{}]+)\}\s*\{([^{}]+)\}/gi, '$1\\frac{$2}{$3}');
+  text = text.replace(/(^|[\s$(=+,-])\/f\s+(\d+(?:\.\d+)?)\s*[/]\s*(\d+(?:\.\d+)?)/gi, '$1\\frac{$2}{$3}');
+  text = text.replace(/(^|[\s$(=+,-])\/f\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)(?![0-9.])/gi, '$1\\frac{$2}{$3}');
   text = text.replace(/(?:\\*f[\\/]+f|\\+f)\s*(\d+)\s*(?:\\+|[\/])\s*(\d+)/gi, '\\frac{$1}{$2}');
   text = text.replace(/(?:\\*f\s*\\*f|\\+f|f\\+f)\s*\\*frac\{([^{}]+)\}\{([^{}]+)\}/gi, '\\frac{$1}{$2}');
   text = text.replace(/(?:\\+f|f\\+f)\s*rac\{([^{}]+)\}\{([^{}]+)\}/gi, '\\frac{$1}{$2}');
   text = text.replace(/\\+rac\{([^{}]+)\}\{([^{}]+)\}/gi, '\\frac{$1}{$2}');
   text = text.replace(/(^|[^\\])\brac\{([^{}]+)\}\{([^{}]+)\}/g, '$1\\frac{$2}{$3}');
+
+  // 3b. Fix forward-slash /ce expressions (e.g. /ce{...}, /ce H2O)
+  text = text.replace(/\/ce\{/gi, '\\ce{');
+  text = text.replace(/(^|[\s$({[=+,><-])\/ce\b/gi, '$1\\ce');
 
   // 4. Fix tab-corrupted \text or units (e.g., 100extml -> 100 ml)
   text = text.replace(/(\d+)\s*ext\s*(ml|mL|l|L|g|kg|mg|cm|mm|nm|pm|km|m|s|sec|min|h|hr|hrs|Pa|kPa|atm|bar|N|J|kJ|W|kW|V|mV|A|mA|Hz|kHz|MHz|mol|mmol|K|cal|kcal|dB|rpm|cm3|cm³|m3|m³)\b/gi, '$1 $2');
@@ -101,14 +110,14 @@ export function sanitizeAndFormatMath(rawContent: string): string {
   text = text.replace(/\/left(?=[([{|.])/g, '\\left');
 
   // Other forward-slash commands: /Omega, /times, /degree, /Delta, etc.
-  const slashKeywords = 'Omega|omega|times|degree|Delta|delta|theta|alpha|beta|gamma|lambda|mu|pi|rho|sigma|phi|sqrt|frac|pm|approx|cdot|leq|geq|le|ge|neq|ne|infty|circ|angle|triangle|ce|text|mathrm';
+  const slashKeywords = 'Omega|omega|times|degree|Delta|delta|theta|alpha|beta|gamma|lambda|mu|pi|rho|sigma|phi|sqrt|frac|pm|approx|cdot|leq|geq|le|ge|neq|ne|infty|circ|angle|triangle|ce|text|mathrm|in|notin|cup|cap|cong|sim|parallel|perp|sum|int|oint|vec|hat|nabla|lim|to|rightleftharpoons';
   // If attached to a number or symbol e.g. "5/Omega", "10/times"
   text = text.replace(new RegExp(`(\\d+)\\/(${slashKeywords})\\b`, 'gi'), '$1 \\$2');
   // Spaced or isolated e.g. " /Omega", " /times", " /degree"
   text = text.replace(new RegExp(`(^|[\\s$({[=+,><\\-])\\/(${slashKeywords})\\b`, 'gi'), '$1\\$2');
 
   // 8. Fix double-escaped backslashes in math commands
-  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|Omega|degree|text|mathrm|ce|rightarrow|leftarrow|to|rightleftharpoons|cdot|le|ge|leq|geq|neq|ne|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ|infty|partial|nabla|left|right)/g, '\\$1');
+  text = text.replace(/\\\\(frac|sqrt|times|div|pm|approx|theta|alpha|beta|gamma|pi|Delta|lambda|mu|sigma|omega|Omega|degree|text|mathrm|ce|rightarrow|leftarrow|to|rightleftharpoons|cdot|le|ge|leq|geq|neq|ne|sin|cos|tan|log|ln|int|sum|prod|angle|triangle|circ|infty|partial|nabla|left|right|in|notin|cup|cap|cong|sim|parallel|perp|oint|vec|hat|lim)/g, '\\$1');
 
   // 9. Clean reaction formulas introduced by 'reaction:' or 'equation:' or chemical reactions with arrows
   // e.g. "regarding the reaction: \ce{\ce{MnO2}}+4HCl->\ce{MnCl2}+2H2O+Cl2}."
@@ -202,8 +211,8 @@ export function sanitizeAndFormatMath(rawContent: string): string {
     return protect(`$\\${kind} ${letters}$`);
   });
 
-  // 19. Bare standalone math & Greek symbols: \pi, \theta, \pm, \approx, etc.
-  text = text.replace(/\\(theta|alpha|beta|gamma|Delta|delta|lambda|mu|sigma|omega|pi|rho|phi|approx|pm|times|div|leq|geq|le|ge|neq|ne|cdot|perp|parallel|infty|rightarrow|leftarrow|to|rightleftharpoons)\b/g, (_m, sym) => {
+  // 19. Bare standalone math & Greek symbols: \pi, \theta, \pm, \approx, \in, \notin, etc.
+  text = text.replace(/\\(theta|alpha|beta|gamma|Delta|delta|lambda|mu|sigma|omega|Omega|pi|rho|phi|approx|pm|times|div|leq|geq|le|ge|neq|ne|cdot|perp|parallel|infty|rightarrow|leftarrow|to|rightleftharpoons|in|notin|cup|cap|cong|sim|sum|int|oint|partial|nabla|lim|circ)\b/g, (_m, sym) => {
     return protect(`$\\${sym}$`);
   });
 
@@ -266,7 +275,7 @@ export function sanitizeAndFormatMath(rawContent: string): string {
   });
 
   // Final sanity check: ensure any bare \ce{...} that might remain are wrapped in $...$
-  text = text.replace(/(?<!\$)\\ce\{([^{}]+)\}(?!\$)/g, '$\\ce{$1}$');
+  text = text.replace(/(?<!\$)\\ce\{((?:[^{}]|\{[^{}]*\})*)\}(?!\$)/g, '$\\ce{$1}$');
 
   return text;
 }

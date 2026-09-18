@@ -1,5 +1,13 @@
 import { GoogleGenAI } from '@google/genai';
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 export const maxDuration = 60;
 
 function getAIClient(): { ai: GoogleGenAI; keyFound: boolean } {
@@ -100,10 +108,13 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    const effectiveClass = (classContext && !classContext.toLowerCase().includes('all')) ? classContext : null;
+    const effectiveSubject = (subjectContext && !subjectContext.toLowerCase().includes('all') && !subjectContext.toLowerCase().includes('general')) ? subjectContext : null;
+
     const systemInstruction = `
-      You are the official U-Quiz NCERT AI Study Tutor and Academic Mentor, strictly aligned with the latest ${syllabusYear} NCF-SE and NCERT curriculum for Classes 1 to 12.
-      ${classContext ? `Target Grade: ${classContext}.` : ''}
-      ${subjectContext ? `Subject: ${subjectContext}.` : ''}
+      You are the official U-Quiz NCERT AI Study Tutor and Academic Mentor, aligned with the latest ${syllabusYear} NCF-SE and NCERT curriculum across all Grades (Classes 1 to 12).
+      ${effectiveClass ? `Student Target Grade: ${effectiveClass}.` : 'Scope: All NCERT Grades (Classes 1 to 12). Do NOT assume any specific grade unless asked by the student. Adapt explanations to whichever grade or concept the student asks about.'}
+      ${effectiveSubject ? `Subject Focus: ${effectiveSubject}.` : 'Subject: Open academic inquiry across all NCERT subjects (Mathematics, Science, Social Sciences, Languages, and Senior Electives).'}
       
       CHAT FORMATTING GUIDELINES (CRITICAL):
       - Format your response cleanly like an expert human tutor chatting with a student.

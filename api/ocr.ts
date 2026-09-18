@@ -1,5 +1,15 @@
 import { GoogleGenAI } from '@google/genai';
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '25mb',
+    },
+  },
+};
+
+export const maxDuration = 60;
+
 let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
   const possibleKeys = [
@@ -84,19 +94,40 @@ export default async function handler(req: any, res: any) {
     const cleanBase64 = imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '');
 
     const ocrPrompt = `
-You are an expert optical character recognition (OCR) and handwriting transcription engine for academic notes, student notebooks, and printed materials.
-Transcribe all handwritten and printed text in this image verbatim with 100% fidelity.
+You are a master handwriting recognition expert, paleographer, and academic OCR engine specialized in deciphering cursive handwriting, rapid lecture shorthand, cursive ligatures, messy scribbles, and student notes.
+Transcribe all handwritten and printed text in this image verbatim with maximum fidelity.
 
-RULES:
-1. Transcribe all text, headings, bullet points, and numbered lists precisely as written.
-2. Format all mathematical equations, scientific expressions, and variables using standard LaTeX notation inside single dollar signs: $...$ (e.g., $E = mc^2$, $\\frac{dy}{dx}$, $x^2 + 2x + 1 = 0$, $\\sqrt{a^2 + b^2}$).
-3. Format chemical reactions and molecular formulas properly (e.g., $\\ce{H2 + Cl2 -> 2HCl}$, $\\ce{CaCO3}$, $\\ce{SO4^{2-}}$).
-4. If diagrams, tables, or graphs are present in the notes, insert a concise bracketed summary, e.g. [Diagram: Ray diagram of concave mirror showing real, inverted image between F and C].
-5. Do NOT add conversational preamble, markdown code blocks, or conversational filler. Output only the transcribed academic text directly.
+HOW TO ACCURATELY DECIPHER CURSIVE & FAST WRITTEN NOTES:
+1. CURSIVE LIGATURES & SLOPED WRITING:
+   - Carefully follow connecting strokes and loops. Accurately disambiguate difficult cursive letter pairs: 'm' vs 'rn'/'nn', 'cl' vs 'd', 'u' vs 'v'/'w', 'a' vs 'o'/'u', 'b' vs 'l'/'f', looped 'e' vs 'l'.
+   - In fast writing, dots on 'i'/'j' and crosses on 't' are often omitted, misplaced, or tied to subsequent letters. Reconstruct words accurately using academic context.
+   - For words written with high momentum or cursive slant, read whole word shapes and letter counts.
+
+2. RAPID LECTURE ABBREVIATIONS & SHORTHAND:
+   - Faithfully transcribe student abbreviations (e.g., "w/", "w/o", "b/c", "eqn", "diff", "temp", "approx", "prop to", "def", "i.e.", "e.g.", "pt", "const", "vol", "conc", "soln", "rxn", "wt").
+   - Preserve the exact student notes structure and terminology.
+
+3. CONTEXT-GUIDED SUBJECT RECONSTRUCTION:
+   - Use scientific and academic domain knowledge (Physics, Chemistry, Biology, Mathematics, Social Sciences) to accurately resolve hurriedly scribbled terminology, laws, and definitions.
+   - e.g., in a Biology context, rapid cursive resembling "mit...dria" is "mitochondria"; in Physics, "res...ance" is "resistance".
+
+4. MATHEMATICAL & SCIENTIFIC FORMULAS:
+   - Convert all math equations, variables, powers, indices, fractions, square roots, and Greek symbols into clean standard LaTeX enclosed in single dollar signs: $...$ (e.g., $E = mc^2$, $v = u + at$, $F = G \\frac{m_1 m_2}{r^2}$, $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$, $\\sin^2\\theta + \\cos^2\\theta = 1$).
+   - Transcribe Greek symbols accurately: $\\alpha, \\beta, \\gamma, \\theta, \\lambda, \\mu, \\pi, \\sigma, \\omega, \\Delta$.
+
+5. CHEMICAL REACTIONS:
+   - Format chemical reactions and molecular formulas properly (e.g., $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{CaCO3 -> CaO + CO2}$, $\\ce{SO4^{2-}}$).
+
+6. MARGIN NOTES, CALLOUTS, & DIAGRAMS:
+   - Transcribe side margins, starred notes, underlined keywords, and bullet points in logical reading sequence.
+   - If a sketch, diagram, or circuit is present, provide a concise bracketed description: [Diagram: Description of sketch, labels, and flow].
+
+7. CLEAN OUTPUT:
+   - Output only the transcribed academic text directly. Do NOT include conversational preamble, greetings, or markdown code blocks.
 `.trim();
 
     // Fallback models if primary model is rate limited
-    const modelsToTry = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash'];
+    const modelsToTry = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
     let lastError: Error | null = null;
     let transcribedText = '';
 

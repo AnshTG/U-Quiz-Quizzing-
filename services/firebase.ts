@@ -281,29 +281,43 @@ export const recordAttendance = async (
     const attendanceDocId = `${user.uid}_${todayStr}`;
     const attendanceRef = doc(db, 'attendance', attendanceDocId);
 
-    // Calculate streak
-    let newStreak = user.currentStreak || 1;
+    // Fetch latest user document from DB to guarantee accurate streak calculation and prevent race conditions
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef).catch(() => null);
+    const dbUserData = userSnap?.exists() ? userSnap.data() : null;
+    const lastDateStr = dbUserData?.lastCheckInDate || user.lastCheckInDate;
+    const currentStoredStreak = extractNumericStat(dbUserData?.currentStreak, user.currentStreak || 0);
+
+    // Calculate streak using UTC day differences on IST date strings to avoid timezone drift
+    let newStreak = Math.max(1, currentStoredStreak);
     let isNewDay = true;
 
-    if (user.lastCheckInDate) {
-      if (user.lastCheckInDate === todayStr) {
+    if (lastDateStr) {
+      if (lastDateStr === todayStr) {
         // Already checked in today, keep same streak
         isNewDay = false;
-        newStreak = user.currentStreak || 1;
+        newStreak = Math.max(1, currentStoredStreak);
       } else {
-        // Calculate day difference
-        const lastDate = new Date(user.lastCheckInDate + 'T00:00:00');
-        const today = new Date(todayStr + 'T00:00:00');
-        const diffDays = Math.round((today.getTime() - lastDate.getTime()) / (1000 * 3600 * 24));
+        const [y1, m1, d1] = lastDateStr.split('-').map(Number);
+        const [y2, m2, d2] = todayStr.split('-').map(Number);
+        const t1 = Date.UTC(y1, m1 - 1, d1);
+        const t2 = Date.UTC(y2, m2 - 1, d2);
+        const diffDays = Math.round((t2 - t1) / (1000 * 3600 * 24));
         
         if (diffDays === 1) {
           // Consecutive day: Increment streak
-          newStreak = (user.currentStreak || 0) + 1;
-        } else {
+          newStreak = currentStoredStreak + 1;
+        } else if (diffDays > 1) {
           // Streak broken: Reset to 1
           newStreak = 1;
+        } else {
+          // Same day or clock skew
+          isNewDay = false;
+          newStreak = Math.max(1, currentStoredStreak);
         }
       }
+    } else {
+      newStreak = 1;
     }
 
     const record: AttendanceRecord = {
@@ -327,7 +341,6 @@ export const recordAttendance = async (
     await setDoc(attendanceRef, sanitizedRecord, { merge: true });
 
     // Update user profile streak & stats
-    const userRef = doc(db, 'users', user.uid);
     await setDoc(userRef, sanitizeForFirestore({
       currentStreak: newStreak,
       lastCheckInDate: todayStr,
@@ -454,8 +467,14 @@ export const saveQuizResultToCloud = async (
     const userEmail = userProfile?.email || null;
     const userPhoto = userProfile?.photoURL || null;
 
+    const sanitizedConfig = result.config ? { ...result.config } : undefined;
+    if (sanitizedConfig) {
+      delete (sanitizedConfig as any).sourceFileBase64;
+    }
+
     const rawResultData = {
       ...result,
+      config: sanitizedConfig,
       userId,
       timestamp,
       timeIST,
@@ -1464,7 +1483,7 @@ const processLeaderboardSnapshot = (
     user.rank = index + 1;
   });
 
-  const topUsers = userList.slice(0, 10);
+  const topUsers = userList.slice(0, 5);
   const currentUserRank = currentUserId 
     ? userList.find((u) => u.uid === currentUserId) || null 
     : null;

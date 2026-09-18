@@ -137,12 +137,7 @@ export const CurriculumView: React.FC<CurriculumViewProps> = ({
               Official NCERT Textbooks & Rationalized Modules
             </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Includes all official textbook series: 
-              <strong className="text-emerald-300"> Curiosity</strong> (Science 6-8), 
-              <strong className="text-emerald-300"> Ganita Prakash</strong> (Maths 6-8), 
-              <strong className="text-emerald-300"> Exploring Society</strong> (Social Science 6-8), 
-              <strong className="text-emerald-300"> Poorvi & Malhar</strong> (Languages), 
-              <strong className="text-emerald-300"> Mridang, Sarangi, Santoor & Maths Mela</strong> (Primary 1-5), and streamlined Senior Secondary frameworks.
+              Aligned with the latest rationalized NCERT curriculum and NCF-SE academic standards across all disciplines.
             </p>
           </div>
 

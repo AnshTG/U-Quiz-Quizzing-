@@ -287,16 +287,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span>Results &amp; Solutions</span>
                 </a>
 
-                {onOpenDocs && (
-                  <a
-                    href="/guide"
-                    onClick={(e) => { e.preventDefault(); onOpenDocs(); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-all cursor-pointer"
-                  >
-                    <BookOpen className="w-3.5 h-3.5" />
-                    <span>Study Guide</span>
-                  </a>
-                )}
+                {/* Center nav items */}
               </nav>
             )
           )}
@@ -308,15 +299,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               {/* If authenticated, show full controls */}
               {isAuthenticated ? (
                 <>
-                  {/* Documentation / Guide Trigger */}
+                  {/* Single Consolidated Documentation / Guide Trigger */}
                   {onOpenDocs && (
                     <button
                       onClick={onOpenDocs}
                       className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
-                      title="Open Student & Educator Guide"
+                      title="Open Documentation, Student Guide & FAQs"
                     >
                       <BookOpen className="w-3.5 h-3.5 text-teal-400" />
-                      <span className="hidden lg:inline">Guide</span>
+                      <span className="hidden lg:inline">Guide & FAQs</span>
                     </button>
                   )}
 

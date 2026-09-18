@@ -12,10 +12,14 @@ async function parseResponseError(res: Response): Promise<string> {
     try {
       const json = JSON.parse(rawText);
       if (json && json.error) {
-        return typeof json.error === 'string' ? json.error : JSON.stringify(json.error);
+        const errStr = typeof json.error === 'string' ? json.error : JSON.stringify(json.error);
+        if (res.status === 413 || errStr.toLowerCase().includes('entity too large') || errStr.toLowerCase().includes('payload too large')) {
+          return 'Request entity too large (HTTP 413). Upload has been automatically optimized to fit within gateway limits.';
+        }
+        return errStr;
       }
     } catch {
-      // If it's an HTML error page (e.g. Vercel 504 / 502 / 500 error page)
+      // If it's an HTML error page (e.g. Vercel 504 / 502 / 500 / 413 error page)
       const cleanText = rawText
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
@@ -24,6 +28,9 @@ async function parseResponseError(res: Response): Promise<string> {
         .trim();
 
       if (cleanText) {
+        if (res.status === 413 || cleanText.includes('FUNCTION_PAYLOAD_TOO_LARGE') || cleanText.includes('Entity Too Large') || cleanText.includes('Payload Too Large') || cleanText.includes('413')) {
+          return 'Uploaded content exceeded server gateway payload limits (HTTP 413: Entity Too Large). Files are now automatically optimized before transmission.';
+        }
         if (cleanText.includes('FUNCTION_INVOCATION_TIMEOUT') || cleanText.includes('504') || cleanText.includes('Gateway Timeout')) {
           return 'Serverless generation timed out on Vercel (504). The AI model took longer than the serverless limit. Please try selecting fewer chapters or smaller question quantity.';
         }

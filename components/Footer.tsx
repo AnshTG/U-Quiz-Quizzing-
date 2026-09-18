@@ -4,9 +4,10 @@ import { AppState } from '../types';
 
 interface FooterProps {
   onNavigate: (view: AppState) => void;
+  onOpenCustomQuiz?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenCustomQuiz }) => {
   return (
     <footer className="w-full border-t border-slate-800/80 bg-slate-950/60 mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-28 md:pb-12">
@@ -49,7 +50,7 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               </li>
               <li>
                 <button 
-                  onClick={() => onNavigate(AppState.SETUP)}
+                  onClick={() => onOpenCustomQuiz ? onOpenCustomQuiz() : onNavigate(AppState.SETUP)}
                   className="hover:text-emerald-400 transition-colors"
                 >
                   Custom Quiz Generator

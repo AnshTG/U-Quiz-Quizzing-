@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { QuizConfig } from '../types';
 import { 
   CLASSES, 
@@ -28,9 +28,7 @@ import {
   PenTool,
   Globe,
   ShieldCheck,
-  Wand2,
-  ChevronDown,
-  ChevronUp
+  Wand2
 } from 'lucide-react';
 import { ShareReminderModal } from './ShareReminderModal';
 import { CustomSourceUploader, CustomSourceData } from './CustomSourceUploader';
@@ -50,6 +48,12 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const [generationMode, setGenerationMode] = useState<'syllabus' | 'custom'>(
     initialConfig?.sourceType && initialConfig.sourceType !== 'syllabus' ? 'custom' : 'syllabus'
   );
+
+  useEffect(() => {
+    if (initialConfig?.sourceType && initialConfig.sourceType !== 'syllabus') {
+      setGenerationMode('custom');
+    }
+  }, [initialConfig?.sourceType]);
 
   // STRICT REQUIREMENT: Do not preselect options anywhere unless explicitly provided in initialConfig
   const [selectedClass, setSelectedClass] = useState<string | null>(
@@ -77,9 +81,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
   // Custom Instructions state
   const [customInstructions, setCustomInstructions] = useState<string>(
     initialConfig?.customInstructions || ''
-  );
-  const [showInstructionsPanel, setShowInstructionsPanel] = useState<boolean>(
-    !!initialConfig?.customInstructions
   );
 
   // Custom Source Data (Notes OCR, PDF, Webpage, Paste Text)
@@ -158,16 +159,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
   const handleDeselectAll = () => {
     setSelectedTopics([]);
-  };
-
-  const handleAddInstructionChip = (text: string) => {
-    setShowInstructionsPanel(true);
-    setCustomInstructions(prev => {
-      const trimmed = prev.trim();
-      if (!trimmed) return text;
-      if (trimmed.includes(text)) return trimmed;
-      return `${trimmed}; ${text}`;
-    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -296,14 +287,6 @@ export const SetupView: React.FC<SetupViewProps> = ({
       title: 'Mixed Format (Both)',
       desc: 'Combination of single and multi-correct questions.',
     },
-  ];
-
-  const QUICK_INSTRUCTION_CHIPS = [
-    'Focus heavily on numerical calculations and step-by-step formulas',
-    'Include practical clinical and experimental case scenarios',
-    'Emphasize high-order thinking (HOTS) and assertion-reasoning questions',
-    'Highlight key definitions, diagram interpretations, and laws',
-    'Include competitive exam / Olympiad level conceptual challenges',
   ];
 
   return (
@@ -612,60 +595,43 @@ export const SetupView: React.FC<SetupViewProps> = ({
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-white font-display flex items-center gap-2">
                     <span>Custom Instructions to AI</span>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                      Strictly Bounded
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                      Optional
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400">Guide the pedagogical emphasis, problem style, or specific question focus</p>
+                  <p className="text-xs text-slate-400">Write any specific exam preferences or focus areas (leave blank for standard balanced assessment)</p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowInstructionsPanel(!showInstructionsPanel)}
-                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                {showInstructionsPanel ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-            </div>
-
-            {/* Quick Chips */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {QUICK_INSTRUCTION_CHIPS.map((chip, idx) => (
+              {customInstructions && (
                 <button
-                  key={idx}
                   type="button"
-                  onClick={() => handleAddInstructionChip(chip)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-amber-500/40 text-slate-300 hover:text-amber-300 text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 active:scale-95"
+                  onClick={() => setCustomInstructions('')}
+                  className="text-xs text-slate-400 hover:text-rose-400 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-800"
                 >
-                  <span>+ {chip}</span>
+                  Clear
                 </button>
-              ))}
+              )}
             </div>
 
-            {/* Expandable Textarea & Strict Security Notice */}
-            {showInstructionsPanel && (
-              <div className="space-y-3 pt-2 animate-in fade-in duration-200">
-                <textarea
-                  rows={3}
-                  value={customInstructions}
-                  onChange={(e) => setCustomInstructions(e.target.value)}
-                  placeholder="e.g., Emphasize numerical problems with SI units, include 2 assertion-reasoning questions, and focus on practical applications..."
-                  className="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-amber-500 transition-colors leading-relaxed"
-                />
-
-                {/* STRICT SECURITY DIRECTIVE BADGE */}
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-start gap-2.5 leading-relaxed">
-                  <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">System Security Boundary: </span>
-                    <span>
-                      Custom instructions strictly govern pedagogical emphasis. System directives, standard 4-option schema, and factual accuracy rules are immutable and cannot be overridden.
-                    </span>
-                  </div>
+            <div className="space-y-2 pt-1">
+              <textarea
+                rows={3}
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                placeholder="Write your custom instructions here if desired (e.g., focus on numerical calculations with step-by-step formulas, include assertion-reasoning questions, emphasize diagram interpretations)..."
+                className="w-full p-3 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-amber-500 transition-colors leading-relaxed"
+              />
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-start gap-2.5 leading-relaxed">
+                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">System Security Boundary: </span>
+                  <span>
+                    Custom instructions govern pedagogical emphasis and question topics. Standard 4-option schema, objective correctness, and syllabus accuracy remain strictly protected.
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
           </div>
 
           {/* ================= TEST CONDITIONS: DIFFICULTY, QUANTITY, FORMAT, TIMER ================= */}

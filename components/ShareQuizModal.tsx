@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { QuizConfig, Question, UserProfile } from '../types';
 import { publishSharedQuiz } from '../services/firebase';
 import { 
@@ -11,7 +12,8 @@ import {
   QrCode, 
   Loader2, 
   Globe, 
-  Users 
+  Users,
+  Download
 } from 'lucide-react';
 
 interface ShareQuizModalProps {
@@ -34,9 +36,11 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [showQrCode, setShowQrCode] = useState(true);
 
   // Publish to Firestore on mount if not already published
-  React.useEffect(() => {
+  useEffect(() => {
     if (!quizId) {
       const publish = async () => {
         try {
@@ -55,12 +59,31 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
   }, [config, questions, user, quizId]);
 
   const getBaseUrl = () => {
+    if (typeof window !== 'undefined' && window.location.origin) {
+      return window.location.origin;
+    }
     return 'https://uquizzes.vercel.app';
   };
 
   const shareUrl = quizId 
     ? `${getBaseUrl()}?quizId=${quizId}`
     : '';
+
+  // Generate QR code when shareUrl is available
+  useEffect(() => {
+    if (!shareUrl) return;
+
+    QRCode.toDataURL(shareUrl, {
+      width: 280,
+      margin: 2,
+      color: {
+        dark: '#042f2e',
+        light: '#ffffff'
+      }
+    })
+      .then((url) => setQrCodeUrl(url))
+      .catch((err) => console.error('Failed to generate QR code:', err));
+  }, [shareUrl]);
 
   const handleCopyLink = async () => {
     if (!shareUrl) return;
@@ -213,6 +236,50 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* QR Code Section for Fast Mobile Scanning */}
+            {qrCodeUrl && (
+              <div className="space-y-2 p-4 rounded-2xl bg-slate-950/80 border border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-semibold text-slate-200">Scan QR Code to Join</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowQrCode(!showQrCode)}
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium transition-colors cursor-pointer"
+                  >
+                    {showQrCode ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+
+                {showQrCode && (
+                  <div className="pt-2 flex flex-col sm:flex-row items-center gap-4">
+                    <div className="p-2.5 bg-white rounded-2xl shadow-inner shrink-0 border border-slate-700">
+                      <img
+                        src={qrCodeUrl}
+                        alt="Quiz Challenge QR Code"
+                        className="w-36 h-36 object-contain rounded-lg"
+                      />
+                    </div>
+                    <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Point your mobile camera or Google Lens at this QR code to load and attempt this exact challenge immediately without typing links.
+                      </p>
+                      <a
+                        href={qrCodeUrl}
+                        download={`uquiz-challenge-${config.class}-${config.subject}.png`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium transition-colors cursor-pointer border border-slate-700"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Download QR Image</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Native Share CTA */}
             <div className="pt-2 flex flex-col sm:flex-row gap-3">

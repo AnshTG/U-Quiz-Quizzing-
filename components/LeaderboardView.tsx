@@ -72,7 +72,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
   };
 
   const top3 = data.topUsers.slice(0, 3);
-  const rank4to10 = data.topUsers.slice(3, 10);
+  const rank4to5 = data.topUsers.slice(3, 5);
 
   const getRankBadge = (rank: number) => {
     switch (rank) {
@@ -140,7 +140,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
               NCERT Quiz Leaderboard
               <span className="text-sm font-normal text-slate-400 bg-slate-800/80 px-2.5 py-1 rounded-xl border border-slate-700 font-mono">
-                Top 10
+                Top 5
               </span>
             </h1>
             <p className="text-slate-400 text-xs sm:text-sm max-w-xl leading-relaxed">
@@ -456,12 +456,12 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
             </div>
           )}
 
-          {/* Full Top 10 Standings Table */}
+          {/* Full Top 5 Standings Table */}
           <div className="rounded-3xl bg-slate-900/80 border border-slate-800 overflow-hidden shadow-xl">
             <div className="p-5 sm:p-6 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Medal className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base font-bold text-white">Top 10 Hall of Fame</h3>
+                <h3 className="text-base font-bold text-white">Top 5 Hall of Fame</h3>
               </div>
               <span className="text-xs text-slate-400 font-mono">
                 Sorted by {sortMetric === 'score' ? 'Total Points' : sortMetric === 'quizzes' ? 'Quizzes Solved' : 'Accuracy %'}
@@ -558,9 +558,9 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({
                     <UserCheck className="w-4 h-4 text-emerald-400" />
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {data.currentUserRank.rank <= 10 
-                      ? '🎉 Amazing! You are currently in the National Top 10 Hall of Fame!' 
-                      : `You need ${Math.max(1, (data.topUsers[9]?.totalScore || 0) - data.currentUserRank.totalScore + 1)} more points to break into the Top 10.`}
+                    {data.currentUserRank.rank <= 5 
+                      ? '🎉 Amazing! You are currently in the National Top 5 Hall of Fame!' 
+                      : `You need ${Math.max(1, (data.topUsers[4]?.totalScore || 0) - data.currentUserRank.totalScore + 1)} more points to break into the Top 5.`}
                   </p>
                 </div>
               </div>

@@ -7,6 +7,7 @@ import {
   signOutUser, 
   saveQuizResultToCloud,
   fetchUserSavedQuizzes,
+  fetchUserQuizHistory,
   listenToMaintenanceMode,
   getISTDateString,
   getISTTimeString
@@ -83,9 +84,9 @@ export default function App() {
   
   // Active quiz config and state
   const [currentConfig, setCurrentConfig] = useState<QuizConfig>({
-    class: 'Class 10',
-    subject: 'Science',
-    topics: ['1: Chemical Reactions and Equations', '5: Life Processes', '11: Electricity'],
+    class: '',
+    subject: '',
+    topics: [],
     strength: 'Medium',
     quantity: 10,
     timeLimitMinutes: 0,
@@ -151,8 +152,12 @@ export default function App() {
         try {
           const list = await fetchUserSavedQuizzes(profile.uid);
           setSavedQuizzesCount(list.length);
+          const cloudHistory = await fetchUserQuizHistory(profile.uid);
+          if (cloudHistory && cloudHistory.length > 0) {
+            setHistory(cloudHistory);
+          }
         } catch (e) {
-          console.warn('Could not count saved quizzes:', e);
+          console.warn('Could not sync user cloud data:', e);
         }
       } else {
         setSavedQuizzesCount(0);
@@ -334,6 +339,21 @@ export default function App() {
       generationAbortRef.current.abort();
       generationAbortRef.current = null;
     }
+    navigateTo(AppState.SETUP);
+  };
+
+  // Redirect to Custom Quiz Creation Page (Notes / PDF / OCR)
+  const handleOpenCustomQuiz = () => {
+    setCurrentConfig({
+      class: '',
+      subject: '',
+      topics: [],
+      strength: 'Medium',
+      quantity: 10,
+      timeLimitMinutes: 0,
+      syllabusYear: '2026-27',
+      sourceType: 'notes'
+    });
     navigateTo(AppState.SETUP);
   };
 
@@ -721,6 +741,7 @@ export default function App() {
                   <HomeView
                     onStartQuizConfig={handleStartQuiz}
                     onNavigate={navigateTo}
+                    onOpenCustomQuiz={handleOpenCustomQuiz}
                     recentHistory={history}
                   />
                 )}
@@ -828,7 +849,10 @@ export default function App() {
 
           {/* Global Footer - Rendered strictly on the Home screen per user preference */}
           {view === AppState.HOME && (
-            <Footer onNavigate={navigateTo} />
+            <Footer 
+              onNavigate={navigateTo} 
+              onOpenCustomQuiz={handleOpenCustomQuiz}
+            />
           )}
         </>
       )}

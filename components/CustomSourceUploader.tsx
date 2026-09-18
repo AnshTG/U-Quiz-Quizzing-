@@ -12,9 +12,18 @@ import {
   RefreshCw,
   BookOpen,
   Eye,
-  Check
+  Check,
+  Zap
 } from 'lucide-react';
 import { transcribeNotesImage, fetchWebpageContent } from '../services/geminiService';
+import { 
+  compressImageFile, 
+  extractTextFromPdf, 
+  formatBytes, 
+  MAX_FILE_UPLOAD_BYTES, 
+  SAFE_PAYLOAD_MAX_BYTES,
+  readFileAsBase64
+} from '../services/documentProcessor';
 
 export interface CustomSourceData {
   sourceType: 'notes' | 'pdf' | 'webpage' | 'text';
@@ -54,17 +63,7 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
     });
   };
 
-  // Convert File to Base64 helper
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (err) => reject(err);
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Handle image upload for handwritten notes
+  // Handle image upload for handwritten notes (Supports up to 20MB with smart client-side compression)
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -74,22 +73,23 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
       return;
     }
 
-    if (file.size > 20 * 1024 * 1024) {
-      setError('Image file exceeds the 20MB maximum limit. Please choose a smaller photo.');
+    if (file.size > MAX_FILE_UPLOAD_BYTES) {
+      setError(`Image file (${formatBytes(file.size)}) exceeds the 20MB maximum limit. Please choose a photo under 20MB.`);
       return;
     }
 
     setError(null);
     setSuccessMessage(null);
     setIsProcessing(true);
-    setProcessingStatus('Loading handwritten notes photo...');
+    setProcessingStatus(`Optimizing photo for high-speed analysis (${formatBytes(file.size)})...`);
 
     try {
-      const base64 = await fileToBase64(file);
-      setImagePreview(base64);
+      // Intelligently compress/rescale high-resolution smartphone camera photos to fit safely within Vercel's gateway limits
+      const compressed = await compressImageFile(file);
+      setImagePreview(compressed.base64);
 
       setProcessingStatus('Running Optical Character Recognition (OCR) on handwritten notes...');
-      const ocrResult = await transcribeNotesImage(base64, file.type);
+      const ocrResult = await transcribeNotesImage(compressed.base64, compressed.mimeType);
 
       const title = data.sourceTitle || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
 
@@ -97,11 +97,14 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
         sourceType: 'notes',
         sourceTitle: title,
         sourceContent: ocrResult.transcribedText,
-        sourceFileBase64: base64,
-        sourceMimeType: file.type,
+        sourceFileBase64: compressed.base64,
+        sourceMimeType: compressed.mimeType,
       });
 
-      setSuccessMessage(`Transcribed ${ocrResult.wordCount} words from notes with LaTeX math equations preserved!`);
+      const compressionNote = compressed.isCompressed 
+        ? ` (Optimized ${formatBytes(compressed.originalSize)} → ${formatBytes(compressed.compressedSize)})`
+        : '';
+      setSuccessMessage(`Transcribed ${ocrResult.wordCount} words from notes with LaTeX math equations preserved!${compressionNote}`);
     } catch (err: any) {
       console.error('Notes transcription failed:', err);
       setError(err.message || 'Could not transcribe image. You can also paste text notes manually.');
@@ -112,21 +115,26 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
     }
   };
 
-  // Handle PDF / Document file upload
+  // Handle PDF / Document file upload (Supports up to 20MB with client-side text extraction)
   const handlePdfFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > MAX_FILE_UPLOAD_BYTES) {
+      setError(`Document file (${formatBytes(file.size)}) exceeds the 20MB maximum limit. Please choose a document under 20MB.`);
+      return;
+    }
+
     setError(null);
     setSuccessMessage(null);
     setIsProcessing(true);
-    setProcessingStatus('Reading document file...');
+    setProcessingStatus(`Analyzing document and extracting syllabus text (${formatBytes(file.size)})...`);
 
     try {
-      const isText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md');
+      const isPlainText = file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md');
       const title = data.sourceTitle || file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
 
-      if (isText) {
+      if (isPlainText) {
         const text = await file.text();
         const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
         onChange({
@@ -136,17 +144,28 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
         });
         setSuccessMessage(`Loaded ${wordCount} words from text document.`);
       } else {
-        // PDF or doc file: read base64
-        const base64 = await fileToBase64(file);
-        // Also extract raw text preview if readable or pass base64
+        // PDF or doc file: Extract rich text client-side to prevent Vercel 4.5MB gateway errors
+        setProcessingStatus(`Extracting chapters & formulas from PDF (${formatBytes(file.size)})...`);
+        const pdfData = await extractTextFromPdf(file);
+
+        let attachedBase64: string | undefined = undefined;
+        // Only attach raw Base64 across the network if the file is comfortably under Vercel's edge limit
+        if (file.size <= SAFE_PAYLOAD_MAX_BYTES) {
+          attachedBase64 = await readFileAsBase64(file);
+        }
+
+        const effectiveContent = pdfData.text || data.sourceContent || `Study Document: ${file.name} (${formatBytes(file.size)})`;
+
         onChange({
           sourceType: 'pdf',
           sourceTitle: title,
-          sourceContent: data.sourceContent || `Document: ${file.name} (Uploaded ${Math.round(file.size / 1024)} KB)`,
-          sourceFileBase64: base64,
+          sourceContent: effectiveContent,
+          sourceFileBase64: attachedBase64,
           sourceMimeType: file.type || 'application/pdf',
         });
-        setSuccessMessage(`Document "${file.name}" uploaded successfully (${Math.round(file.size / 1024)} KB).`);
+
+        const wordInfo = pdfData.wordCount > 0 ? `extracted ${pdfData.wordCount} words across ${pdfData.pageCount} pages` : 'document indexed';
+        setSuccessMessage(`Document "${file.name}" processed successfully (${wordInfo}, ${formatBytes(file.size)}). The AI examiner will formulate questions directly from the syllabus content.`);
       }
     } catch (err: any) {
       console.error('PDF read failed:', err);
@@ -161,27 +180,34 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
   // Handle Webpage URL Fetch
   const handleFetchWebpage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!webpageUrl.trim()) {
-      setError('Please enter a valid webpage URL (e.g., https://en.wikipedia.org/wiki/Newton%27s_laws_of_motion).');
+    let rawUrl = webpageUrl.trim();
+    if (!rawUrl) {
+      setError('Please enter a valid webpage or article URL (e.g. https://en.wikipedia.org/wiki/Newton%27s_laws_of_motion).');
       return;
+    }
+
+    // Auto prepend https if user typed without protocol
+    if (!/^https?:\/\//i.test(rawUrl)) {
+      rawUrl = `https://${rawUrl}`;
+      setWebpageUrl(rawUrl);
     }
 
     setError(null);
     setSuccessMessage(null);
     setIsProcessing(true);
-    setProcessingStatus('Fetching webpage & extracting readable study material...');
+    setProcessingStatus('Accessing webpage & extracting comprehensive study material...');
 
     try {
-      const result = await fetchWebpageContent(webpageUrl.trim());
+      const result = await fetchWebpageContent(rawUrl);
       onChange({
         sourceType: 'webpage',
-        sourceTitle: result.title || webpageUrl.trim(),
+        sourceTitle: result.title || rawUrl,
         sourceContent: result.text,
       });
-      setSuccessMessage(`Extracted ${result.wordCount} words from "${result.title}".`);
+      setSuccessMessage(`Successfully extracted ${result.wordCount} words from "${result.title}".`);
     } catch (err: any) {
       console.error('Webpage fetch failed:', err);
-      setError(err.message || 'Failed to fetch webpage. Please check the URL or paste notes directly.');
+      setError(err.message || 'Failed to access webpage. You can also copy and paste the study text directly into the notes field below.');
     } finally {
       setIsProcessing(false);
       setProcessingStatus(null);
@@ -328,11 +354,11 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
                   Upload Photos of Handwritten or Printed Notes
                 </p>
                 <p className="text-[11px] text-slate-400">
-                  Drag & drop or tap to select. Multi-modal Neural OCR transcribes formulas, diagrams, and handwriting.
+                  Enhanced OCR accurately deciphers cursive handwriting, fast lecture shorthand, diagrams, and math formulas.
                 </p>
               </div>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-mono text-slate-300 mt-1">
-                Supports JPG, PNG, WEBP (Max 20MB)
+                Supports Cursive & Print • JPG, PNG, WEBP (Max 20MB)
               </span>
             </div>
           </div>
@@ -390,10 +416,34 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
                 </p>
               </div>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-mono text-slate-300 mt-1">
-                PDF, TXT, DOCX
+                Supports PDF, TXT, MD, DOCX (Max 20MB)
               </span>
             </div>
           </div>
+
+          {(data.sourceFileBase64 || (data.sourceType === 'pdf' && data.sourceContent)) && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-900 border border-cyan-500/30">
+              <div className="w-11 h-11 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white truncate">
+                  {data.sourceTitle || 'Uploaded Study Document'}
+                </p>
+                <p className="text-[11px] text-emerald-400 font-mono flex items-center gap-1">
+                  <span>✓</span> Document Content Indexed & Ready for Assessment
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearSource}
+                className="p-2 text-slate-400 hover:text-rose-400 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Remove uploaded document"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -404,10 +454,11 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
             <div className="relative flex-1">
               <Globe className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                type="url"
+                type="text"
+                inputMode="url"
                 value={webpageUrl}
                 onChange={(e) => setWebpageUrl(e.target.value)}
-                placeholder="https://en.wikipedia.org/wiki/Photosynthesis"
+                placeholder="Paste article or Wikipedia link (e.g. https://en.wikipedia.org/wiki/Photosynthesis)"
                 className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500 transition-colors"
               />
             </div>

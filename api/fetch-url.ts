@@ -1,3 +1,41 @@
+import { GoogleGenAI } from '@google/genai';
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
+export const maxDuration = 60;
+
+let aiClient: GoogleGenAI | null = null;
+function getAIClient(): GoogleGenAI {
+  const possibleKeys = [
+    process.env.GEMINI_API_KEY,
+    process.env.API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+  ].filter(Boolean);
+
+  const apiKey = possibleKeys[0];
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY environment variable is required');
+  }
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build-vercel',
+        },
+      },
+    });
+  }
+  return aiClient;
+}
+
 async function parseBody(req: any): Promise<any> {
   if (req.body) {
     if (typeof req.body === 'string') {
@@ -28,6 +66,31 @@ async function parseBody(req: any): Promise<any> {
   return {};
 }
 
+// Clean HTML into readable academic study text
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<br\s*[\/]?>/gi, '\n')
+    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr)>/gi, '\n')
+    .replace(/<[^>]*>?/gm, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n\n')
+    .trim();
+}
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -52,9 +115,15 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'A valid URL string is required.' });
     }
 
+    // Auto-normalize URL protocol if user omitted "https://"
+    let cleanUrl = url.trim();
+    if (!/^https?:\/\//i.test(cleanUrl)) {
+      cleanUrl = `https://${cleanUrl}`;
+    }
+
     let parsedUrl: URL;
     try {
-      parsedUrl = new URL(url);
+      parsedUrl = new URL(cleanUrl);
       if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
         return res.status(400).json({ error: 'Only HTTP and HTTPS URLs are supported.' });
       }
@@ -62,53 +131,151 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Invalid URL format provided.' });
     }
 
-    const response = await fetch(parsedUrl.toString(), {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 UQuizBot/1.0',
-        'Accept': 'text/html,application/xhtml+xml,text/plain;q=0.9',
-      },
-      signal: AbortSignal.timeout(12000),
-    });
+    // PATH 1: Dedicated Wikipedia REST API for clean, authoritative encyclopedia articles
+    const wikiMatch = cleanUrl.match(/https?:\/\/([a-z0-9-]+)\.wikipedia\.org\/wiki\/([^#?]+)/i);
+    if (wikiMatch) {
+      try {
+        const lang = wikiMatch[1];
+        const pageTitle = decodeURIComponent(wikiMatch[2]).replace(/_/g, ' ');
+        const wikiApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1`;
 
-    if (!response.ok) {
-      return res.status(400).json({
-        error: `Could not fetch webpage (HTTP ${response.status}: ${response.statusText})`,
-      });
+        const wikiRes = await fetch(wikiApiUrl, {
+          headers: {
+            'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
+            'Accept': 'application/json',
+          },
+          signal: AbortSignal.timeout(12000),
+        });
+
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          const pages = wikiData.query?.pages || {};
+          const pageId = Object.keys(pages)[0];
+          if (pageId && pageId !== '-1' && pages[pageId]?.extract) {
+            const page = pages[pageId];
+            const text = (page.extract as string).slice(0, 40000);
+            const wordCount = text.split(/\s+/).filter(Boolean).length;
+            return res.status(200).json({
+              title: page.title || pageTitle,
+              text,
+              wordCount,
+              url: cleanUrl,
+            });
+          }
+        }
+      } catch (wikiErr) {
+        console.warn('Wikipedia API fetch notice, falling back to standard fetch:', wikiErr);
+      }
     }
 
-    const html = await response.text();
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : parsedUrl.hostname;
+    // PATH 2: Dedicated Google Docs export
+    const gdocsMatch = cleanUrl.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/i);
+    if (gdocsMatch) {
+      try {
+        const docId = gdocsMatch[1];
+        const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+        const gdocRes = await fetch(exportUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+          },
+          signal: AbortSignal.timeout(12000),
+        });
+        if (gdocRes.ok) {
+          const docText = await gdocRes.text();
+          if (docText && docText.length > 50) {
+            const text = docText.slice(0, 40000);
+            const wordCount = text.split(/\s+/).filter(Boolean).length;
+            return res.status(200).json({
+              title: 'Google Doc Study Notes',
+              text,
+              wordCount,
+              url: cleanUrl,
+            });
+          }
+        }
+      } catch (gdocErr) {
+        console.warn('Google Doc export notice:', gdocErr);
+      }
+    }
 
-    const cleanText = html
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
-      .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-      .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-      .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-      .replace(/<[^>]*>?/gm, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // PATH 3: Standard Webpage Direct Fetch with Real Browser Headers
+    let fetchError: Error | null = null;
+    try {
+      const response = await fetch(parsedUrl.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'Cache-Control': 'no-cache',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(14000),
+      });
 
-    const truncatedText = cleanText.slice(0, 35000);
-    const wordCount = truncatedText.split(/\s+/).filter(Boolean).length;
+      if (response.ok) {
+        const html = await response.text();
+        const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        const title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : parsedUrl.hostname;
 
-    return res.status(200).json({
-      title,
-      text: truncatedText,
-      wordCount,
-      url: parsedUrl.toString(),
+        const cleanText = stripHtml(html);
+        if (cleanText.length >= 150) {
+          const truncatedText = cleanText.slice(0, 40000);
+          const wordCount = truncatedText.split(/\s+/).filter(Boolean).length;
+          return res.status(200).json({
+            title,
+            text: truncatedText,
+            wordCount,
+            url: parsedUrl.toString(),
+          });
+        }
+      }
+    } catch (err: any) {
+      fetchError = err;
+      console.warn(`Direct fetch failed for ${cleanUrl} (${err.message}). Activating Gemini search grounding fallback...`);
+    }
+
+    // PATH 4: Intelligent Gemini Google Search Grounding Fallback
+    // If the website has anti-bot protections (Cloudflare 403), captcha, or dynamic single-page javascript rendering:
+    try {
+      const ai = getAIClient();
+      const searchPrompt = `Extract the full comprehensive academic syllabus, key concepts, detailed definitions, formulas, and educational notes from the webpage at: ${cleanUrl}.
+Provide a thorough, richly detailed study summary (aim for 600-1500 words) formatted clearly into academic sections, covering all core facts so an examiner can formulate quiz questions directly from it.`;
+
+      const aiResponse = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: searchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const extractedText = aiResponse.text?.trim();
+      if (extractedText && extractedText.length > 80) {
+        const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+        const fallbackTitle = parsedUrl.pathname.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || parsedUrl.hostname;
+        return res.status(200).json({
+          title: fallbackTitle.charAt(0).toUpperCase() + fallbackTitle.slice(1),
+          text: extractedText,
+          wordCount,
+          url: cleanUrl,
+        });
+      }
+    } catch (aiErr: any) {
+      console.error('Gemini Search Grounding fallback failed:', aiErr);
+    }
+
+    return res.status(400).json({
+      error: `Could not access webpage (${cleanUrl}). The site may require a login or private network access. You can also paste the text directly into the study notes area.`,
     });
   } catch (error: any) {
     console.error('Fetch URL error:', error);
     return res.status(500).json({
-      error: error.message || 'Failed to fetch webpage content. You can also copy and paste the text directly.',
+      error: error.message || 'Failed to access webpage content. You can also copy and paste the text directly.',
     });
   }
 }

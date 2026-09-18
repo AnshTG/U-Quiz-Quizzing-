@@ -1,5 +1,13 @@
 import { GoogleGenAI, Type } from '@google/genai';
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '25mb',
+    },
+  },
+};
+
 export const maxDuration = 60;
 
 function getAIClient(): { ai: GoogleGenAI; keyFound: boolean; keySource: string } {
@@ -178,6 +186,7 @@ USER CUSTOM INSTRUCTIONS: None provided. Generate balanced questions conforming 
 
     let sourceContext = '';
     if (isCustomSource) {
+      const hasAttachedFile = !!config.sourceFileBase64;
       sourceContext = `
 ASSESSMENT SOURCE TYPE: ${(config.sourceType || 'CUSTOM').toUpperCase()}
 SOURCE TITLE: ${config.sourceTitle || 'Custom Study Material'}
@@ -185,13 +194,20 @@ TARGET LEVEL/GRADE: ${config.class || 'Academic Assessment'}
 SUBJECT/FIELD: ${config.subject || 'General Academic'}
 
 CORE SOURCE MATERIAL FOR ASSESSMENT:
-- Generate questions strictly from the facts, concepts, definitions, formulas, problems, and details in the source content provided below (or attached file).
+${hasAttachedFile ? `
+- MULTIMODAL SOURCE DOCUMENT ATTACHED: The user has attached an official study document/PDF file as multimodal input.
+- INSTRUCTION: Analyze the text, formulas, definitions, diagrams, and solved examples across all pages of the attached document.
+- QUESTION FORMULATION: Generate all ${quantity} questions strictly and directly from the concepts, facts, formulas, and laws in the attached document.
+- In each question rationale, reference the specific section or concept from the attached document.
+` : `
+- Generate questions strictly from the facts, concepts, definitions, formulas, problems, and details in the source content provided below.
 - If the source material contains specific numerical values, derivations, laws, or examples, test them thoroughly.
 - Formulate step-by-step rationales referencing the source content.
 
 --- BEGIN SOURCE CONTENT ---
-${config.sourceContent ? config.sourceContent.slice(0, 35000) : 'See attached document/image file.'}
+${config.sourceContent ? config.sourceContent.slice(0, 35000) : 'Generate questions appropriate for the specified grade and subject.'}
 --- END SOURCE CONTENT ---
+`}
 `;
     } else {
       sourceContext = `
@@ -235,14 +251,30 @@ ACADEMIC CONTEXT:
 
     // Build contents parts (supports text prompt + optional multimodal image/PDF attachment)
     const contentParts: any[] = [];
-    if (config.sourceFileBase64 && config.sourceMimeType) {
-      const cleanFileBase64 = config.sourceFileBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '');
-      contentParts.push({
-        inlineData: {
-          mimeType: config.sourceMimeType,
-          data: cleanFileBase64,
-        },
-      });
+    if (config.sourceFileBase64) {
+      const cleanFileBase64 = config.sourceFileBase64
+        .replace(/^data:[^;]+;base64,/, '')
+        .replace(/\s+/g, '');
+
+      let normalizedMime = config.sourceMimeType || 'application/pdf';
+      if (normalizedMime.includes('pdf') || config.sourceType === 'pdf') {
+        normalizedMime = 'application/pdf';
+      } else if (normalizedMime.includes('png')) {
+        normalizedMime = 'image/png';
+      } else if (normalizedMime.includes('jpeg') || normalizedMime.includes('jpg')) {
+        normalizedMime = 'image/jpeg';
+      } else if (normalizedMime.includes('webp')) {
+        normalizedMime = 'image/webp';
+      }
+
+      if (cleanFileBase64.length > 0) {
+        contentParts.push({
+          inlineData: {
+            mimeType: normalizedMime,
+            data: cleanFileBase64,
+          },
+        });
+      }
     }
     contentParts.push({ text: prompt });
 
