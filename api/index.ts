@@ -599,6 +599,11 @@ app.post(['/api/chat', '/chat', '/api/gemini/chat', '/gemini/chat', '/api/ai/cha
       - For mathematical formulas and scientific notations, use clean readable formats (e.g. 1/2, x^2, H2O, or standard LaTeX $...$ for complex symbols).
       - Keep explanations engaging, direct, and structured.
       - Provide step-by-step solutions for numerical problems.
+
+      ACADEMIC TESTABILITY ASSESSMENT (CRITICAL MANDATE):
+      At the very end of your response, on a clean new line, evaluate whether your response explains an academic concept, rule, formula, process, theorem, or fact suitable for testing the student's understanding with practice quiz questions.
+      - If your response teaches or explains substantive academic concepts suitable for testing: append <!-- TESTABLE: true -->
+      - If your response is NOT suitable for a test (e.g. a greeting, pleasantry, clarification question, meta-discussion, brief acknowledgment, or general study advice without specific testable facts): append <!-- TESTABLE: false -->
     `.trim();
 
     const formattedContents = messages.map((m: any) => ({
@@ -640,7 +645,21 @@ app.post(['/api/chat', '/chat', '/api/gemini/chat', '/gemini/chat', '/api/ai/cha
       throw new Error(lastErr?.message || 'Empty response from AI study mentor.');
     }
 
-    return res.json({ reply: response.text });
+    const rawText = response.text || '';
+    const testableMatch = rawText.match(/<!--\s*TESTABLE:\s*(true|false)\s*-->/i);
+    let isTestable = false;
+    let cleanReply = rawText;
+
+    if (testableMatch) {
+      isTestable = testableMatch[1].toLowerCase() === 'true';
+      cleanReply = rawText.replace(/<!--\s*TESTABLE:\s*(true|false)\s*-->/gi, '').trim();
+    } else {
+      const isGreeting = /^(hi|hello|hey|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(cleanReply.trim());
+      const isClarification = cleanReply.length < 120 && /\?$/.test(cleanReply.trim()) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(cleanReply);
+      isTestable = !isGreeting && !isClarification && cleanReply.length > 80;
+    }
+
+    return res.json({ reply: cleanReply, isTestable });
   } catch (error: any) {
     console.error('Gemini Chat API error:', error);
     return res.status(500).json({

@@ -13,7 +13,7 @@ if (typeof window !== 'undefined' && !(window as any).katex) {
 if (typeof globalThis !== 'undefined' && !(globalThis as any).katex) {
   (globalThis as any).katex = katex;
 }
-import 'katex/dist/contrib/mhchem.js';
+import 'katex/contrib/mhchem';
 
 interface MathTextProps {
   content: string;
@@ -33,6 +33,18 @@ const UNICODE_SUPERSCRIPTS: Record<string, string> = {
   '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
   '⁺': '+', '⁻': '-', '⁽': '(', '⁾': ')'
 };
+
+function findBalancedBrace(str: string, openIdx: number): number {
+  let depth = 0;
+  for (let i = openIdx; i < str.length; i++) {
+    if (str[i] === '{') depth++;
+    else if (str[i] === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
 
 function isLikelyChemicalEquation(str: string): boolean {
   if (!/(?:->|-->|→|\\rightarrow|⇌|<=>|\\rightleftharpoons)/.test(str)) return false;
@@ -73,8 +85,9 @@ export function sanitizeAndFormatMath(rawContent: string): string {
   text = text.replace(/\\+rac\{([^{}]+)\}\{([^{}]+)\}/gi, '\\frac{$1}{$2}');
   text = text.replace(/(^|[^\\])\brac\{([^{}]+)\}\{([^{}]+)\}/g, '$1\\frac{$2}{$3}');
 
-  // 3b. Fix forward-slash /ce expressions (e.g. /ce{...}, /ce H2O)
-  text = text.replace(/\/ce\{/gi, '\\ce{');
+  // 3b. Fix forward-slash /ce expressions and spaces before brace (e.g. /ce{...}, \ce {...}, /ce H2O)
+  text = text.replace(/\/ce\s*\{/gi, '\\ce{');
+  text = text.replace(/\\ce\s+\{/g, '\\ce{');
   text = text.replace(/(^|[\s$({[=+,><-])\/ce\b/gi, '$1\\ce');
 
   // 4. Fix tab-corrupted \text or units (e.g., 100extml -> 100 ml)
@@ -132,23 +145,11 @@ export function sanitizeAndFormatMath(rawContent: string): string {
     return _m;
   });
 
-  // 10. Iteratively unwrap any nested \ce{\ce{...}} or \ce{$\ce{...}$} or \ce{$...$}
-  let prev = '';
-  while (prev !== text) {
-    prev = text;
-    text = text.replace(/\\ce\{\s*\\ce\{([^{}]+)\}\s*\}/g, '\\ce{$1}');
-    text = text.replace(/\\ce\{\s*\$\\ce\{([^{}]+)\}\$\s*\}/g, '\\ce{$1}');
-    text = text.replace(/\\ce\{\s*\$([^{}$]+)\$\s*\}/g, '\\ce{$1}');
-    text = text.replace(/\$\\ce\{\s*\$\\ce\{([^{}]+)\}\$\s*\}\$/g, '$\\ce{$1}$');
-    // Remove dangling closing braces e.g. \ce{CO2}} -> \ce{CO2}
-    text = text.replace(/\\ce\{([^{}]+)\}\}/g, '\\ce{$1}');
-  }
-
-  // 11. Normalize degrees
+  // 10. Normalize degrees
   text = text.replace(/\\degree\s*C\b/g, '^{\\circ}\\mathrm{C}');
   text = text.replace(/\\degree/g, '^{\\circ}');
 
-  // 12. PROTECT existing math and \ce blocks before applying word-level regexes
+  // 11. PROTECT existing math and \ce blocks before applying word-level regexes
   const protectedBlocks: string[] = [];
   const protect = (blockContent: string): string => {
     const idx = protectedBlocks.length;
@@ -156,10 +157,47 @@ export function sanitizeAndFormatMath(rawContent: string): string {
     return `__MATH_PROTECTED_${idx}__`;
   };
 
-  // Protect $$...$$, $...$, and bare \ce{...}
+  // Protect $$...$$
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_m, inner) => protect(`$$${inner}$$`));
+  // Protect $...$
   text = text.replace(/\$([^\$\n]+)\$/g, (_m, inner) => protect(`$${inner}$`));
-  text = text.replace(/\\ce\{([^{}]+)\}/g, (_m, inner) => protect(`$\\ce{${inner}}$`));
+
+  // Protect bare \ce{...} using balanced brace parser
+  let ceParsedResult = '';
+  let lastCeIdx = 0;
+  let ceIdx = 0;
+  while ((ceIdx = text.indexOf('\\ce{', lastCeIdx)) !== -1) {
+    ceParsedResult += text.slice(lastCeIdx, ceIdx);
+    const openBrace = ceIdx + 3; // index of '{' in '\ce{'
+    const closeBrace = findBalancedBrace(text, openBrace);
+    if (closeBrace === -1) {
+      ceParsedResult += text.slice(ceIdx);
+      lastCeIdx = text.length;
+      break;
+    }
+
+    let inner = text.slice(openBrace + 1, closeBrace);
+
+    // Unwrap any redundant nested \ce{...}
+    while (inner.trim().startsWith('\\ce{')) {
+      const trimmed = inner.trim();
+      const innerOpen = trimmed.indexOf('{');
+      const innerClose = findBalancedBrace(trimmed, innerOpen);
+      if (innerClose !== -1) {
+        inner = trimmed.slice(innerOpen + 1, innerClose);
+      } else {
+        break;
+      }
+    }
+
+    // Clean hydrate dots in \ce e.g. CuSO4 \cdot 5H2O -> CuSO4 . 5H2O
+    inner = inner.replace(/·/g, '.').replace(/\\cdot/g, '.');
+
+    ceParsedResult += protect(`$\\ce{${inner.trim()}}$`);
+    lastCeIdx = closeBrace + 1;
+  }
+  ceParsedResult += text.slice(lastCeIdx);
+  text = ceParsedResult;
 
   // --- EVERYTHING BELOW RUNS ONLY ON PLAIN TEXT OUTSIDE FORMULAS ---
 
@@ -259,23 +297,55 @@ export function sanitizeAndFormatMath(rawContent: string): string {
 
     // Clean hydrate dots in \ce{...}
     if (block.includes('\\ce{')) {
-      block = block.replace(/\\ce\{([^}]+)\}/g, (_m2, ceInner) => {
-        let norm = ceInner.replace(/·/g, '.').replace(/\\cdot/g, '.');
-        return `\\ce{${norm}}`;
-      });
-      // Unwrap any nested \ce inside
-      while (/\\ce\{\s*\\ce\{([^{}]+)\}\s*\}/.test(block)) {
-        block = block.replace(/\\ce\{\s*\\ce\{([^{}]+)\}\s*\}/g, '\\ce{$1}');
+      let bResult = '';
+      let bLastIdx = 0;
+      let bIdx = 0;
+      while ((bIdx = block.indexOf('\\ce{', bLastIdx)) !== -1) {
+        bResult += block.slice(bLastIdx, bIdx);
+        const bOpen = bIdx + 3;
+        const bClose = findBalancedBrace(block, bOpen);
+        if (bClose === -1) {
+          bResult += block.slice(bIdx);
+          bLastIdx = block.length;
+          break;
+        }
+        let bInner = block.slice(bOpen + 1, bClose);
+        // Normalize hydrate dots inside ce: · and \cdot to .
+        bInner = bInner.replace(/·/g, '.').replace(/\\cdot/g, '.');
+        bResult += `\\ce{${bInner}}`;
+        bLastIdx = bClose + 1;
       }
-      // Remove any trailing unmatched brace
-      block = block.replace(/\\ce\{([^{}]+)\}\}/g, '\\ce{$1}');
+      bResult += block.slice(bLastIdx);
+      block = bResult;
     }
 
     return block;
   });
 
-  // Final sanity check: ensure any bare \ce{...} that might remain are wrapped in $...$
-  text = text.replace(/(?<!\$)\\ce\{((?:[^{}]|\{[^{}]*\})*)\}(?!\$)/g, '$\\ce{$1}$');
+  // Final sanity check: ensure any bare \ce{...} that might remain outside math are wrapped in $...$
+  let finalResult = '';
+  let fLastIdx = 0;
+  let fIdx = 0;
+  while ((fIdx = text.indexOf('\\ce{', fLastIdx)) !== -1) {
+    const isInsideMath = (fIdx > 0 && text[fIdx - 1] === '$');
+    finalResult += text.slice(fLastIdx, fIdx);
+    const fOpen = fIdx + 3;
+    const fClose = findBalancedBrace(text, fOpen);
+    if (fClose === -1) {
+      finalResult += text.slice(fIdx);
+      fLastIdx = text.length;
+      break;
+    }
+    const fInner = text.slice(fOpen + 1, fClose);
+    if (isInsideMath) {
+      finalResult += `\\ce{${fInner}}`;
+    } else {
+      finalResult += `$\\ce{${fInner}}$`;
+    }
+    fLastIdx = fClose + 1;
+  }
+  finalResult += text.slice(fLastIdx);
+  text = finalResult;
 
   return text;
 }

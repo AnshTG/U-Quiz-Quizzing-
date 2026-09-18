@@ -103,10 +103,15 @@ export interface GeminiChatQueryOptions {
   syllabusYear?: string;
 }
 
+export interface GeminiChatResponse {
+  reply: string;
+  isTestable: boolean;
+}
+
 export const sendGeminiStudyQuery = async (
   options: GeminiChatQueryOptions,
   signal?: AbortSignal
-): Promise<string> => {
+): Promise<GeminiChatResponse> => {
   const endpoints = ['/api/chat', '/api/gemini/chat', '/gemini/chat'];
   let lastError: Error | null = null;
 
@@ -131,11 +136,31 @@ export const sendGeminiStudyQuery = async (
       }
 
       const data = await res.json();
-      if (!data || !data.reply) {
+      if (!data || typeof data.reply !== 'string') {
         throw new Error('No response received from AI Study Tutor.');
       }
 
-      return data.reply;
+      const rawReply = data.reply || '';
+      let isTestable = data.isTestable;
+
+      // Extract and clean tag if present in reply text
+      let cleanReply = rawReply;
+      const testableMatch = rawReply.match(/<!--\s*TESTABLE:\s*(true|false)\s*-->/i);
+      if (testableMatch) {
+        isTestable = testableMatch[1].toLowerCase() === 'true';
+        cleanReply = rawReply.replace(/<!--\s*TESTABLE:\s*(true|false)\s*-->/gi, '').trim();
+      }
+
+      if (typeof isTestable !== 'boolean') {
+        const isGreeting = /^(hi|hello|hey|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(cleanReply.trim());
+        const isClarification = cleanReply.length < 120 && /\?$/.test(cleanReply.trim()) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(cleanReply);
+        isTestable = !isGreeting && !isClarification && cleanReply.length > 80;
+      }
+
+      return {
+        reply: cleanReply,
+        isTestable: Boolean(isTestable)
+      };
     } catch (err: any) {
       if (err.name === 'AbortError') {
         throw new Error('Query was cancelled.');

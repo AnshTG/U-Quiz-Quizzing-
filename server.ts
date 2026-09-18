@@ -617,7 +617,11 @@ ACADEMIC CONTEXT:
         - Keep explanations engaging, direct, and structured. Avoid unnecessary conversational filler or overly long introductions.
         - Provide step-by-step solutions for numerical problems with clearly numbered steps.
         - When relevant, include a brief mnemonic, NCERT textbook activity reference, or practical memory tip.
-        - Conclude with a friendly 1-question check or quick question to test understanding.
+
+        ACADEMIC TESTABILITY ASSESSMENT (CRITICAL MANDATE):
+        At the very end of your response, on a clean new line, evaluate whether your response explains an academic concept, rule, formula, process, theorem, or fact suitable for testing the student's understanding with practice quiz questions.
+        - If your response teaches or explains substantive academic concepts suitable for testing: append <!-- TESTABLE: true -->
+        - If your response is NOT suitable for a test (e.g. a greeting, pleasantry, clarification question, meta-discussion, brief acknowledgment, or general study advice without specific testable facts): append <!-- TESTABLE: false -->
       `.trim();
 
       // Prepare contents history
@@ -656,8 +660,21 @@ ACADEMIC CONTEXT:
         throw new Error(lastChatErr?.message || "Failed to generate AI study tutor response");
       }
 
-      const replyText = response.text || "I apologize, but I could not generate a response. Please try rephrasing your question.";
-      return res.json({ reply: replyText });
+      const rawText = response.text || "I apologize, but I could not generate a response. Please try rephrasing your question.";
+      const testableMatch = rawText.match(/<!--\s*TESTABLE:\s*(true|false)\s*-->/i);
+      let isTestable = false;
+      let cleanReply = rawText;
+
+      if (testableMatch) {
+        isTestable = testableMatch[1].toLowerCase() === 'true';
+        cleanReply = rawText.replace(/<!--\s*TESTABLE:\s*(true|false)\s*-->/gi, '').trim();
+      } else {
+        const isGreeting = /^(hi|hello|hey|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(cleanReply.trim());
+        const isClarification = cleanReply.length < 120 && /\?$/.test(cleanReply.trim()) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(cleanReply);
+        isTestable = !isGreeting && !isClarification && cleanReply.length > 80;
+      }
+
+      return res.json({ reply: cleanReply, isTestable });
     } catch (error: any) {
       console.error("Gemini Chat API error:", error);
       return res.status(500).json({

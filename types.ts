@@ -162,6 +162,7 @@ export interface GeminiChatMessage {
   subjectContext?: string;
   classContext?: string;
   reactions?: Record<string, number>; // emoji -> count
+  isTestable?: boolean; // Evaluated by AI tutor if the response explains testable academic concepts
 }
 
 export interface MaintenanceConfig {

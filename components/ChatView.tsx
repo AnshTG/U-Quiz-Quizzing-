@@ -112,7 +112,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         timestamp: Date.now(),
         subjectContext: 'All Subjects',
         classContext: 'All Classes (1-12)',
-        reactions: { '💡': 1 }
+        reactions: { '💡': 1 },
+        isTestable: false
       }
     ];
   });
@@ -242,7 +243,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         content: m.content
       }));
 
-      const reply = await sendGeminiStudyQuery({
+      const { reply, isTestable } = await sendGeminiStudyQuery({
         messages: apiMessages,
         classContext: selectedClass.startsWith('All') ? undefined : selectedClass,
         subjectContext: selectedSubject.startsWith('All') ? undefined : selectedSubject,
@@ -255,7 +256,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         content: reply,
         timestamp: Date.now(),
         subjectContext: selectedSubject,
-        classContext: selectedClass
+        classContext: selectedClass,
+        isTestable: isTestable
       };
 
       setGeminiMessages(prev => [...prev, aiMsg]);
@@ -265,12 +267,23 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         id: `ai_err_${Date.now()}`,
         role: 'model',
         content: `**Apologies!** I encountered a temporary error (${err.message || 'Network issue'}). Please try asking again or rephrasing your question.`,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        isTestable: false
       };
       setGeminiMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsGeneratingAi(false);
     }
+  };
+
+  // Helper to evaluate if a message is suitable for testing
+  const isMessageTestable = (msg: GeminiChatMessage): boolean => {
+    if (typeof msg.isTestable === 'boolean') return msg.isTestable;
+    if (msg.id === 'welcome_ai_msg' || msg.role === 'user') return false;
+    const text = msg.content || '';
+    const isGreeting = /^(hi|hello|hey|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(text.trim());
+    const isClarification = text.length < 120 && /\?$/.test(text.trim()) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(text);
+    return !isGreeting && !isClarification && text.length > 80;
   };
 
   // React to Gemini Message
@@ -735,8 +748,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                         <MathText content={msg.content} />
                       </div>
 
-                      {/* Interactive AI Suggestion Pill inside bubble */}
-                      {!isUser && (
+                      {/* Interactive AI Suggestion Pill inside bubble - only on suitable responses */}
+                      {!isUser && isMessageTestable(msg) && (
                         <div className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-[#2a3942]/50">
                           <button
                             type="button"
