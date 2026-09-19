@@ -181,7 +181,11 @@ export const SetupView: React.FC<SetupViewProps> = ({
     if (generationMode === 'custom') {
       const hasContent = !!customSourceData.sourceContent.trim() || !!customSourceData.sourceFileBase64;
       if (!hasContent) {
-        setValidationError('Please upload a notes image, PDF document, webpage link, or paste study content in the Custom Source section.');
+        if (customSourceData.sourceType === 'webpage') {
+          setValidationError('Please enter a webpage URL and click "Fetch Webpage" to extract the study text, or paste your notes directly into the study content field.');
+        } else {
+          setValidationError('Please upload a notes image, PDF document, webpage link, or paste study content in the Custom Source section.');
+        }
         return;
       }
       if (!strength) {

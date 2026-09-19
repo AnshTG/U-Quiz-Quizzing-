@@ -231,13 +231,23 @@ export const transcribeNotesImage = async (
 /**
  * Parse Wikipedia language code and page title from Wikipedia desktop, mobile, or index URLs
  */
-export function parseWikipediaUrl(rawUrl: string): { lang: string; title: string } | null {
+export function parseWikipediaUrl(rawUrl: string): { lang: string; title: string; domain: string } | null {
   try {
     const urlStr = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
     const parsed = new URL(urlStr);
-    const hostMatch = parsed.hostname.match(/^([a-z0-9-]+)(?:\.m)?\.wikipedia\.org$/i);
-    if (!hostMatch) return null;
-    const lang = hostMatch[1].toLowerCase();
+    const hostMatch = parsed.hostname.match(/^([a-z0-9-]+)(?:\.m)?\.(wikipedia|wikibooks|wikiversity)\.org$/i);
+    let lang = 'en';
+    let domain = 'wikipedia.org';
+
+    if (hostMatch) {
+      lang = hostMatch[1].toLowerCase();
+      domain = `${hostMatch[2].toLowerCase()}.org`;
+    } else if (/wikipedia\.org$/i.test(parsed.hostname)) {
+      lang = 'en';
+      domain = 'wikipedia.org';
+    } else {
+      return null;
+    }
 
     let title = '';
     if (parsed.pathname.startsWith('/wiki/')) {
@@ -248,7 +258,7 @@ export function parseWikipediaUrl(rawUrl: string): { lang: string; title: string
     }
 
     if (!title) return null;
-    return { lang, title: title.replace(/_/g, ' ').trim() };
+    return { lang, title: title.replace(/_/g, ' ').trim(), domain };
   } catch {
     return null;
   }
@@ -267,11 +277,11 @@ export const fetchWikipediaDirect = async (
     throw new Error('Not a recognized Wikipedia article URL format.');
   }
 
-  const { lang, title } = parsed;
+  const { lang, title, domain } = parsed;
 
-  // Step 1: Query Wikipedia Action API extracts with automatic redirects and CORS origin=*
+  // Step 1: Query Action API extracts with automatic redirects and CORS origin=*
   try {
-    const apiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
+    const apiUrl = `https://${lang}.${domain}/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(title)}&redirects=1&origin=*`;
     const res = await fetch(apiUrl, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
@@ -296,7 +306,7 @@ export const fetchWikipediaDirect = async (
           title: page.title || title,
           text: cleanExtract.slice(0, 50000),
           wordCount: words,
-          url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title || title)}`,
+          url: `https://${lang}.${domain}/wiki/${encodeURIComponent(page.title || title)}`,
         };
       }
     }
@@ -306,7 +316,7 @@ export const fetchWikipediaDirect = async (
 
   // Step 2: Wikipedia Search Generator fallback (resolves titles with slight spelling variations)
   try {
-    const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(title)}&gsrlimit=1&prop=extracts&explaintext=1&format=json&origin=*`;
+    const searchUrl = `https://${lang}.${domain}/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(title)}&gsrlimit=1&prop=extracts&explaintext=1&format=json&origin=*`;
     const res = await fetch(searchUrl, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
@@ -331,7 +341,7 @@ export const fetchWikipediaDirect = async (
           title: page.title || title,
           text: cleanExtract.slice(0, 50000),
           wordCount: words,
-          url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page.title || title)}`,
+          url: `https://${lang}.${domain}/wiki/${encodeURIComponent(page.title || title)}`,
         };
       }
     }
@@ -341,7 +351,7 @@ export const fetchWikipediaDirect = async (
 
   // Step 3: Wikipedia REST v1 page summary endpoint
   try {
-    const restUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+    const restUrl = `https://${lang}.${domain}/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
     const res = await fetch(restUrl, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
@@ -356,7 +366,7 @@ export const fetchWikipediaDirect = async (
           title: data.title || title,
           text: fullContent,
           wordCount: fullContent.split(/\s+/).filter(Boolean).length,
-          url: data.content_urls?.desktop?.page || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+          url: data.content_urls?.desktop?.page || `https://${lang}.${domain}/wiki/${encodeURIComponent(title)}`,
         };
       }
     }
@@ -364,7 +374,7 @@ export const fetchWikipediaDirect = async (
     if (err.name === 'AbortError') throw err;
   }
 
-  throw new Error(`The Wikipedia page for "${title}" could not be located on Wikipedia. Please verify the topic title.`);
+  throw new Error(`The article "${title}" could not be located on Wikipedia. Please verify the topic title.`);
 };
 
 /**
@@ -374,14 +384,39 @@ export const fetchWebpageContent = async (
   url: string,
   signal?: AbortSignal
 ): Promise<{ title: string; text: string; wordCount: number; url: string }> => {
-  // If the target is a Wikipedia URL, prioritize direct browser extraction
-  // This guarantees fast results and immunizes users against serverless 404s and proxy gateways
-  if (/wikipedia\.org/i.test(url)) {
+  const cleanUrl = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
+
+  // If the target is a Wikipedia/Wikimedia URL, prioritize direct browser extraction
+  // This guarantees instantaneous results and immunizes users against serverless 404s and proxy gateways
+  if (/wiki(pedia|books|versity)\.org/i.test(cleanUrl)) {
     try {
-      return await fetchWikipediaDirect(url, signal);
+      return await fetchWikipediaDirect(cleanUrl, signal);
     } catch (wikiErr: any) {
       if (wikiErr.name === 'AbortError') throw wikiErr;
       console.warn('Direct Wikipedia fetch encountered issue, attempting backend endpoint fallback:', wikiErr);
+    }
+  }
+
+  // Direct Google Docs public export check
+  const gdocsMatch = cleanUrl.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/i);
+  if (gdocsMatch) {
+    try {
+      const docId = gdocsMatch[1];
+      const gdocRes = await fetch(`https://docs.google.com/document/d/${docId}/export?format=txt`, { signal });
+      if (gdocRes.ok) {
+        const text = await gdocRes.text();
+        if (text && text.trim().length >= 50) {
+          const words = text.trim().split(/\s+/).filter(Boolean).length;
+          return {
+            title: 'Google Doc Study Material',
+            text: text.slice(0, 45000),
+            wordCount: words,
+            url: cleanUrl,
+          };
+        }
+      }
+    } catch {
+      // Continue to endpoints
     }
   }
 
@@ -396,7 +431,7 @@ export const fetchWebpageContent = async (
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: cleanUrl }),
         signal,
       });
 
@@ -410,10 +445,10 @@ export const fetchWebpageContent = async (
 
       const data = await res.json();
       return {
-        title: data.title || url,
+        title: data.title || cleanUrl,
         text: data.text || '',
         wordCount: data.wordCount || 0,
-        url: data.url || url,
+        url: data.url || cleanUrl,
       };
     } catch (err: any) {
       if (err.name === 'AbortError') {
@@ -424,6 +459,38 @@ export const fetchWebpageContent = async (
         break;
       }
     }
+  }
+
+  // High-resilience client-side reader mode fallback
+  // Automatically extracts academic article contents if the serverless endpoint is unreachable
+  try {
+    const readerRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
+      headers: { 'Accept': 'text/plain' },
+      signal,
+    });
+    if (readerRes.ok) {
+      const markdown = await readerRes.text();
+      if (markdown && markdown.length > 80) {
+        const titleMatch = markdown.match(/Title:\s*(.+)$/im) || markdown.match(/^#+\s+(.+)$/m);
+        const hostname = new URL(cleanUrl).hostname;
+        const title = titleMatch ? titleMatch[1].trim() : hostname;
+        const cleanContent = markdown
+          .replace(/URL Source:[\s\S]*?Markdown Content:/i, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .trim();
+        const words = cleanContent.split(/\s+/).filter(Boolean).length;
+        if (words >= 25) {
+          return {
+            title,
+            text: cleanContent.slice(0, 45000),
+            wordCount: words,
+            url: cleanUrl,
+          };
+        }
+      }
+    }
+  } catch (readerErr: any) {
+    if (readerErr.name === 'AbortError') throw readerErr;
   }
 
   throw lastError || new Error('Failed to fetch webpage content. Please check the URL or paste notes manually.');
