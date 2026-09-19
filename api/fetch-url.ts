@@ -48,6 +48,22 @@ async function parseBody(req: any): Promise<any> {
     return req.body;
   }
 
+  if (typeof req.on === 'function') {
+    const buffers: any[] = [];
+    return new Promise((resolve) => {
+      req.on('data', (chunk: any) => buffers.push(chunk));
+      req.on('end', () => {
+        try {
+          const raw = Buffer.concat(buffers).toString('utf-8');
+          resolve(raw ? JSON.parse(raw) : {});
+        } catch {
+          resolve({});
+        }
+      });
+      req.on('error', () => resolve({}));
+    });
+  }
+
   if (typeof req[Symbol.asyncIterator] === 'function') {
     const buffers: any[] = [];
     for await (const chunk of req) {
@@ -131,36 +147,90 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'Invalid URL format provided.' });
     }
 
-    // PATH 1: Dedicated Wikipedia REST API for clean, authoritative encyclopedia articles
-    const wikiMatch = cleanUrl.match(/https?:\/\/([a-z0-9-]+)\.wikipedia\.org\/wiki\/([^#?]+)/i);
+    // PATH 1: Dedicated Wikipedia REST & Action API for clean encyclopedia articles
+    const wikiMatch = cleanUrl.match(/https?:\/\/([a-z0-9-]+)(?:\.m)?\.wikipedia\.org\/(?:wiki\/([^#?]+)|w\/index\.php\?title=([^#?&]+))/i);
     if (wikiMatch) {
       try {
-        const lang = wikiMatch[1];
-        const pageTitle = decodeURIComponent(wikiMatch[2]).replace(/_/g, ' ');
-        const wikiApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1`;
+        const lang = wikiMatch[1].toLowerCase();
+        const rawTitle = wikiMatch[2] || wikiMatch[3] || '';
+        const pageTitle = decodeURIComponent(rawTitle).split('#')[0].split('?')[0].replace(/_/g, ' ').trim();
 
-        const wikiRes = await fetch(wikiApiUrl, {
-          headers: {
-            'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
-            'Accept': 'application/json',
-          },
-          signal: AbortSignal.timeout(12000),
-        });
+        if (pageTitle) {
+          // 1. Direct query with plain-text extract, auto-redirects, and origin=*
+          const wikiApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1&origin=*`;
 
-        if (wikiRes.ok) {
-          const wikiData = await wikiRes.json();
-          const pages = wikiData.query?.pages || {};
-          const pageId = Object.keys(pages)[0];
-          if (pageId && pageId !== '-1' && pages[pageId]?.extract) {
-            const page = pages[pageId];
-            const text = (page.extract as string).slice(0, 40000);
-            const wordCount = text.split(/\s+/).filter(Boolean).length;
-            return res.status(200).json({
-              title: page.title || pageTitle,
-              text,
-              wordCount,
-              url: cleanUrl,
-            });
+          const wikiRes = await fetch(wikiApiUrl, {
+            headers: {
+              'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
+              'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(12000),
+          });
+
+          if (wikiRes.ok) {
+            const wikiData = await wikiRes.json();
+            const pages = wikiData.query?.pages || {};
+            const pageId = Object.keys(pages)[0];
+            if (pageId && pageId !== '-1' && pages[pageId]?.extract) {
+              const page = pages[pageId];
+              const text = (page.extract as string).slice(0, 45000);
+              const wordCount = text.split(/\s+/).filter(Boolean).length;
+              return res.status(200).json({
+                title: page.title || pageTitle,
+                text,
+                wordCount,
+                url: cleanUrl,
+              });
+            }
+          }
+
+          // 2. Search generator fallback in case of typo or case discrepancy
+          const searchApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(pageTitle)}&gsrlimit=1&prop=extracts&explaintext=1&format=json&origin=*`;
+          const searchRes = await fetch(searchApiUrl, {
+            headers: {
+              'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
+              'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            const pages = searchData.query?.pages || {};
+            const pageId = Object.keys(pages)[0];
+            if (pageId && pages[pageId]?.extract) {
+              const page = pages[pageId];
+              const text = (page.extract as string).slice(0, 45000);
+              const wordCount = text.split(/\s+/).filter(Boolean).length;
+              return res.status(200).json({
+                title: page.title || pageTitle,
+                text,
+                wordCount,
+                url: cleanUrl,
+              });
+            }
+          }
+
+          // 3. REST v1 summary fallback
+          const restSummaryUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+          const restRes = await fetch(restSummaryUrl, {
+            headers: {
+              'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
+              'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (restRes.ok) {
+            const restData = await restRes.json();
+            if (restData && restData.extract) {
+              const text = `${restData.title}\n\n${restData.extract}`;
+              return res.status(200).json({
+                title: restData.title || pageTitle,
+                text,
+                wordCount: text.split(/\s+/).filter(Boolean).length,
+                url: cleanUrl,
+              });
+            }
           }
         }
       } catch (wikiErr) {

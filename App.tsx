@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, QuizConfig, Question, QuizResultRecord, SyllabusYear, UserProfile, MaintenanceConfig } from './types';
+import { AppState, QuizConfig, Question, QuizResultRecord, SyllabusYear, UserProfile, MaintenanceConfig, FeatureKey } from './types';
 import { generateQuestions } from './services/geminiService';
 import { 
   listenToAuthChanges, 
@@ -34,8 +34,10 @@ import { LoginView } from './components/LoginView';
 import { LandingHomeView } from './components/LandingHomeView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
+import { FeatureMaintenanceModal } from './components/FeatureMaintenanceModal';
 import { PRE_SAVED_BENCHMARK_QUIZZES } from './data/presavedQuizzes';
 import { AlertCircle, X, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { validateQuizSubmissionIntegrity } from './services/securityService';
 
 const STORAGE_KEY = 'uquiz_ncert_history_v1';
 
@@ -112,6 +114,7 @@ export default function App() {
   // Maintenance mode state
   const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
   const [isMaintenanceChecking, setIsMaintenanceChecking] = useState<boolean>(true);
+  const [blockedFeatureKey, setBlockedFeatureKey] = useState<FeatureKey | null>(null);
 
   // Listen to Maintenance mode
   useEffect(() => {
@@ -344,6 +347,10 @@ export default function App() {
 
   // Redirect to Custom Quiz Creation Page (Notes / PDF / OCR)
   const handleOpenCustomQuiz = () => {
+    if (!isAdminUnlocked && maintenanceConfig.features?.quiz_generation?.isUnderMaintenance) {
+      setBlockedFeatureKey('quiz_generation');
+      return;
+    }
     setCurrentConfig({
       class: '',
       subject: '',
@@ -359,6 +366,10 @@ export default function App() {
 
   // Start generating customized quiz questions
   const handleStartQuiz = async (config: QuizConfig) => {
+    if (!isAdminUnlocked && maintenanceConfig.features?.quiz_generation?.isUnderMaintenance) {
+      setBlockedFeatureKey('quiz_generation');
+      return;
+    }
     setCurrentConfig(config);
     setError(null);
     navigateTo(AppState.LOADING);
@@ -419,12 +430,24 @@ export default function App() {
     setUserAnswers(answers);
     setTimeSpentSeconds(elapsedSeconds);
 
-    let score = 0;
+    let rawScore = 0;
     questions.forEach((q, idx) => {
       if (answers[idx] && answers[idx]?.trim() === q.correctAnswer.trim()) {
-        score++;
+        rawScore++;
       }
     });
+
+    // Validate score and submission integrity (checks for impossible score overflow or bot speed anomalies)
+    const integrityCheck = validateQuizSubmissionIntegrity(
+      rawScore,
+      questions.length,
+      elapsedSeconds,
+      questions.length,
+      answers,
+      user,
+      currentConfig.subject
+    );
+    const score = integrityCheck.validatedScore;
 
     const newRecord: QuizResultRecord = {
       id: `record_${Date.now()}`,
@@ -635,6 +658,8 @@ export default function App() {
             isAdminUnlocked={isAdminUnlocked}
             isLoginScreen={!user && !isAdminUnlocked && showLoginScreen}
             onGoToLogin={goToLogin}
+            maintenanceConfig={maintenanceConfig}
+            onFeatureBlocked={(featureKey) => setBlockedFeatureKey(featureKey)}
           />
 
           {/* Dismissable Global Error Toast */}
@@ -751,6 +776,10 @@ export default function App() {
                     initialConfig={currentConfig}
                     onGenerateQuiz={handleStartQuiz}
                     onCancel={() => navigateTo(AppState.HOME)}
+                    maintenanceConfig={maintenanceConfig}
+                    onFeatureBlocked={(key) => setBlockedFeatureKey(key)}
+                    isAdminUnlocked={isAdminUnlocked}
+                    user={user}
                   />
                 )}
 
@@ -774,6 +803,7 @@ export default function App() {
                   <QuizView
                     config={currentConfig}
                     questions={questions}
+                    user={user}
                     onSubmitQuiz={handleSubmitQuiz}
                     onQuitQuiz={() => navigateTo(AppState.HOME)}
                   />
@@ -868,6 +898,7 @@ export default function App() {
       {/* Admin Authentication Modal */}
       {isAdminAuthModalOpen && (
         <AdminAuthModal
+          user={user}
           onSuccess={handleAdminAuthSuccess}
           onClose={() => setIsAdminAuthModalOpen(false)}
         />
@@ -899,6 +930,18 @@ export default function App() {
           isOpen={isDocumentationModalOpen}
           onClose={closeDocs}
           isAdmin={isAdminUnlocked}
+        />
+      )}
+
+      {/* Granular Feature / Module Maintenance Modal */}
+      {blockedFeatureKey && (
+        <FeatureMaintenanceModal
+          isOpen={!!blockedFeatureKey}
+          featureKey={blockedFeatureKey}
+          maintenanceConfig={maintenanceConfig}
+          isAdminUnlocked={isAdminUnlocked}
+          onClose={() => setBlockedFeatureKey(null)}
+          onAdminBypass={() => setBlockedFeatureKey(null)}
         />
       )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AppState, UserProfile } from '../types';
+import { AppState, UserProfile, FeatureKey, MaintenanceConfig } from '../types';
 import { 
   Sparkles, 
   BookOpen, 
@@ -43,6 +43,8 @@ interface NavbarProps {
   isAdminUnlocked?: boolean;
   isLoginScreen?: boolean;
   onGoToLogin?: () => void;
+  maintenanceConfig?: MaintenanceConfig;
+  onFeatureBlocked?: (featureKey: FeatureKey) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -61,12 +63,55 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenDocs,
   isAdminUnlocked = false,
   isLoginScreen,
-  onGoToLogin
+  onGoToLogin,
+  maintenanceConfig,
+  onFeatureBlocked
 }) => {
   const isAuthenticated = !!(user || isAdminUnlocked);
   const isLogin = isLoginScreen !== undefined ? isLoginScreen : !isAuthenticated;
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const isFeatureUnder = (key: FeatureKey) => {
+    if (isAdminUnlocked) return false;
+    return !!maintenanceConfig?.features?.[key]?.isUnderMaintenance;
+  };
+
+  const handleSafeNavigate = (targetView: AppState) => {
+    if (targetView === AppState.CHAT && isFeatureUnder('ai_chat')) {
+      onFeatureBlocked?.('ai_chat');
+      return;
+    }
+    if (targetView === AppState.LEADERBOARD && isFeatureUnder('leaderboard')) {
+      onFeatureBlocked?.('leaderboard');
+      return;
+    }
+    if (targetView === AppState.CURRICULUM && isFeatureUnder('curriculum')) {
+      onFeatureBlocked?.('curriculum');
+      return;
+    }
+    if (targetView === AppState.SETUP && isFeatureUnder('quiz_generation')) {
+      onFeatureBlocked?.('quiz_generation');
+      return;
+    }
+    onNavigate(targetView);
+  };
+
+  const handleJoinClick = () => {
+    if (isFeatureUnder('multiplayer')) {
+      onFeatureBlocked?.('multiplayer');
+      return;
+    }
+    onOpenJoinModal();
+  };
+
+  const handleFeedbackClick = () => {
+    if (isFeatureUnder('feedback_submit')) {
+      onFeatureBlocked?.('feedback_submit');
+      return;
+    }
+    onOpenFeedback();
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -169,7 +214,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigate(AppState.CURRICULUM)}
+                  onClick={() => handleSafeNavigate(AppState.CURRICULUM)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.CURRICULUM
                       ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -181,7 +226,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigate(AppState.SAVED_QUIZZES)}
+                  onClick={() => handleSafeNavigate(AppState.SAVED_QUIZZES)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.SAVED_QUIZZES
                       ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
@@ -200,7 +245,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigate(AppState.LEADERBOARD)}
+                  onClick={() => handleSafeNavigate(AppState.LEADERBOARD)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.LEADERBOARD
                       ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
@@ -213,7 +258,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 <button
                   id="nav-chat-btn"
-                  onClick={() => onNavigate(AppState.CHAT)}
+                  onClick={() => handleSafeNavigate(AppState.CHAT)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.CHAT
                       ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -226,7 +271,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 <button
-                  onClick={() => onNavigate(AppState.HISTORY)}
+                  onClick={() => handleSafeNavigate(AppState.HISTORY)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.HISTORY
                       ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -250,7 +295,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <nav className="hidden md:flex items-center gap-1 bg-slate-900/70 p-1 rounded-xl border border-slate-800/80">
                 <a
                   href="/"
-                  onClick={(e) => { e.preventDefault(); onNavigate(AppState.HOME); }}
+                  onClick={(e) => { e.preventDefault(); handleSafeNavigate(AppState.HOME); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.HOME
                       ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -263,7 +308,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 <a
                   href="/curriculum"
-                  onClick={(e) => { e.preventDefault(); onNavigate(AppState.CURRICULUM); }}
+                  onClick={(e) => { e.preventDefault(); handleSafeNavigate(AppState.CURRICULUM); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.CURRICULUM
                       ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -276,7 +321,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 <a
                   href="/results"
-                  onClick={(e) => { e.preventDefault(); onNavigate(AppState.RESULTS); }}
+                  onClick={(e) => { e.preventDefault(); handleSafeNavigate(AppState.RESULTS); }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                     currentView === AppState.RESULTS
                       ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
@@ -313,7 +358,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   {/* Feedback / Bug Report Quick Trigger */}
                   <button
-                    onClick={onOpenFeedback}
+                    onClick={handleFeedbackClick}
                     className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/30 text-slate-400 hover:text-rose-400 text-xs font-semibold transition-colors cursor-pointer"
                     title="Report Bug or Send Feedback"
                   >
@@ -323,7 +368,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   {/* Join Shared Challenge Code Button */}
                   <button
-                    onClick={onOpenJoinModal}
+                    onClick={handleJoinClick}
                     className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-semibold transition-colors cursor-pointer"
                     title="Enter Quiz Code or Challenge Link"
                   >
@@ -333,7 +378,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   {/* Create Quiz Primary CTA */}
                   <button
-                    onClick={() => onNavigate(AppState.SETUP)}
+                    onClick={() => handleSafeNavigate(AppState.SETUP)}
                     className="flex items-center gap-1.5 px-3 sm:px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-lime-500 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <PlusCircle className="w-3.5 h-3.5" />
@@ -428,7 +473,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             <button
                               onClick={() => {
                                 setIsProfileMenuOpen(false);
-                                onNavigate(AppState.LEADERBOARD);
+                                handleSafeNavigate(AppState.LEADERBOARD);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
                             >
@@ -439,7 +484,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             <button
                               onClick={() => {
                                 setIsProfileMenuOpen(false);
-                                onNavigate(AppState.CHAT);
+                                handleSafeNavigate(AppState.CHAT);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-colors text-left cursor-pointer"
                             >
@@ -450,7 +495,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             <button
                               onClick={() => {
                                 setIsProfileMenuOpen(false);
-                                onNavigate(AppState.HISTORY);
+                                handleSafeNavigate(AppState.HISTORY);
                               }}
                               className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
                             >
@@ -472,7 +517,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             <button
                               onClick={() => {
                                 setIsProfileMenuOpen(false);
-                                onOpenFeedback();
+                                handleFeedbackClick();
                               }}
                               className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
                             >
@@ -606,7 +651,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800/80 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl">
           <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
             <button
-              onClick={() => onNavigate(AppState.HOME)}
+              onClick={() => handleSafeNavigate(AppState.HOME)}
               className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition-all cursor-pointer ${
                 currentView === AppState.HOME
                   ? 'text-emerald-400 font-bold bg-emerald-500/10'
@@ -618,7 +663,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => onNavigate(AppState.CURRICULUM)}
+              onClick={() => handleSafeNavigate(AppState.CURRICULUM)}
               className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition-all cursor-pointer ${
                 currentView === AppState.CURRICULUM
                   ? 'text-emerald-400 font-bold bg-emerald-500/10'
@@ -630,7 +675,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => onNavigate(AppState.SETUP)}
+              onClick={() => handleSafeNavigate(AppState.SETUP)}
               className="flex flex-col items-center justify-center py-1 rounded-xl text-slate-950 font-bold bg-gradient-to-r from-emerald-500 to-lime-500 shadow-md shadow-emerald-500/30 cursor-pointer -mt-3"
             >
               <PlusCircle className="w-5 h-5" />
@@ -638,7 +683,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => onNavigate(AppState.LEADERBOARD)}
+              onClick={() => handleSafeNavigate(AppState.LEADERBOARD)}
               className={`flex flex-col items-center justify-center py-1.5 rounded-xl transition-all cursor-pointer ${
                 currentView === AppState.LEADERBOARD
                   ? 'text-amber-400 font-bold bg-amber-500/10'
@@ -650,7 +695,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => onNavigate(AppState.CHAT)}
+              onClick={() => handleSafeNavigate(AppState.CHAT)}
               className="flex flex-col items-center justify-center py-1.5 rounded-xl transition-all cursor-pointer text-slate-400 hover:text-slate-200"
             >
               <MessageSquare className="w-4 h-4" />

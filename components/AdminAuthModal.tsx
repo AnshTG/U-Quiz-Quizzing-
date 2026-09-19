@@ -1,24 +1,56 @@
-import React, { useState } from 'react';
-import { Lock, KeyRound, AlertCircle, X, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lock, KeyRound, AlertCircle, X, Check, ShieldAlert, Clock } from 'lucide-react';
 import { verifyAdminPassword } from '../services/firebase';
+import { checkAdminPasscodeSafety, recordFailedAdminAttempt } from '../services/securityService';
+import { UserProfile } from '../types';
 
 interface AdminAuthModalProps {
   onSuccess: () => void;
   onClose: () => void;
+  user?: UserProfile | null;
 }
 
 export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   onSuccess,
-  onClose
+  onClose,
+  user
 }) => {
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  // Cooldown countdown timer
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const interval = setInterval(() => {
+      setCooldownSeconds(prev => {
+        if (prev <= 1) {
+          setError(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownSeconds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (cooldownSeconds > 0) return;
+
     if (!passcode.trim()) {
       setError('Please enter the admin security password.');
+      return;
+    }
+
+    // Security check: Guard against injections and active cooldown
+    const safetyCheck = checkAdminPasscodeSafety(passcode.trim(), user);
+    if (!safetyCheck.allowed) {
+      setError(safetyCheck.error || 'Authentication attempt blocked by security monitor.');
+      if (safetyCheck.cooldownSeconds) {
+        setCooldownSeconds(safetyCheck.cooldownSeconds);
+      }
       return;
     }
 
@@ -32,7 +64,13 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
         onSuccess();
       } else {
         setIsVerifying(false);
-        setError('Incorrect administrator password. Access denied.');
+        const failRecord = recordFailedAdminAttempt(user);
+        if (failRecord.cooldownTriggered) {
+          setCooldownSeconds(failRecord.remainingSeconds || 30);
+          setError(`Multiple failed administrator login attempts. For security, access is temporarily locked for ${failRecord.remainingSeconds || 30}s. The administrator has been alerted.`);
+        } else {
+          setError('Incorrect administrator password. Access denied.');
+        }
         setPasscode('');
       }
     } catch (err: any) {
@@ -85,20 +123,28 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               <input
                 type="password"
                 maxLength={32}
+                disabled={cooldownSeconds > 0}
                 value={passcode}
                 onChange={(e) => {
                   setPasscode(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="Enter admin password"
+                placeholder={cooldownSeconds > 0 ? `Locked: wait ${cooldownSeconds}s` : "Enter admin password"}
                 autoFocus
                 autoComplete="new-password"
-                className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-center text-base font-mono tracking-widest text-white placeholder:text-slate-600 placeholder:text-xs placeholder:tracking-normal focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-colors"
+                className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-700 rounded-xl text-center text-base font-mono tracking-widest text-white placeholder:text-slate-600 placeholder:text-xs placeholder:tracking-normal focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
-            <p className="text-[11px] text-slate-500 text-center font-mono">
-              Authorized personnel only
-            </p>
+            {cooldownSeconds > 0 ? (
+              <div className="flex items-center justify-center gap-1.5 text-xs text-rose-400 font-mono py-1">
+                <Clock className="w-3.5 h-3.5 animate-spin" />
+                <span>Security cooldown active: {cooldownSeconds}s</span>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 text-center font-mono">
+                Authorized personnel only • Protected by Anti-Brute-Force Monitor
+              </p>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
@@ -111,8 +157,8 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isVerifying}
-              className="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+              disabled={isVerifying || cooldownSeconds > 0}
+              className="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isVerifying ? (
                 <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />

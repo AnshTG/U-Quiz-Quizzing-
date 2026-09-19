@@ -151,40 +151,108 @@ HOW TO ACCURATELY DECIPHER CURSIVE & FAST WRITTEN NOTES:
         if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
           return res.status(400).json({ error: "Only HTTP and HTTPS URLs are supported." });
         }
+        
+        // Anti-SSRF Protection: Block loopbacks, private RFC1918 subnets, and cloud metadata IPs
+        const hostname = parsedUrl.hostname.toLowerCase();
+        const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname === '::1' || hostname === '[::1]';
+        const isMetadata = hostname === '169.254.169.254' || hostname.includes('metadata.google.internal');
+        const isPrivateIp = 
+          /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+          /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
+          /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
+        const isNumericIpTrick = /^\d+$/.test(hostname) || /^0x[0-9a-f]+$/i.test(hostname);
+
+        if (isLoopback || isMetadata || isPrivateIp || isNumericIpTrick) {
+          return res.status(403).json({ error: "Access to internal, loopback, or cloud infrastructure addresses is blocked." });
+        }
       } catch {
         return res.status(400).json({ error: "Invalid URL format provided." });
       }
 
-      // PATH 1: Dedicated Wikipedia REST API
-      const wikiMatch = cleanUrl.match(/https?:\/\/([a-z0-9-]+)\.wikipedia\.org\/wiki\/([^#?]+)/i);
+      // PATH 1: Dedicated Wikipedia REST & Action API for clean encyclopedia articles
+      const wikiMatch = cleanUrl.match(/https?:\/\/([a-z0-9-]+)(?:\.m)?\.wikipedia\.org\/(?:wiki\/([^#?]+)|w\/index\.php\?title=([^#?&]+))/i);
       if (wikiMatch) {
         try {
-          const lang = wikiMatch[1];
-          const pageTitle = decodeURIComponent(wikiMatch[2]).replace(/_/g, " ");
-          const wikiApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1`;
+          const lang = wikiMatch[1].toLowerCase();
+          const rawTitle = wikiMatch[2] || wikiMatch[3] || "";
+          const pageTitle = decodeURIComponent(rawTitle).split("#")[0].split("?")[0].replace(/_/g, " ").trim();
 
-          const wikiRes = await fetch(wikiApiUrl, {
-            headers: {
-              "User-Agent": "UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)",
-              "Accept": "application/json",
-            },
-            signal: AbortSignal.timeout(12000),
-          });
+          if (pageTitle) {
+            // 1. Direct query with plain-text extract, auto-redirects, and origin=*
+            const wikiApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1&origin=*`;
 
-          if (wikiRes.ok) {
-            const wikiData = await wikiRes.json();
-            const pages = wikiData.query?.pages || {};
-            const pageId = Object.keys(pages)[0];
-            if (pageId && pageId !== "-1" && pages[pageId]?.extract) {
-              const page = pages[pageId];
-              const text = (page.extract as string).slice(0, 40000);
-              const wordCount = text.split(/\s+/).filter(Boolean).length;
-              return res.json({
-                title: page.title || pageTitle,
-                text,
-                wordCount,
-                url: cleanUrl,
-              });
+            const wikiRes = await fetch(wikiApiUrl, {
+              headers: {
+                "User-Agent": "UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)",
+                "Accept": "application/json",
+              },
+              signal: AbortSignal.timeout(12000),
+            });
+
+            if (wikiRes.ok) {
+              const wikiData = await wikiRes.json();
+              const pages = wikiData.query?.pages || {};
+              const pageId = Object.keys(pages)[0];
+              if (pageId && pageId !== "-1" && pages[pageId]?.extract) {
+                const page = pages[pageId];
+                const text = (page.extract as string).slice(0, 45000);
+                const wordCount = text.split(/\s+/).filter(Boolean).length;
+                return res.json({
+                  title: page.title || pageTitle,
+                  text,
+                  wordCount,
+                  url: cleanUrl,
+                });
+              }
+            }
+
+            // 2. Search generator fallback in case of typo or case discrepancy
+            const searchApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(pageTitle)}&gsrlimit=1&prop=extracts&explaintext=1&format=json&origin=*`;
+            const searchRes = await fetch(searchApiUrl, {
+              headers: {
+                "User-Agent": "UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)",
+                "Accept": "application/json",
+              },
+              signal: AbortSignal.timeout(10000),
+            });
+
+            if (searchRes.ok) {
+              const searchData = await searchRes.json();
+              const pages = searchData.query?.pages || {};
+              const pageId = Object.keys(pages)[0];
+              if (pageId && pages[pageId]?.extract) {
+                const page = pages[pageId];
+                const text = (page.extract as string).slice(0, 45000);
+                const wordCount = text.split(/\s+/).filter(Boolean).length;
+                return res.json({
+                  title: page.title || pageTitle,
+                  text,
+                  wordCount,
+                  url: cleanUrl,
+                });
+              }
+            }
+
+            // 3. REST v1 summary fallback
+            const restSummaryUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+            const restRes = await fetch(restSummaryUrl, {
+              headers: {
+                "User-Agent": "UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)",
+                "Accept": "application/json",
+              },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (restRes.ok) {
+              const restData = await restRes.json();
+              if (restData && restData.extract) {
+                const text = `${restData.title}\n\n${restData.extract}`;
+                return res.json({
+                  title: restData.title || pageTitle,
+                  text,
+                  wordCount: text.split(/\s+/).filter(Boolean).length,
+                  url: cleanUrl,
+                });
+              }
             }
           }
         } catch (wikiErr) {
@@ -683,9 +751,28 @@ ACADEMIC CONTEXT:
     }
   });
 
-  // Admin Portal Real-time GMT+5:30 Password Verification
+  // In-memory rate limiting map for admin verification endpoint
+  const adminVerifyAttempts = new Map<string, { count: number; lockUntil: number }>();
+
+  // Admin Portal Real-time GMT+5:30 Password Verification with Brute-Force Rate Limiting
   app.post("/api/admin/verify", (req, res) => {
     try {
+      // Extract client IP
+      const clientIp = (req.headers["x-forwarded-for"] as string || req.socket.remoteAddress || "unknown")
+        .split(",")[0].trim();
+
+      const now = Date.now();
+      const existing = adminVerifyAttempts.get(clientIp);
+
+      if (existing && existing.lockUntil > now) {
+        const remainingSec = Math.ceil((existing.lockUntil - now) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Too many failed admin authentication attempts. Security cooldown active for ${remainingSec}s.`,
+          retryAfter: remainingSec
+        });
+      }
+
       const { password } = req.body || {};
       if (!password || typeof password !== "string") {
         return res.status(400).json({ success: false, error: "Password is required" });
@@ -696,7 +783,6 @@ ACADEMIC CONTEXT:
         return res.status(400).json({ success: false, error: "Password cannot be empty" });
       }
 
-      const now = Date.now();
       let isMatch = false;
 
       // Check current IST (GMT+5:30) with a ±60s clock skew tolerance window
@@ -726,9 +812,27 @@ ACADEMIC CONTEXT:
       }
 
       if (isMatch) {
+        // Clear failed attempts on successful verification
+        adminVerifyAttempts.delete(clientIp);
         return res.json({ success: true });
       } else {
-        return res.status(401).json({ success: false, error: "Incorrect administrator password." });
+        const currentCount = ((existing && existing.lockUntil <= now) ? existing.count : 0) + 1;
+        const maxAttempts = 5;
+        if (currentCount >= maxAttempts) {
+          adminVerifyAttempts.set(clientIp, { count: currentCount, lockUntil: now + 300000 });
+          console.warn(`[SECURITY ALERT] Admin portal brute force cooldown triggered for IP ${clientIp} after ${currentCount} failures.`);
+          return res.status(429).json({
+            success: false,
+            error: "Too many failed attempts. Admin gateway locked for 5 minutes.",
+            retryAfter: 300
+          });
+        } else {
+          adminVerifyAttempts.set(clientIp, { count: currentCount, lockUntil: 0 });
+          return res.status(401).json({
+            success: false,
+            error: `Incorrect administrator password. (${maxAttempts - currentCount} attempts remaining before cooldown)`
+          });
+        }
       }
     } catch (err: any) {
       return res.status(500).json({ success: false, error: "Verification service error" });

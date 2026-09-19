@@ -38,11 +38,16 @@ import {
   AttendanceRecord,
   ChatMessage,
   MaintenanceConfig,
+  FeatureKey,
   AdminUserQuizEntry,
   UserFeedback,
   FeedbackCategory,
   FeedbackSeverity,
-  FeedbackStatus
+  FeedbackStatus,
+  SecurityIncident,
+  SecurityIncidentType,
+  SecuritySeverity,
+  SecurityStatus
 } from '../types';
 
 // Initialize Firebase App
@@ -1699,6 +1704,60 @@ export const updateMaintenanceMode = async (
   }
 };
 
+/**
+ * Admin: Update maintenance status for an individual platform feature or button
+ */
+export const updateFeatureMaintenanceMode = async (
+  featureKey: FeatureKey,
+  isUnderMaintenance: boolean,
+  message?: string
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'system', 'maintenance');
+    await setDoc(docRef, {
+      features: {
+        [featureKey]: {
+          isUnderMaintenance,
+          message: message || '',
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'Admin'
+        }
+      },
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error(`Failed to update feature maintenance for ${featureKey}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Bulk set all platform features maintenance mode
+ */
+export const bulkUpdateFeatureMaintenanceMode = async (
+  isUnderMaintenance: boolean,
+  featureKeys: FeatureKey[]
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'system', 'maintenance');
+    const featuresPayload: Record<string, any> = {};
+    for (const key of featureKeys) {
+      featuresPayload[key] = {
+        isUnderMaintenance,
+        updatedAt: new Date().toISOString(),
+        updatedBy: 'Admin'
+      };
+    }
+    await setDoc(docRef, {
+      features: featuresPayload,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Failed to bulk update feature maintenance:', error);
+    throw error;
+  }
+};
+
 // ==========================================
 // ADMIN GOD-MODE CONTROLS & MANAGEMENT
 // ==========================================
@@ -2134,6 +2193,194 @@ export const adminPurgeResolvedFeedbacks = async (): Promise<number> => {
     throw error;
   }
 };
+
+// ============================================================================
+// SECURITY INCIDENTS & ANTI-TAMPER ALERTS ENGINE
+// ============================================================================
+
+/**
+ * Report a security incident, anomaly or tamper attempt directly to Firestore
+ * to immediately inform administrators in real time.
+ */
+export const reportSecurityIncident = async (
+  incidentData: Omit<SecurityIncident, 'id' | 'timestamp' | 'timeIST' | 'date' | 'status'>
+): Promise<string> => {
+  const alertId = `sec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const now = Date.now();
+  const timeIST = getISTTimeString();
+  const date = getISTDateString();
+
+  const record: SecurityIncident = {
+    id: alertId,
+    ...incidentData,
+    status: 'unreviewed',
+    timestamp: now,
+    timeIST,
+    date
+  };
+
+  try {
+    const docRef = doc(db, 'securityAlerts', alertId);
+    await setDoc(docRef, record);
+    console.warn(`[SECURITY ALERT REPORTED] ${record.title} (${record.severity.toUpperCase()})`);
+    return alertId;
+  } catch (error) {
+    console.error('Failed to persist security alert to Firestore:', error);
+    // Fallback: preserve in localStorage so administrator can still inspect if offline
+    try {
+      const existing = JSON.parse(localStorage.getItem('uquiz_local_security_alerts') || '[]');
+      existing.unshift(record);
+      localStorage.setItem('uquiz_local_security_alerts', JSON.stringify(existing.slice(0, 50)));
+    } catch {
+      // ignore
+    }
+    return alertId;
+  }
+};
+
+/**
+ * Admin: Real-time listener for all security incidents & anti-tamper alerts
+ */
+export const listenToSecurityAlertsForAdmin = (
+  callback: (incidents: SecurityIncident[]) => void
+): Unsubscribe => {
+  try {
+    const colRef = collection(db, 'securityAlerts');
+    return onSnapshot(query(colRef, limit(200)), (snapshot) => {
+      const list: SecurityIncident[] = [];
+      snapshot.forEach(d => {
+        const data = d.data() as SecurityIncident;
+        list.push({ ...data, id: data.id || d.id });
+      });
+      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      callback(list);
+    }, (err) => {
+      console.warn('listenToSecurityAlertsForAdmin snapshot notice:', err);
+      fetchAllSecurityAlertsForAdmin().then(callback).catch(() => callback([]));
+    });
+  } catch (error) {
+    console.error('Failed to subscribe to security alerts:', error);
+    fetchAllSecurityAlertsForAdmin().then(callback).catch(() => callback([]));
+    return () => {};
+  }
+};
+
+export const listenToSecurityAlerts = listenToSecurityAlertsForAdmin;
+
+/**
+ * Admin: Fetch all security alerts
+ */
+export const fetchAllSecurityAlertsForAdmin = async (): Promise<SecurityIncident[]> => {
+  try {
+    const colRef = collection(db, 'securityAlerts');
+    const snapshot = await getDocs(query(colRef, limit(200)));
+    const list: SecurityIncident[] = [];
+    snapshot.forEach(d => {
+      const data = d.data() as SecurityIncident;
+      list.push({ ...data, id: data.id || d.id });
+    });
+    list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return list;
+  } catch (error) {
+    console.error('Failed to fetch security alerts:', error);
+    // Try localStorage backup
+    try {
+      const local = JSON.parse(localStorage.getItem('uquiz_local_security_alerts') || '[]');
+      return local;
+    } catch {
+      return [];
+    }
+  }
+};
+
+/**
+ * Admin: Update status of a security incident
+ */
+export const adminUpdateSecurityAlertStatus = async (
+  alertId: string,
+  status: SecurityStatus,
+  adminNotes?: string,
+  resolvedBy?: string
+): Promise<void> => {
+  try {
+    const docRef = doc(db, 'securityAlerts', alertId);
+    const updateData: Record<string, any> = { status };
+    if (adminNotes !== undefined) {
+      updateData.adminNotes = adminNotes;
+    }
+    if (status === 'resolved' || status === 'dismissed') {
+      updateData.resolvedAt = new Date().toISOString();
+      updateData.resolvedBy = resolvedBy || 'Administrator';
+    }
+    await setDoc(docRef, updateData, { merge: true });
+  } catch (error) {
+    console.error('Failed to update security alert status:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete a single security alert
+ */
+export const adminDeleteSecurityAlert = async (alertId: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'securityAlerts', alertId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.error('Failed to delete security alert:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete all security alerts
+ */
+export const adminDeleteAllSecurityAlerts = async (): Promise<number> => {
+  try {
+    const colRef = collection(db, 'securityAlerts');
+    const snap = await getDocs(colRef);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      batch.delete(d.ref);
+      count++;
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Failed to delete all security alerts:', error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Purge resolved or dismissed security alerts
+ */
+export const adminPurgeResolvedSecurityAlerts = async (): Promise<number> => {
+  try {
+    const colRef = collection(db, 'securityAlerts');
+    const snap = await getDocs(colRef);
+    const batch = writeBatch(db);
+    let count = 0;
+    snap.forEach(d => {
+      const data = d.data() as SecurityIncident;
+      if (data.status === 'resolved' || data.status === 'dismissed') {
+        batch.delete(d.ref);
+        count++;
+      }
+    });
+    if (count > 0) {
+      await batch.commit();
+    }
+    return count;
+  } catch (error) {
+    console.error('Failed to purge resolved security alerts:', error);
+    throw error;
+  }
+};
+
 
 
 

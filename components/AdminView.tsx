@@ -12,12 +12,19 @@ import {
   UserFeedback,
   FeedbackCategory,
   FeedbackSeverity,
-  FeedbackStatus
+  FeedbackStatus,
+  FeatureKey,
+  PLATFORM_FEATURES,
+  FeatureMetadata,
+  SecurityIncident,
+  SecuritySeverity,
+  SecurityStatus,
+  SecurityIncidentType
 } from '../types';
 import { 
   fetchAllUsersForAdmin, 
   fetchUserHistoryForAdmin, 
-  fetchUserSavedQuizzesForAdmin,
+  fetchUserSavedQuizzesForAdmin, 
   fetchAllSharedQuizzesForAdmin,
   fetchAllQuizzesAcrossUsersForAdmin,
   subscribeToAllQuizzesForAdmin,
@@ -43,17 +50,26 @@ import {
   deletePublicChatMessage,
   listenToMaintenanceMode,
   updateMaintenanceMode,
+  updateFeatureMaintenanceMode,
+  bulkUpdateFeatureMaintenanceMode,
   listenToAllFeedbacksForAdmin,
   adminUpdateFeedbackStatus,
   adminDeleteFeedback,
   adminDeleteAllFeedbacks,
   adminPurgeResolvedFeedbacks,
+  listenToSecurityAlerts,
+  adminUpdateSecurityAlertStatus,
+  adminDeleteSecurityAlert,
+  adminDeleteAllSecurityAlerts,
+  adminPurgeResolvedSecurityAlerts,
   getISTDateString,
   getISTTimeString,
   extractNumericStat
 } from '../services/firebase';
 import { MathText } from './MathText';
+import { FeatureMaintenanceModal } from './FeatureMaintenanceModal';
 import { ErrorBoundary } from './ErrorBoundary';
+import { AdminSecurityView } from './AdminSecurityView';
 
 // Defensive numeric extractor to prevent React object children crashes
 const safeNum = (val: any, fallback = 0): number => {
@@ -119,7 +135,11 @@ import {
   Globe,
   ExternalLink,
   Copy,
-  Link2
+  Link2,
+  Wrench,
+  ToggleLeft,
+  ToggleRight,
+  Camera
 } from 'lucide-react';
 
 interface AdminViewProps {
@@ -129,7 +149,7 @@ interface AdminViewProps {
 }
 
 export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWebsite, onOpenDocs }) => {
-  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'quizzes' | 'shared' | 'feedback' | 'chat' | 'godmode'>('attendance');
+  const [activeTab, setActiveTab] = useState<'attendance' | 'scholars' | 'quizzes' | 'shared' | 'feedback' | 'chat' | 'security' | 'godmode'>('attendance');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [sharedQuizzes, setSharedQuizzes] = useState<SharedQuiz[]>([]);
   const [allQuizzes, setAllQuizzes] = useState<AdminUserQuizEntry[]>([]);
@@ -141,6 +161,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  // Security Alerts & Anti-Tamper State
+  const [securityAlerts, setSecurityAlerts] = useState<SecurityIncident[]>([]);
   
   // Feedback & Bug Reports State
   const [feedbacks, setFeedbacks] = useState<UserFeedback[]>([]);
@@ -186,6 +209,13 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
   const [maintenanceConfig, setMaintenanceConfig] = useState<MaintenanceConfig>({ isActive: false });
   const [customMaintenanceMsg, setCustomMaintenanceMsg] = useState<string>('');
   const [estimatedDuration, setEstimatedDuration] = useState<string>('');
+
+  // Feature-level granular maintenance state
+  const [featureMessages, setFeatureMessages] = useState<Record<string, string>>({});
+  const [featureCategoryFilter, setFeatureCategoryFilter] = useState<string>('all');
+  const [featureSearchQuery, setFeatureSearchQuery] = useState<string>('');
+  const [featureActionLoading, setFeatureActionLoading] = useState<string | null>(null);
+  const [previewFeatureModalKey, setPreviewFeatureModalKey] = useState<FeatureKey | null>(null);
 
   // Shared challenges copy link state
   const [copiedQuizLinkId, setCopiedQuizLinkId] = useState<string | null>(null);
@@ -262,10 +292,25 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       setFeedbacks(liveFeedbacks);
     });
 
+    const unsubSecurity = listenToSecurityAlerts((liveAlerts) => {
+      setSecurityAlerts(liveAlerts);
+    });
+
     const unsubMaintenance = listenToMaintenanceMode((config) => {
       setMaintenanceConfig(config);
       if (config.message && !customMaintenanceMsg) setCustomMaintenanceMsg(config.message);
       if (config.estimatedDuration && !estimatedDuration) setEstimatedDuration(config.estimatedDuration);
+      if (config.features) {
+        setFeatureMessages((prev) => {
+          const next = { ...prev };
+          Object.entries(config.features || {}).forEach(([k, v]) => {
+            if (v?.message && next[k] === undefined) {
+              next[k] = v.message;
+            }
+          });
+          return next;
+        });
+      }
     });
 
     // Initial direct fetches to ensure instant display
@@ -281,6 +326,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       unsubQuizzes();
       unsubChat();
       unsubFeedbacks();
+      unsubSecurity();
       unsubMaintenance();
     };
   }, []);
@@ -461,6 +507,42 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
     });
   }, [feedbacks, feedbackStatusFilter, feedbackCategoryFilter, feedbackSeverityFilter, searchQuery]);
 
+  // Filtered Features list for granular maintenance control
+  const filteredFeatures = useMemo(() => {
+    return PLATFORM_FEATURES.filter((f) => {
+      if (featureCategoryFilter !== 'all' && f.category !== featureCategoryFilter) {
+        return false;
+      }
+      if (featureSearchQuery.trim()) {
+        const q = featureSearchQuery.toLowerCase();
+        const matchesName = f.name.toLowerCase().includes(q);
+        const matchesDesc = f.description.toLowerCase().includes(q);
+        const matchesButtons = f.affectedButtons.some((b) => b.toLowerCase().includes(q));
+        const matchesKey = f.key.toLowerCase().includes(q);
+        if (!matchesName && !matchesDesc && !matchesButtons && !matchesKey) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [featureCategoryFilter, featureSearchQuery]);
+
+  // Aggregate statistics for granular platform features
+  const featureStats = useMemo(() => {
+    const total = PLATFORM_FEATURES.length;
+    let underMaintenance = 0;
+    PLATFORM_FEATURES.forEach((f) => {
+      if (maintenanceConfig.features?.[f.key]?.isUnderMaintenance) {
+        underMaintenance++;
+      }
+    });
+    return {
+      total,
+      underMaintenance,
+      online: total - underMaintenance,
+    };
+  }, [maintenanceConfig]);
+
   // Handle Maintenance Toggle
   const handleToggleMaintenance = async (targetActive: boolean) => {
     const confirmPrompt = targetActive 
@@ -483,6 +565,65 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       alert('Failed to update maintenance mode.');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  // Toggle maintenance mode for an individual feature or button
+  const handleToggleFeatureMaintenance = async (featureKey: FeatureKey, currentUnderMaintenance: boolean) => {
+    const targetStatus = !currentUnderMaintenance;
+    const meta = PLATFORM_FEATURES.find((f) => f.key === featureKey);
+    const confirmPrompt = targetStatus
+      ? `🚨 Put feature "${meta?.name || featureKey}" under maintenance?\nStudents clicking affected buttons (${meta?.affectedButtons.join(', ') || ''}) will be shown the scheduled maintenance notice.`
+      : `✅ Restore feature "${meta?.name || featureKey}" to ONLINE status?`;
+    
+    if (!window.confirm(confirmPrompt)) return;
+
+    setFeatureActionLoading(featureKey);
+    try {
+      const msg = featureMessages[featureKey] !== undefined 
+        ? featureMessages[featureKey] 
+        : (maintenanceConfig.features?.[featureKey]?.message || meta?.defaultMessage || '');
+      await updateFeatureMaintenanceMode(featureKey, targetStatus, msg);
+      showToast(`Feature "${meta?.name || featureKey}" maintenance ${targetStatus ? 'ACTIVATED' : 'DEACTIVATED'}.`);
+    } catch (err: any) {
+      alert(`Failed to update feature maintenance: ${err.message}`);
+    } finally {
+      setFeatureActionLoading(null);
+    }
+  };
+
+  // Save custom notice for an individual feature
+  const handleSaveFeatureMessage = async (featureKey: FeatureKey) => {
+    setFeatureActionLoading(`msg-${featureKey}`);
+    try {
+      const isUnder = !!maintenanceConfig.features?.[featureKey]?.isUnderMaintenance;
+      const meta = PLATFORM_FEATURES.find((f) => f.key === featureKey);
+      const msg = (featureMessages[featureKey] !== undefined ? featureMessages[featureKey] : (maintenanceConfig.features?.[featureKey]?.message || '')).trim();
+      await updateFeatureMaintenanceMode(featureKey, isUnder, msg);
+      showToast(`Custom notice for "${meta?.name || featureKey}" saved.`);
+    } catch (err: any) {
+      alert(`Failed to save notice message: ${err.message}`);
+    } finally {
+      setFeatureActionLoading(null);
+    }
+  };
+
+  // Bulk update all features to either online or maintenance
+  const handleBulkFeatureMaintenance = async (targetUnderMaintenance: boolean) => {
+    const confirmPrompt = targetUnderMaintenance
+      ? '🚨 Put ALL platform features & action buttons under maintenance mode?'
+      : '✅ Restore ALL platform features & action buttons to ONLINE status?';
+    if (!window.confirm(confirmPrompt)) return;
+
+    setFeatureActionLoading('bulk');
+    try {
+      const allKeys = PLATFORM_FEATURES.map((f) => f.key);
+      await bulkUpdateFeatureMaintenanceMode(targetUnderMaintenance, allKeys);
+      showToast(targetUnderMaintenance ? 'All features put in Maintenance Mode.' : 'All features restored to Online status.');
+    } catch (err: any) {
+      alert(`Bulk update failed: ${err.message}`);
+    } finally {
+      setFeatureActionLoading(null);
     }
   };
 
@@ -952,6 +1093,68 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
     }
   };
 
+  // Security Alert Actions
+  const handleUpdateSecurityStatus = async (alertId: string, newStatus: SecurityStatus, notes?: string) => {
+    setActionLoading(`sec_status_${alertId}`);
+    try {
+      await adminUpdateSecurityAlertStatus(alertId, newStatus, notes);
+      setSecurityAlerts(prev => prev.map(a => a.id === alertId ? { ...a, status: newStatus, ...(notes !== undefined ? { adminNotes: notes } : {}) } : a));
+      showToast(`Incident status updated to ${newStatus}.`);
+    } catch (e) {
+      alert('Failed to update incident status.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteSecurityAlert = async (alertId: string) => {
+    if (!window.confirm('Delete this security incident record?')) return;
+    setActionLoading(`del_sec_${alertId}`);
+    try {
+      await adminDeleteSecurityAlert(alertId);
+      setSecurityAlerts(prev => prev.filter(a => a.id !== alertId));
+      showToast('Security alert deleted.');
+    } catch (e) {
+      alert('Failed to delete security alert.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handlePurgeResolvedSecurityAlerts = async () => {
+    if (!window.confirm('Purge all resolved and dismissed security alerts?')) return;
+    setActionLoading('purge_sec_resolved');
+    try {
+      const count = await adminPurgeResolvedSecurityAlerts();
+      setSecurityAlerts(prev => prev.filter(a => a.status !== 'resolved' && a.status !== 'dismissed'));
+      showToast(`Purged ${count} resolved security alerts.`);
+    } catch (e) {
+      alert('Failed to purge resolved security alerts.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteAllSecurityAlerts = async () => {
+    const confirmation = window.prompt(
+      '⚠️ DANGER: You are about to PURGE ALL SECURITY ALERTS! Type "PURGE SECURITY" to confirm:'
+    );
+    if (confirmation !== 'PURGE SECURITY') {
+      alert('Action cancelled.');
+      return;
+    }
+    setActionLoading('purge_all_security');
+    try {
+      const count = await adminDeleteAllSecurityAlerts();
+      setSecurityAlerts([]);
+      showToast(`Purged all ${count} security alerts.`);
+    } catch (e) {
+      alert('Failed to purge all security alerts.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-6 lg:p-8 space-y-6 pb-24 md:pb-12">
       
@@ -1204,6 +1407,24 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
             <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
               {chatMessages.length}
             </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('security')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'security'
+                ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                : 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4" />
+            <span>Security Alerts</span>
+            <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
+              {securityAlerts.length}
+            </span>
+            {securityAlerts.filter(a => a.status === 'unreviewed' || a.status === 'investigating').length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />
+            )}
           </button>
 
           <button
@@ -2522,6 +2743,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
         </div>
       )}
 
+      {/* ===================== TAB: SECURITY & ANTI-TAMPER ALERTS ===================== */}
+      {activeTab === 'security' && (
+        <AdminSecurityView
+          alerts={securityAlerts}
+          onUpdateStatus={handleUpdateSecurityStatus}
+          onDeleteAlert={handleDeleteSecurityAlert}
+          onPurgeResolved={handlePurgeResolvedSecurityAlerts}
+          onPurgeAll={handleDeleteAllSecurityAlerts}
+          onBanToggle={handleBanToggle}
+          actionLoading={actionLoading}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+      )}
+
       {/* ===================== TAB 5: GOD-MODE SYSTEM CONTROLS ===================== */}
       {activeTab === 'godmode' && (
         <div className="space-y-6">
@@ -2561,6 +2797,254 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
                 className="w-full p-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-400"
               />
             </div>
+          </div>
+
+          {/* ================= GRANULAR FEATURE & BUTTON MAINTENANCE CONTROLS ================= */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-6">
+            
+            {/* Header with Title, Status Badges, and Bulk Action Controls */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <Sliders className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white">Granular Feature & Button Maintenance</h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-slate-800 border border-slate-700 text-slate-300">
+                    9 Controlled Features
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 max-w-2xl">
+                  Put individual buttons and modules (such as Wikipedia fetching, Quiz generation, or OCR) under maintenance without taking the entire website offline.
+                </p>
+              </div>
+
+              {/* Status Counters & Bulk Actions */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <strong>{featureStats.online}</strong> Online
+                  </span>
+                  <span className="text-slate-600">|</span>
+                  <span className="flex items-center gap-1.5 text-amber-400">
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                    <strong>{featureStats.underMaintenance}</strong> In Maintenance
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleBulkFeatureMaintenance(false)}
+                    disabled={featureActionLoading === 'bulk' || featureStats.underMaintenance === 0}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                    title="Restore all platform features to live online status"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Restore All Online</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleBulkFeatureMaintenance(true)}
+                    disabled={featureActionLoading === 'bulk' || featureStats.online === 0}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+                    title="Put all platform features in scheduled maintenance"
+                  >
+                    <Wrench className="w-3.5 h-3.5" />
+                    <span>Pause All Features</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
+                {['all', 'AI & Generation', 'Input & Media', 'Study & Revision', 'Social & Competition'].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setFeatureCategoryFilter(cat)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                      featureCategoryFilter === cat
+                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                        : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    {cat === 'all' ? 'All Modules' : cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={featureSearchQuery}
+                  onChange={(e) => setFeatureSearchQuery(e.target.value)}
+                  placeholder="Search buttons or features..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            {/* Granular Feature Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredFeatures.map((feature) => {
+                const config = maintenanceConfig.features?.[feature.key];
+                const isUnder = !!config?.isUnderMaintenance;
+                const isLoading = featureActionLoading === feature.key || featureActionLoading === 'bulk';
+                const isSavingMsg = featureActionLoading === `msg-${feature.key}`;
+                const currentMsg = featureMessages[feature.key] !== undefined ? featureMessages[feature.key] : (config?.message || '');
+
+                return (
+                  <div
+                    key={feature.key}
+                    className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 ${
+                      isUnder
+                        ? 'bg-amber-950/20 border-amber-500/50 shadow-lg shadow-amber-500/5'
+                        : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Top Row: Meta Badge, Name, Status & Toggle Button */}
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                              {feature.category}
+                            </span>
+                            {isUnder ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <Wrench className="w-3 h-3" />
+                                Maintenance Active
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Live Online
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-sm font-bold text-white font-display">
+                            {feature.name}
+                          </h4>
+                        </div>
+
+                        {/* Big Switch / Toggle Button */}
+                        <button
+                          onClick={() => handleToggleFeatureMaintenance(feature.key, isUnder)}
+                          disabled={isLoading}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                            isUnder
+                              ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                          }`}
+                          title={isUnder ? 'Deactivate maintenance for this feature' : 'Put this feature into maintenance mode'}
+                        >
+                          {isLoading ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : isUnder ? (
+                            <ToggleRight className="w-4 h-4 text-slate-950" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4 text-slate-400" />
+                          )}
+                          <span>{isUnder ? 'MAINTENANCE ON' : 'PUT IN MAINTENANCE'}</span>
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        {feature.description}
+                      </p>
+
+                      {/* Affected Action Buttons Tags */}
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 font-semibold block">
+                          Affected Action Buttons:
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {feature.affectedButtons.map((btn, idx) => (
+                            <span
+                              key={idx}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${
+                                isUnder
+                                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-200'
+                                  : 'bg-slate-900 border-slate-800 text-slate-400'
+                              }`}
+                            >
+                              {btn}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Notice Message Customizer */}
+                    <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                          <span>Custom Student Notice</span>
+                        </label>
+                        <button
+                          onClick={() => {
+                            setFeatureMessages((prev) => ({
+                              ...prev,
+                              [feature.key]: feature.defaultMessage,
+                            }));
+                          }}
+                          className="text-[10px] text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                        >
+                          Reset Default
+                        </button>
+                      </div>
+
+                      <textarea
+                        value={currentMsg}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFeatureMessages((prev) => ({
+                            ...prev,
+                            [feature.key]: val,
+                          }));
+                        }}
+                        placeholder={feature.defaultMessage}
+                        rows={2}
+                        className="w-full p-2.5 bg-slate-900 border border-slate-800 rounded-xl text-[11px] text-white focus:outline-none focus:border-amber-400 leading-snug resize-none"
+                      />
+
+                      {/* Card Bottom Controls */}
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <button
+                          onClick={() => setPreviewFeatureModalKey(feature.key)}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Preview how students see this maintenance popup"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Preview Modal</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleSaveFeatureMessage(feature.key)}
+                          disabled={isSavingMsg}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Save custom notice message to database"
+                        >
+                          {isSavingMsg ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Save className="w-3 h-3 text-emerald-400" />
+                          )}
+                          <span>Save Notice</span>
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+
           </div>
 
           {/* Universal Dangerous Actions Grid */}
@@ -2988,6 +3472,21 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
 
           </div>
         </div>
+      )}
+
+      {/* ===================== FEATURE MAINTENANCE MODAL LIVE PREVIEW ===================== */}
+      {previewFeatureModalKey && (
+        <FeatureMaintenanceModal
+          isOpen={!!previewFeatureModalKey}
+          featureKey={previewFeatureModalKey}
+          maintenanceConfig={maintenanceConfig}
+          isAdminUnlocked={true}
+          onClose={() => setPreviewFeatureModalKey(null)}
+          onAdminBypass={() => {
+            showToast(`Admin bypass preview test verified for "${previewFeatureModalKey}".`);
+            setPreviewFeatureModalKey(null);
+          }}
+        />
       )}
 
     </div>

@@ -171,6 +171,31 @@
         "adminNotes": { "type": "string" }
       },
       "required": ["id", "userId", "category", "title", "description", "severity", "status", "timestamp"]
+    },
+    "SecurityAlert": {
+      "title": "SecurityAlert",
+      "description": "Security incident, tamper detection, or anomaly alert logged to inform administrators",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "timeIST": { "type": "string" },
+        "date": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "endpointOrContext": { "type": "string" },
+        "detectedPayload": { "type": "string" },
+        "adminNotes": { "type": "string" },
+        "resolvedAt": { "type": "string" },
+        "resolvedBy": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "description", "severity", "status", "timestamp"]
     }
   },
   "firestore": {
@@ -201,6 +226,10 @@
     "/feedbacks/{feedbackId}": {
       "entity": "UserFeedback",
       "description": "User submitted bug reports and feedback items visible in admin console"
+    },
+    "/securityAlerts/{alertId}": {
+      "entity": "SecurityAlert",
+      "description": "Anti-tamper security alerts, brute-force logs, and flow disruption notifications"
     }
   }
 }

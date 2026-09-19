@@ -8,6 +8,7 @@ import {
   getISTTimeString 
 } from '../services/firebase';
 import { sendGeminiStudyQuery } from '../services/geminiService';
+import { validateChatMessageSecurity } from '../services/securityService';
 import { 
   compressImageForChat, 
   CompressedImageResult, 
@@ -375,6 +376,15 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
     const image = draftImage;
     if (!text && !image) return;
     if (isSendingPublic) return;
+
+    // Security check: validate chat message against flooding / spam and XSS attacks
+    if (text) {
+      const securityCheck = validateChatMessageSecurity(text, user);
+      if (!securityCheck.isSafe) {
+        setPublicError(securityCheck.error || 'Message blocked by community security monitor.');
+        return;
+      }
+    }
 
     // Generate unique ID that will match between client optimistic state and Firestore doc
     const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;

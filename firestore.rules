@@ -80,6 +80,13 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Security Incidents and Anti-Tamper Alerts collection
+    match /securityAlerts/{alertId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if true;
+    }
+
     // System configuration (Maintenance mode, announcements, etc.)
     match /system/{configId} {
       allow read: if true;

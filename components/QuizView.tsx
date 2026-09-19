@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { QuizConfig, Question } from '../types';
+import { QuizConfig, Question, UserProfile } from '../types';
 import { MathText } from './MathText';
 import { 
   Clock, 
@@ -13,12 +13,16 @@ import {
   RotateCcw, 
   Sparkles,
   HelpCircle,
-  ArrowLeft
+  ArrowLeft,
+  ShieldAlert,
+  EyeOff
 } from 'lucide-react';
+import { reportExamTabSwitchAnomaly } from '../services/securityService';
 
 interface QuizViewProps {
   config: QuizConfig;
   questions: Question[];
+  user?: UserProfile | null;
   onSubmitQuiz: (userAnswers: (string | null)[], timeSpentSeconds: number) => void;
   onQuitQuiz: () => void;
 }
@@ -26,6 +30,7 @@ interface QuizViewProps {
 export const QuizView: React.FC<QuizViewProps> = ({
   config,
   questions,
+  user,
   onSubmitQuiz,
   onQuitQuiz,
 }) => {
@@ -41,9 +46,49 @@ export const QuizView: React.FC<QuizViewProps> = ({
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [isQuitModalOpen, setIsQuitModalOpen] = useState(false);
 
+  // Anti-Tamper & Academic Proctoring states
+  const [tabSwitchCount, setTabSwitchCount] = useState(0);
+  const [showProctorWarning, setShowProctorWarning] = useState(false);
+
   const totalTimeLimitSeconds = (config.timeLimitMinutes || 0) * 60;
   const isTimed = totalTimeLimitSeconds > 0;
   const remainingSeconds = isTimed ? Math.max(0, totalTimeLimitSeconds - secondsElapsed) : 0;
+
+  // Exam Proctoring: Detect Tab switching and Window Blur
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        setTabSwitchCount(prev => {
+          const nextCount = prev + 1;
+          setShowProctorWarning(true);
+
+          // If repeated tab switching occurs (>= 3 times), log a security incident for admin review
+          if (nextCount === 3 || nextCount === 6) {
+            reportExamTabSwitchAnomaly(
+              nextCount,
+              `${config.class || 'NCERT'} ${config.subject || 'Assessment'}`,
+              user
+            );
+          }
+          return nextCount;
+        });
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      // Disallow right-click context menu during exam
+      e.preventDefault();
+      setShowProctorWarning(true);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, [config.class, config.subject, user]);
 
   // Timer interval
   useEffect(() => {
@@ -218,6 +263,37 @@ export const QuizView: React.FC<QuizViewProps> = ({
           style={{ width: `${progressPercent}%` }}
         />
       </div>
+
+      {/* Exam Proctor Notice / Tab-Switching Warning */}
+      {showProctorWarning && (
+        <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-top-2 ${
+          tabSwitchCount >= 3 
+            ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' 
+            : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-amber-400" />
+            <div>
+              <span className="font-bold">Academic Integrity Proctor: </span>
+              {tabSwitchCount >= 3 ? (
+                <span>
+                  Repeated tab switches detected ({tabSwitchCount} times). An integrity incident has been registered with system administrators.
+                </span>
+              ) : (
+                <span>
+                  Tab switch or window unfocus detected ({tabSwitchCount}/3). Please remain focused on the exam view to ensure an unflagged score.
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => setShowProctorWarning(false)}
+            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Main Question Card */}
       <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 sm:p-10 space-y-8 shadow-2xl relative">

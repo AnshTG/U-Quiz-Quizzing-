@@ -24,6 +24,8 @@ import {
   SAFE_PAYLOAD_MAX_BYTES,
   readFileAsBase64
 } from '../services/documentProcessor';
+import { FeatureKey, MaintenanceConfig, UserProfile } from '../types';
+import { inspectUrlForSecurity } from '../services/securityService';
 
 export interface CustomSourceData {
   sourceType: 'notes' | 'pdf' | 'webpage' | 'text';
@@ -36,11 +38,19 @@ export interface CustomSourceData {
 interface CustomSourceUploaderProps {
   data: CustomSourceData;
   onChange: (data: CustomSourceData) => void;
+  maintenanceConfig?: MaintenanceConfig;
+  onFeatureBlocked?: (featureKey: FeatureKey) => void;
+  isAdminUnlocked?: boolean;
+  user?: UserProfile | null;
 }
 
 export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
   data,
   onChange,
+  maintenanceConfig,
+  onFeatureBlocked,
+  isAdminUnlocked = false,
+  user,
 }) => {
   const [activeTab, setActiveTab] = useState<'notes' | 'pdf' | 'webpage' | 'text'>(data.sourceType || 'notes');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -67,6 +77,12 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!isAdminUnlocked && maintenanceConfig?.features?.ocr_scan?.isUnderMaintenance) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      onFeatureBlocked?.('ocr_scan');
+      return;
+    }
 
     if (!file.type.startsWith('image/')) {
       setError('Please upload a valid image file (PNG, JPG, JPEG, WEBP).');
@@ -180,6 +196,12 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
   // Handle Webpage URL Fetch
   const handleFetchWebpage = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isAdminUnlocked && maintenanceConfig?.features?.webpage_fetch?.isUnderMaintenance) {
+      onFeatureBlocked?.('webpage_fetch');
+      return;
+    }
+
     let rawUrl = webpageUrl.trim();
     if (!rawUrl) {
       setError('Please enter a valid webpage or article URL (e.g. https://en.wikipedia.org/wiki/Newton%27s_laws_of_motion).');
@@ -190,6 +212,13 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
     if (!/^https?:\/\//i.test(rawUrl)) {
       rawUrl = `https://${rawUrl}`;
       setWebpageUrl(rawUrl);
+    }
+
+    // Security Inspection: Block loopbacks, SSRF, private IPs and cloud metadata
+    const securityCheck = inspectUrlForSecurity(rawUrl, user);
+    if (!securityCheck.isSafe) {
+      setError(securityCheck.reason || 'Restricted or invalid URL address. Please provide a public webpage.');
+      return;
     }
 
     setError(null);
@@ -228,6 +257,9 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
     });
   };
 
+  const isOcrUnder = !isAdminUnlocked && !!maintenanceConfig?.features?.ocr_scan?.isUnderMaintenance;
+  const isWebUnder = !isAdminUnlocked && !!maintenanceConfig?.features?.webpage_fetch?.isUnderMaintenance;
+
   return (
     <div className="space-y-6">
       
@@ -244,7 +276,13 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
         >
           <div className="flex items-center justify-between">
             <PenTool className={`w-4 h-4 ${activeTab === 'notes' ? 'text-emerald-400' : 'text-slate-500'}`} />
-            {activeTab === 'notes' && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+            {isOcrUnder ? (
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Maintenance
+              </span>
+            ) : activeTab === 'notes' ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            ) : null}
           </div>
           <div>
             <div className="text-xs font-bold text-slate-100">Handwritten Notes</div>
@@ -282,7 +320,13 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
         >
           <div className="flex items-center justify-between">
             <Globe className={`w-4 h-4 ${activeTab === 'webpage' ? 'text-emerald-400' : 'text-slate-500'}`} />
-            {activeTab === 'webpage' && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+            {isWebUnder ? (
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Maintenance
+              </span>
+            ) : activeTab === 'webpage' ? (
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+            ) : null}
           </div>
           <div>
             <div className="text-xs font-bold text-slate-100">Webpage Link</div>

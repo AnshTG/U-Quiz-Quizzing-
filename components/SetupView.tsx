@@ -32,17 +32,26 @@ import {
 } from 'lucide-react';
 import { ShareReminderModal } from './ShareReminderModal';
 import { CustomSourceUploader, CustomSourceData } from './CustomSourceUploader';
+import { FeatureKey, MaintenanceConfig, UserProfile } from '../types';
 
 interface SetupViewProps {
   initialConfig?: Partial<QuizConfig>;
   onGenerateQuiz: (config: QuizConfig) => void;
   onCancel: () => void;
+  maintenanceConfig?: MaintenanceConfig;
+  onFeatureBlocked?: (featureKey: FeatureKey) => void;
+  isAdminUnlocked?: boolean;
+  user?: UserProfile | null;
 }
 
 export const SetupView: React.FC<SetupViewProps> = ({
   initialConfig,
   onGenerateQuiz,
   onCancel,
+  maintenanceConfig,
+  onFeatureBlocked,
+  isAdminUnlocked = false,
+  user,
 }) => {
   // Mode: NCERT Curriculum or Custom Sources
   const [generationMode, setGenerationMode] = useState<'syllabus' | 'custom'>(
@@ -163,6 +172,11 @@ export const SetupView: React.FC<SetupViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isAdminUnlocked && maintenanceConfig?.features?.quiz_generation?.isUnderMaintenance) {
+      onFeatureBlocked?.('quiz_generation');
+      return;
+    }
 
     if (generationMode === 'custom') {
       const hasContent = !!customSourceData.sourceContent.trim() || !!customSourceData.sourceFileBase64;
@@ -581,6 +595,10 @@ export const SetupView: React.FC<SetupViewProps> = ({
               <CustomSourceUploader
                 data={customSourceData}
                 onChange={setCustomSourceData}
+                maintenanceConfig={maintenanceConfig}
+                onFeatureBlocked={onFeatureBlocked}
+                isAdminUnlocked={isAdminUnlocked}
+                user={user}
               />
             </div>
           )}
