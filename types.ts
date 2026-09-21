@@ -66,6 +66,8 @@ export interface UserProfile {
   uid: string;
   email: string | null;
   displayName: string | null;
+  username?: string;
+  usernameLower?: string;
   photoURL: string | null;
   createdAt?: string;
   lastLoginAt?: string;
@@ -142,6 +144,7 @@ export interface ChatMessage {
   id: string;
   userId: string;
   userName: string;
+  userUsername?: string;
   userPhoto?: string | null;
   message: string;
   timestamp: number;
@@ -150,6 +153,43 @@ export interface ChatMessage {
   reactions?: Record<string, string[]>; // emoji -> array of userIds
   imageUrl?: string;
   imageName?: string;
+  isPending?: boolean;
+  sendFailed?: boolean;
+}
+
+export interface P2PParticipant {
+  uid: string;
+  displayName: string;
+  username: string;
+  photoURL?: string | null;
+}
+
+export interface P2PConversation {
+  id: string;
+  participantIds: string[];
+  participants: Record<string, P2PParticipant>;
+  lastMessage?: string;
+  lastMessageSenderId?: string;
+  lastMessageTimestamp?: number;
+  unreadCounts?: Record<string, number>;
+  updatedAt: string;
+}
+
+export interface P2PMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  senderUsername?: string;
+  senderPhoto?: string | null;
+  recipientId: string;
+  message: string;
+  imageUrl?: string;
+  imageName?: string;
+  timestamp: number;
+  createdAt: string;
+  read?: boolean;
+  reactions?: Record<string, string[]>;
   isPending?: boolean;
   sendFailed?: boolean;
 }

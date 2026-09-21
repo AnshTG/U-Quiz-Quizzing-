@@ -46,14 +46,19 @@ import {
   Download,
   Maximize2,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  AtSign,
+  MessageSquare
 } from 'lucide-react';
+import { P2PChatView } from './P2PChatView';
 
 interface ChatViewProps {
   user: UserProfile | null;
   onSignIn: () => void;
-  initialTab?: 'gemini' | 'public';
+  initialTab?: 'gemini' | 'public' | 'p2p';
   onBackHome?: () => void;
+  onOpenEditUsername?: () => void;
+  initialPeerUser?: UserProfile | null;
 }
 
 const SUBJECT_OPTIONS = [
@@ -94,8 +99,31 @@ const QUICK_AI_SUGGESTIONS = [
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏', '🔥', '💡', '👏'];
 
-export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab = 'gemini', onBackHome }) => {
-  const [activeTab, setActiveTab] = useState<'gemini' | 'public'>(initialTab);
+export const ChatView: React.FC<ChatViewProps> = ({ 
+  user, 
+  onSignIn, 
+  initialTab = 'public', 
+  onBackHome,
+  onOpenEditUsername,
+  initialPeerUser: externalPeerUser
+}) => {
+  const [activeTab, setActiveTab] = useState<'gemini' | 'public' | 'p2p'>(initialTab);
+  const [selectedPeerForP2P, setSelectedPeerForP2P] = useState<UserProfile | null>(externalPeerUser || null);
+
+  const handleStartP2PWithAuthor = (msg: ChatMessage) => {
+    if (!user) {
+      onSignIn();
+      return;
+    }
+    setSelectedPeerForP2P({
+      uid: msg.userId,
+      displayName: msg.userName,
+      username: msg.userUsername,
+      photoURL: msg.userPhoto,
+      email: null
+    });
+    setActiveTab('p2p');
+  };
 
   // ---------------- GEMINI AI CHAT STATE ----------------
   const [geminiMessages, setGeminiMessages] = useState<GeminiChatMessage[]>(() => {
@@ -563,7 +591,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                 </span>
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'public' ? (
             <div className="flex items-center gap-3 min-w-0">
               <div className="relative shrink-0">
                 <div className="w-10 h-10 rounded-full bg-[#374248] border border-[#2a3942] flex items-center justify-center text-[#00a884] font-bold">
@@ -579,6 +607,28 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                 </div>
                 <span className="text-xs text-[#8696a0] truncate">
                   Real-time peer discussions & questions
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative shrink-0">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 border border-emerald-500/40 flex items-center justify-center text-slate-950 font-bold shadow-md">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <span className="w-3 h-3 rounded-full bg-[#00a884] border-2 border-[#202c33] absolute bottom-0 right-0" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-semibold text-sm sm:text-base text-[#e9edef] truncate">
+                    1-on-1 Scholar Direct Chat
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0">
+                    P2P
+                  </span>
+                </div>
+                <span className="text-xs text-[#8696a0] truncate">
+                  Private direct chat & study doubt solving
                 </span>
               </div>
             </div>
@@ -614,6 +664,19 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
             >
               <Users className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Public Room</span>
+            </button>
+
+            <button
+              id="tab-p2p-chat"
+              onClick={() => setActiveTab('p2p')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'p2p'
+                  ? 'bg-[#00a884] text-slate-950 shadow-sm'
+                  : 'text-[#8696a0] hover:text-[#e9edef]'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Direct Chat</span>
             </button>
           </div>
 
@@ -659,8 +722,20 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
         </div>
       </header>
 
-      {/* ===================== WHATSAPP CHAT WALLPAPER & MESSAGES ===================== */}
-      <main className="flex-1 min-h-0 overflow-y-auto relative bg-[#0b141a] p-3 sm:p-5 space-y-3 custom-scrollbar overscroll-contain">
+      {/* Main Body */}
+      {activeTab === 'p2p' ? (
+        <div className="flex-1 min-h-0 flex flex-col bg-[#0b141a]">
+          <P2PChatView
+            currentUser={user}
+            onSignIn={onSignIn}
+            onOpenEditUsername={onOpenEditUsername}
+            initialPeerUser={selectedPeerForP2P}
+          />
+        </div>
+      ) : (
+        <>
+          {/* ===================== WHATSAPP CHAT WALLPAPER & MESSAGES ===================== */}
+          <main className="flex-1 min-h-0 overflow-y-auto relative bg-[#0b141a] p-3 sm:p-5 space-y-3 custom-scrollbar overscroll-contain">
         
         {/* Subtle WhatsApp style encrypted / session notice banner */}
         <div className="flex justify-center my-1">
@@ -949,15 +1024,41 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
                       >
                         {/* Author Header */}
                         {!isMe && (
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-xs font-bold text-[#53bdeb]">
                               {msg.userName}
                             </span>
+                            {msg.userUsername && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartP2PWithAuthor(msg);
+                                }}
+                                className="text-[10px] font-mono font-semibold text-emerald-400 hover:text-emerald-300 hover:underline flex items-center gap-0.5 cursor-pointer"
+                                title={`Start direct chat with @${msg.userUsername}`}
+                              >
+                                <AtSign className="w-2.5 h-2.5 shrink-0" />
+                                <span>{msg.userUsername}</span>
+                              </button>
+                            )}
                             {msg.subjectTag && (
                               <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#111b21] text-[#8696a0] border border-[#2a3942]">
                                 {msg.subjectTag}
                               </span>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartP2PWithAuthor(msg);
+                              }}
+                              className="ml-auto text-[10px] text-slate-400 hover:text-emerald-400 flex items-center gap-1 cursor-pointer transition-colors"
+                              title={`Direct message ${msg.userName}`}
+                            >
+                              <MessageSquare className="w-3 h-3 text-emerald-400" />
+                              <span className="hidden sm:inline">Direct Chat</span>
+                            </button>
                           </div>
                         )}
 
@@ -1260,6 +1361,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ user, onSignIn, initialTab =
           </div>
         )}
       </footer>
+        </>
+      )}
 
       {/* ===================== FULL-SCREEN IMAGE LIGHTBOX MODAL ===================== */}
       {lightboxImage && (

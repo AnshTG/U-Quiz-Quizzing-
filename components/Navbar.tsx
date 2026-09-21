@@ -23,7 +23,9 @@ import {
   Home,
   Flame,
   Bug,
-  HelpCircle
+  HelpCircle,
+  AtSign,
+  Edit3
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -40,6 +42,7 @@ interface NavbarProps {
   onOpenAttendance: () => void;
   onOpenFeedback: () => void;
   onOpenDocs?: () => void;
+  onOpenEditUsername?: () => void;
   isAdminUnlocked?: boolean;
   isLoginScreen?: boolean;
   onGoToLogin?: () => void;
@@ -61,6 +64,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAttendance,
   onOpenFeedback,
   onOpenDocs,
+  onOpenEditUsername,
   isAdminUnlocked = false,
   isLoginScreen,
   onGoToLogin,
@@ -421,7 +425,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {/* Profile Dropdown */}
                       {isProfileMenuOpen && (
                         <div className="absolute right-0 mt-2 w-64 rounded-2xl border border-slate-800 bg-slate-900 p-2.5 shadow-2xl space-y-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                          <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-bold text-white truncate block">
                                 {user.displayName || 'Google User'}
@@ -432,12 +436,49 @@ export const Navbar: React.FC<NavbarProps> = ({
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-400 truncate block font-mono">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[11px] text-emerald-400 font-mono font-bold truncate flex items-center gap-0.5">
+                                <AtSign className="w-3 h-3 text-emerald-400 shrink-0" />
+                                {user.username || 'scholar'}
+                              </span>
+                              {onOpenEditUsername && (
+                                <button
+                                  onClick={() => {
+                                    setIsProfileMenuOpen(false);
+                                    onOpenEditUsername();
+                                  }}
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-400 hover:text-emerald-300 bg-slate-900 hover:bg-slate-800 border border-slate-800 flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="Change your unique scholar handle"
+                                >
+                                  <Edit3 className="w-2.5 h-2.5" />
+                                  <span>Edit</span>
+                                </button>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500 truncate block font-mono">
                               {user.email}
                             </span>
                           </div>
 
                           <div className="space-y-0.5">
+                            {onOpenEditUsername && (
+                              <button
+                                onClick={() => {
+                                  setIsProfileMenuOpen(false);
+                                  onOpenEditUsername();
+                                }}
+                                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors text-left cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <AtSign className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>Customize Handle</span>
+                                </div>
+                                <span className="text-[10px] font-mono text-emerald-300 font-bold">
+                                  @{user.username || 'scholar'}
+                                </span>
+                              </button>
+                            )}
+
                             <button
                               onClick={() => {
                                 setIsProfileMenuOpen(false);

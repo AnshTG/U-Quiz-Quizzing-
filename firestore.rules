@@ -73,6 +73,29 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // Unique scholar usernames registry
+    match /usernames/{username} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // P2P Direct scholar conversations
+    match /p2pConversations/{conversationId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+
+      // Messages in P2P conversation
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create, update, delete: if true;
+      }
+    }
+
+    // Collection group for P2P messages
+    match /{path=**}/messages/{messageId} {
+      allow read, write, delete: if true;
+    }
+
     // Feedback and Bug Reports collection (user reports & admin triage)
     match /feedbacks/{feedbackId} {
       allow read: if true;

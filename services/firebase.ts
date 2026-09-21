@@ -37,6 +37,9 @@ import {
   LeaderboardUser,
   AttendanceRecord,
   ChatMessage,
+  P2PConversation,
+  P2PMessage,
+  P2PParticipant,
   MaintenanceConfig,
   FeatureKey,
   AdminUserQuizEntry,
@@ -145,6 +148,180 @@ export const getISTTimeString = (d: Date = new Date()): string => {
   return `${hours}:${minutes} ${ampm} IST`;
 };
 
+// ==========================================
+// SCHOLAR USERNAMES & HANDLE MANAGEMENT
+// ==========================================
+
+export const sanitizeUsernameCandidate = (raw: string): string => {
+  let cleaned = (raw || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (cleaned.length < 3) {
+    cleaned = `scholar_${cleaned}`.replace(/^_+|_+$/g, '');
+  }
+  return cleaned.slice(0, 20);
+};
+
+export const checkUsernameAvailability = async (
+  usernameCandidate: string,
+  currentUid?: string
+): Promise<{ available: boolean; error?: string; username: string }> => {
+  const normalized = (usernameCandidate || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return { available: false, error: 'Username cannot be blank.', username: normalized };
+  }
+  if (normalized.length < 3) {
+    return { available: false, error: 'Username must be at least 3 characters.', username: normalized };
+  }
+  if (normalized.length > 25) {
+    return { available: false, error: 'Username cannot exceed 25 characters.', username: normalized };
+  }
+  if (!/^[a-z0-9_]+$/.test(normalized)) {
+    return { available: false, error: 'Only lowercase letters, numbers, and underscores are allowed.', username: normalized };
+  }
+  if (/^_+$/.test(normalized)) {
+    return { available: false, error: 'Username must contain alphanumeric characters.', username: normalized };
+  }
+
+  try {
+    const reservationRef = doc(db, 'usernames', normalized);
+    const snap = await getDoc(reservationRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (currentUid && data.uid === currentUid) {
+        return { available: true, username: normalized };
+      }
+      return { available: false, error: `@${normalized} is already taken by another scholar.`, username: normalized };
+    }
+    return { available: true, username: normalized };
+  } catch (err: any) {
+    console.warn('Username check error:', err);
+    return { available: true, username: normalized };
+  }
+};
+
+export const ensureUserUniqueUsername = async (
+  uid: string,
+  displayName?: string | null,
+  email?: string | null
+): Promise<string> => {
+  try {
+    const userRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      const userData = userSnap.data();
+      if (userData.username && typeof userData.username === 'string' && userData.username.trim().length >= 3) {
+        const normalized = userData.username.toLowerCase().trim();
+        const resRef = doc(db, 'usernames', normalized);
+        const resSnap = await getDoc(resRef);
+        if (!resSnap.exists() || resSnap.data()?.uid !== uid) {
+          await setDoc(resRef, { username: normalized, uid, createdAt: new Date().toISOString() }, { merge: true });
+        }
+        return userData.username;
+      }
+    }
+
+    // Generate unique username candidates
+    const baseSource = (displayName || email?.split('@')[0] || 'scholar');
+    const cleanBase = sanitizeUsernameCandidate(baseSource);
+
+    const candidates = [
+      cleanBase,
+      `${cleanBase}_${Math.floor(10 + Math.random() * 90)}`,
+      `${cleanBase}_${Math.floor(100 + Math.random() * 900)}`,
+      `scholar_${Math.floor(1000 + Math.random() * 9000)}`
+    ];
+
+    let finalUsername = '';
+    for (const cand of candidates) {
+      const check = await checkUsernameAvailability(cand, uid);
+      if (check.available) {
+        finalUsername = cand;
+        break;
+      }
+    }
+
+    if (!finalUsername) {
+      finalUsername = `scholar_${Date.now().toString(36).slice(-5)}`;
+    }
+
+    const batch = writeBatch(db);
+    const reservationRef = doc(db, 'usernames', finalUsername);
+    batch.set(reservationRef, {
+      username: finalUsername,
+      uid,
+      createdAt: new Date().toISOString()
+    });
+    batch.set(userRef, {
+      username: finalUsername,
+      usernameLower: finalUsername.toLowerCase(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    await batch.commit();
+    return finalUsername;
+  } catch (error) {
+    console.error('Failed to ensure unique username:', error);
+    return `scholar_${uid.slice(0, 6)}`;
+  }
+};
+
+export const updateUserCustomUsername = async (
+  user: UserProfile,
+  newUsernameRaw: string
+): Promise<{ success: boolean; username?: string; error?: string }> => {
+  if (!user || !user.uid) {
+    return { success: false, error: 'Authentication required to update username.' };
+  }
+
+  const check = await checkUsernameAvailability(newUsernameRaw, user.uid);
+  if (!check.available) {
+    return { success: false, error: check.error || 'Username is unavailable.' };
+  }
+
+  const normalizedNew = check.username;
+  const oldUsername = user.username?.toLowerCase()?.trim();
+
+  if (oldUsername === normalizedNew) {
+    return { success: true, username: normalizedNew };
+  }
+
+  try {
+    const batch = writeBatch(db);
+
+    // Release old reservation if it existed
+    if (oldUsername) {
+      const oldRef = doc(db, 'usernames', oldUsername);
+      batch.delete(oldRef);
+    }
+
+    // Set new reservation
+    const newRef = doc(db, 'usernames', normalizedNew);
+    batch.set(newRef, {
+      username: normalizedNew,
+      uid: user.uid,
+      createdAt: new Date().toISOString()
+    });
+
+    // Update user profile
+    const userRef = doc(db, 'users', user.uid);
+    batch.set(userRef, {
+      username: normalizedNew,
+      usernameLower: normalizedNew,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    await batch.commit();
+    return { success: true, username: normalizedNew };
+  } catch (err: any) {
+    console.error('Failed to update username:', err);
+    return { success: false, error: err.message || 'Failed to save username to database.' };
+  }
+};
+
 // Auth helper functions
 export const signInWithGoogle = async (): Promise<UserProfile | null> => {
   try {
@@ -157,10 +334,18 @@ export const signInWithGoogle = async (): Promise<UserProfile | null> => {
     const existingDoc = await getDoc(userRef);
     const existingData = existingDoc.exists() ? existingDoc.data() : {};
 
+    // Auto-ensure unique username for existing and new users
+    let assignedUsername = existingData.username;
+    if (!assignedUsername) {
+      assignedUsername = await ensureUserUniqueUsername(user.uid, user.displayName, user.email);
+    }
+
     const userProfile: UserProfile = {
       uid: user.uid,
       email: user.email,
       displayName: user.displayName,
+      username: assignedUsername || undefined,
+      usernameLower: assignedUsername ? assignedUsername.toLowerCase() : undefined,
       photoURL: user.photoURL,
       createdAt: existingData.createdAt || new Date().toISOString(),
       lastLoginAt: new Date().toISOString(),
@@ -216,10 +401,18 @@ export const listenToAuthChanges = (callback: (user: UserProfile | null) => void
         const todayStr = getISTDateString();
         if (userDoc.exists()) {
           const data = userDoc.data();
+
+          // Auto-assign unique username for existing users if missing
+          if (!data.username) {
+            ensureUserUniqueUsername(user.uid, data.displayName || user.displayName, user.email).catch(console.warn);
+          }
+
           const profile: UserProfile = {
             uid: user.uid,
             email: user.email,
             displayName: data.displayName || user.displayName,
+            username: data.username || undefined,
+            usernameLower: data.usernameLower || (data.username ? data.username.toLowerCase() : undefined),
             photoURL: data.photoURL || user.photoURL,
             createdAt: data.createdAt,
             lastLoginAt: data.lastLoginAt,
@@ -252,6 +445,7 @@ export const listenToAuthChanges = (callback: (user: UserProfile | null) => void
             createdAt: new Date().toISOString(),
             lastLoginAt: new Date().toISOString()
           };
+          ensureUserUniqueUsername(user.uid, user.displayName, user.email).catch(console.warn);
           recordAttendance(newProfile, 'daily_login').catch(console.warn);
           callback(newProfile);
         }
@@ -1574,6 +1768,7 @@ export const sendPublicChatMessage = async (
     id: messageId,
     userId: user.uid,
     userName: user.displayName || 'Anonymous Scholar',
+    userUsername: user.username || undefined,
     userPhoto: user.photoURL || null,
     message: trimmed,
     timestamp: Date.now(),
@@ -1660,6 +1855,361 @@ export const togglePublicChatReaction = async (
     await updateDoc(msgRef, { reactions: updatedReactions });
   } catch (err) {
     console.error('Failed to toggle chat reaction:', err);
+  }
+};
+
+// ==========================================
+// P2P 1-ON-1 DIRECT SCHOLAR CHAT
+// ==========================================
+
+export const getP2PConversationId = (uid1: string, uid2: string): string => {
+  return [uid1, uid2].sort().join('_');
+};
+
+export const ensureP2PConversation = async (
+  currentUser: UserProfile,
+  peerUser: { uid: string; displayName?: string | null; username?: string | null; photoURL?: string | null }
+): Promise<P2PConversation> => {
+  if (!currentUser?.uid || !peerUser?.uid) {
+    throw new Error('Both scholars must be identified to start direct messaging.');
+  }
+
+  const conversationId = getP2PConversationId(currentUser.uid, peerUser.uid);
+  const convRef = doc(db, 'p2pConversations', conversationId);
+  const snap = await getDoc(convRef);
+
+  const myParticipant: P2PParticipant = {
+    uid: currentUser.uid,
+    displayName: currentUser.displayName || 'Scholar',
+    username: currentUser.username || sanitizeUsernameCandidate(currentUser.displayName || 'scholar'),
+    photoURL: currentUser.photoURL || null
+  };
+
+  const peerParticipant: P2PParticipant = {
+    uid: peerUser.uid,
+    displayName: peerUser.displayName || 'Scholar',
+    username: peerUser.username || sanitizeUsernameCandidate(peerUser.displayName || 'scholar'),
+    photoURL: peerUser.photoURL || null
+  };
+
+  if (snap.exists()) {
+    const existing = snap.data() as P2PConversation;
+    const updatedParticipants = {
+      ...existing.participants,
+      [currentUser.uid]: myParticipant,
+      [peerUser.uid]: peerParticipant
+    };
+    await updateDoc(convRef, {
+      participants: updatedParticipants,
+      updatedAt: new Date().toISOString()
+    });
+    return {
+      ...existing,
+      id: conversationId,
+      participants: updatedParticipants
+    };
+  }
+
+  const newConvo: P2PConversation = {
+    id: conversationId,
+    participantIds: [currentUser.uid, peerUser.uid],
+    participants: {
+      [currentUser.uid]: myParticipant,
+      [peerUser.uid]: peerParticipant
+    },
+    lastMessage: 'Direct chat opened',
+    lastMessageSenderId: currentUser.uid,
+    lastMessageTimestamp: Date.now(),
+    unreadCounts: {
+      [currentUser.uid]: 0,
+      [peerUser.uid]: 0
+    },
+    updatedAt: new Date().toISOString()
+  };
+
+  await setDoc(convRef, sanitizeForFirestore(newConvo));
+  return newConvo;
+};
+
+export const sendP2PMessage = async (params: {
+  conversationId: string;
+  currentUser: UserProfile;
+  peerUser: { uid: string; displayName?: string | null; username?: string | null; photoURL?: string | null };
+  messageText: string;
+  imageUrl?: string;
+  imageName?: string;
+  customMessageId?: string;
+}): Promise<P2PMessage> => {
+  const { conversationId, currentUser, peerUser, messageText, imageUrl, imageName, customMessageId } = params;
+
+  if (!currentUser || !currentUser.uid) {
+    throw new Error('Authentication required to send message.');
+  }
+
+  const trimmed = (messageText || '').trim();
+  if (!trimmed && !imageUrl) {
+    throw new Error('Please enter text or attach an image.');
+  }
+
+  if (trimmed.length > 3000) {
+    throw new Error('Direct message exceeds 3000 character limit.');
+  }
+
+  const messageId = customMessageId || `p2p_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const messageData: P2PMessage = {
+    id: messageId,
+    conversationId,
+    senderId: currentUser.uid,
+    senderName: currentUser.displayName || 'Scholar',
+    senderUsername: currentUser.username || undefined,
+    senderPhoto: currentUser.photoURL || null,
+    recipientId: peerUser.uid,
+    message: trimmed,
+    ...(imageUrl ? { imageUrl } : {}),
+    ...(imageName ? { imageName } : {}),
+    timestamp: Date.now(),
+    createdAt: new Date().toISOString(),
+    read: false
+  };
+
+  // Save message in subcollection
+  const msgRef = doc(db, 'p2pConversations', conversationId, 'messages', messageId);
+  await setDoc(msgRef, sanitizeForFirestore(messageData));
+
+  // Update conversation parent metadata
+  const convRef = doc(db, 'p2pConversations', conversationId);
+  const preview = imageUrl ? (trimmed ? `📷 ${trimmed}` : '📷 Image Attachment') : trimmed;
+  await setDoc(convRef, {
+    id: conversationId,
+    participantIds: [currentUser.uid, peerUser.uid],
+    lastMessage: preview.slice(0, 100),
+    lastMessageSenderId: currentUser.uid,
+    lastMessageTimestamp: Date.now(),
+    updatedAt: new Date().toISOString(),
+    [`unreadCounts.${peerUser.uid}`]: increment(1)
+  }, { merge: true });
+
+  // Record chat interaction attendance
+  recordAttendance(currentUser, 'chat_interaction', {
+    subject: 'Direct Scholar Chat'
+  }).catch(console.warn);
+
+  return messageData;
+};
+
+export const listenToP2PConversations = (
+  userId: string,
+  callback: (conversations: P2PConversation[]) => void
+): Unsubscribe => {
+  try {
+    const colRef = collection(db, 'p2pConversations');
+    const q = query(
+      colRef,
+      where('participantIds', 'array-contains', userId),
+      limit(50)
+    );
+
+    return onSnapshot(q, (snap) => {
+      const list: P2PConversation[] = [];
+      snap.forEach((d) => {
+        list.push({ ...d.data(), id: d.id } as P2PConversation);
+      });
+      // Sort client-side by lastMessageTimestamp descending
+      list.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+      callback(list);
+    }, (err) => {
+      console.warn('P2P Conversations listener error:', err);
+      callback([]);
+    });
+  } catch (err) {
+    console.error('Failed to listen to P2P conversations:', err);
+    return () => {};
+  }
+};
+
+export const listenToP2PMessages = (
+  conversationId: string,
+  callback: (messages: P2PMessage[]) => void,
+  limitCount: number = 80
+): Unsubscribe => {
+  try {
+    const colRef = collection(db, 'p2pConversations', conversationId, 'messages');
+    const q = query(colRef, orderBy('timestamp', 'desc'), limit(limitCount));
+
+    return onSnapshot(q, (snap) => {
+      const msgs: P2PMessage[] = [];
+      snap.forEach((d) => {
+        msgs.push({ ...d.data(), id: d.id } as P2PMessage);
+      });
+      msgs.sort((a, b) => a.timestamp - b.timestamp);
+      callback(msgs);
+    }, (err) => {
+      console.warn('P2P Messages onSnapshot error:', err);
+    });
+  } catch (err) {
+    console.error('Failed to listen to P2P messages:', err);
+    return () => {};
+  }
+};
+
+export const markP2PConversationAsRead = async (
+  conversationId: string,
+  currentUserId: string
+): Promise<void> => {
+  try {
+    const convRef = doc(db, 'p2pConversations', conversationId);
+    await updateDoc(convRef, {
+      [`unreadCounts.${currentUserId}`]: 0
+    });
+  } catch (err) {
+    // Non-fatal
+  }
+};
+
+export const deleteP2PMessage = async (
+  conversationId: string,
+  messageId: string
+): Promise<void> => {
+  const msgRef = doc(db, 'p2pConversations', conversationId, 'messages', messageId);
+  await deleteDoc(msgRef);
+};
+
+export const toggleP2PMessageReaction = async (
+  conversationId: string,
+  messageId: string,
+  emoji: string,
+  userId: string
+): Promise<void> => {
+  try {
+    const msgRef = doc(db, 'p2pConversations', conversationId, 'messages', messageId);
+    const snap = await getDoc(msgRef);
+    if (!snap.exists()) return;
+    const data = snap.data() as P2PMessage;
+    const currentReactions = data.reactions || {};
+    const usersForEmoji = currentReactions[emoji] || [];
+
+    let updatedUsers: string[];
+    if (usersForEmoji.includes(userId)) {
+      updatedUsers = usersForEmoji.filter(id => id !== userId);
+    } else {
+      updatedUsers = [...usersForEmoji, userId];
+    }
+
+    const updatedReactions = { ...currentReactions };
+    if (updatedUsers.length === 0) {
+      delete updatedReactions[emoji];
+    } else {
+      updatedReactions[emoji] = updatedUsers;
+    }
+
+    await updateDoc(msgRef, { reactions: updatedReactions });
+  } catch (err) {
+    console.error('Failed to toggle P2P reaction:', err);
+  }
+};
+
+export const searchScholars = async (
+  searchTerm: string,
+  currentUserId: string
+): Promise<UserProfile[]> => {
+  const term = (searchTerm || '').trim().toLowerCase().replace(/^@/, '');
+  if (!term || term.length < 1) return [];
+
+  try {
+    const results: UserProfile[] = [];
+    const seenUids = new Set<string>([currentUserId]);
+
+    // Search users by usernameLower
+    const usersCol = collection(db, 'users');
+    const q1 = query(
+      usersCol,
+      where('usernameLower', '>=', term),
+      where('usernameLower', '<=', term + '\uf8ff'),
+      limit(10)
+    );
+    const snap1 = await getDocs(q1);
+    snap1.forEach((d) => {
+      if (!seenUids.has(d.id)) {
+        seenUids.add(d.id);
+        results.push({ ...d.data(), uid: d.id } as UserProfile);
+      }
+    });
+
+    // Also check attendance recent check-ins if few results
+    if (results.length < 8) {
+      const attCol = collection(db, 'attendance');
+      const q2 = query(attCol, orderBy('timestamp', 'desc'), limit(30));
+      const snap2 = await getDocs(q2);
+      snap2.forEach((d) => {
+        const att = d.data();
+        if (att.userId && !seenUids.has(att.userId)) {
+          const matchName = (att.displayName || '').toLowerCase().includes(term);
+          if (matchName) {
+            seenUids.add(att.userId);
+            results.push({
+              uid: att.userId,
+              displayName: att.displayName,
+              photoURL: att.photoURL,
+              currentStreak: att.currentStreak,
+              email: null
+            });
+          }
+        }
+      });
+    }
+
+    return results;
+  } catch (err) {
+    console.warn('searchScholars error:', err);
+    return [];
+  }
+};
+
+export const getRecentActiveScholars = async (
+  currentUserId: string,
+  limitCount: number = 15
+): Promise<UserProfile[]> => {
+  try {
+    const attCol = collection(db, 'attendance');
+    const q = query(attCol, orderBy('timestamp', 'desc'), limit(40));
+    const snap = await getDocs(q);
+    const scholars: UserProfile[] = [];
+    const seenUids = new Set<string>([currentUserId]);
+
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (data.userId && !seenUids.has(data.userId)) {
+        seenUids.add(data.userId);
+        scholars.push({
+          uid: data.userId,
+          displayName: data.displayName || 'Scholar',
+          photoURL: data.photoURL || null,
+          currentStreak: data.currentStreak || 1,
+          email: null
+        });
+        if (scholars.length >= limitCount) break;
+      }
+    }
+
+    // Augment with username if available
+    for (const s of scholars) {
+      try {
+        const uSnap = await getDoc(doc(db, 'users', s.uid));
+        if (uSnap.exists()) {
+          const uData = uSnap.data();
+          if (uData.username) {
+            s.username = uData.username;
+          }
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    return scholars;
+  } catch (err) {
+    console.warn('getRecentActiveScholars error:', err);
+    return [];
   }
 };
 

@@ -196,12 +196,72 @@
         "resolvedBy": { "type": "string" }
       },
       "required": ["id", "type", "title", "description", "severity", "status", "timestamp"]
+    },
+    "UsernameReservation": {
+      "title": "UsernameReservation",
+      "description": "Unique username handle mapping to user id for reservation and conflict checking",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "uid": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["username", "uid"]
+    },
+    "P2PConversation": {
+      "title": "P2PConversation",
+      "description": "Direct peer-to-peer 1-on-1 study chat channel between two scholars",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "participantIds": { "type": "array", "items": { "type": "string" } },
+        "participants": { "type": "object" },
+        "lastMessage": { "type": "string" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageTimestamp": { "type": "number" },
+        "unreadCounts": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "participantIds", "participants", "updatedAt"]
+    },
+    "P2PMessage": {
+      "title": "P2PMessage",
+      "description": "Direct peer-to-peer message exchanged between scholars with image attachments and math support",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderUsername": { "type": "string" },
+        "senderPhoto": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "message": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "imageName": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "conversationId", "senderId", "recipientId", "timestamp"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "entity": "UserProfile",
       "description": "User profile document"
+    },
+    "/usernames/{username}": {
+      "entity": "UsernameReservation",
+      "description": "Unique username registry to guarantee unique handles"
+    },
+    "/p2pConversations/{conversationId}": {
+      "entity": "P2PConversation",
+      "description": "Direct P2P study conversations between two scholars"
+    },
+    "/p2pConversations/{conversationId}/messages/{messageId}": {
+      "entity": "P2PMessage",
+      "description": "Direct messages sent in P2P scholar conversations"
     },
     "/users/{userId}/quizHistory/{historyId}": {
       "entity": "QuizHistoryItem",

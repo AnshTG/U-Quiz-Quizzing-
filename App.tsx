@@ -35,6 +35,7 @@ import { LandingHomeView } from './components/LandingHomeView';
 import { JoinQuizModal } from './components/JoinQuizModal';
 import { MaintenanceView } from './components/MaintenanceView';
 import { FeatureMaintenanceModal } from './components/FeatureMaintenanceModal';
+import { EditUsernameModal } from './components/EditUsernameModal';
 import { PRE_SAVED_BENCHMARK_QUIZZES } from './data/presavedQuizzes';
 import { AlertCircle, X, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { validateQuizSubmissionIntegrity } from './services/securityService';
@@ -72,6 +73,7 @@ export default function App() {
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState<boolean>(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState<boolean>(false);
+  const [isEditUsernameModalOpen, setIsEditUsernameModalOpen] = useState<boolean>(false);
   const [isDocumentationModalOpen, setIsDocumentationModalOpen] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.toLowerCase();
@@ -655,6 +657,7 @@ export default function App() {
             onOpenAttendance={() => setIsAttendanceModalOpen(true)}
             onOpenFeedback={() => setIsFeedbackModalOpen(true)}
             onOpenDocs={openDocs}
+            onOpenEditUsername={() => setIsEditUsernameModalOpen(true)}
             isAdminUnlocked={isAdminUnlocked}
             isLoginScreen={!user && !isAdminUnlocked && showLoginScreen}
             onGoToLogin={goToLogin}
@@ -862,6 +865,7 @@ export default function App() {
                     user={user}
                     onSignIn={handleSignIn}
                     onBackHome={() => navigateTo(AppState.HOME)}
+                    onOpenEditUsername={() => setIsEditUsernameModalOpen(true)}
                   />
                 )}
 
@@ -921,6 +925,18 @@ export default function App() {
           isOpen={isFeedbackModalOpen}
           onClose={() => setIsFeedbackModalOpen(false)}
           onSignIn={handleSignIn}
+        />
+      )}
+
+      {/* Custom Scholar Handle / Username Modal */}
+      {isEditUsernameModalOpen && (
+        <EditUsernameModal
+          user={user}
+          isOpen={isEditUsernameModalOpen}
+          onClose={() => setIsEditUsernameModalOpen(false)}
+          onUsernameUpdated={(newUsername) => {
+            setUser((prev) => prev ? { ...prev, username: newUsername, usernameLower: newUsername.toLowerCase() } : null);
+          }}
         />
       )}
 
