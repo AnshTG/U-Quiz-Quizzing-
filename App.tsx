@@ -902,6 +902,10 @@ export default function App() {
                     onSignIn={handleSignIn}
                     onBackHome={() => navigateTo(AppState.HOME)}
                     onOpenEditUsername={() => setIsEditUsernameModalOpen(true)}
+                    onStartQuiz={handleStartQuiz}
+                    onFeatureBlocked={(key) => setBlockedFeatureKey(key)}
+                    maintenanceConfig={maintenanceConfig}
+                    isAdminUnlocked={isAdminUnlocked}
                   />
                 )}
 

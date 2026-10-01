@@ -218,6 +218,7 @@ export interface GeminiChatMessage {
 export type FeatureKey =
   | 'quiz_generation'
   | 'ai_chat'
+  | 'test_me_practice'
   | 'multiplayer'
   | 'curriculum'
   | 'webpage_fetch'
@@ -263,6 +264,14 @@ export const PLATFORM_FEATURES: FeatureMetadata[] = [
     description: 'Generates NCERT syllabus-aligned multiple choice and numerical quizzes.',
     affectedButtons: ['"Generate Quiz"', '"Custom Source Quiz"', '"Start Practice Quiz"'],
     defaultMessage: 'Quiz generation is currently undergoing scheduled platform upgrades to expand question banks. Please explore the NCERT Curriculum directory or Flashcards.'
+  },
+  {
+    key: 'test_me_practice',
+    name: 'Test Me On This (Concept Quiz Launch)',
+    category: 'AI & Generation',
+    description: 'Instant launch of targeted practice quizzes formulated directly from AI Study Tutor concept explanations on the dedicated quiz screen.',
+    affectedButtons: ['"Test me on this"'],
+    defaultMessage: 'Targeted concept quizzing is temporarily undergoing upgrades. You can practice custom quizzes from the Quiz Setup screen.'
   },
   {
     key: 'chat_message_controls',

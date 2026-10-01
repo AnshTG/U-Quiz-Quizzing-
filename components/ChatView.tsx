@@ -5,7 +5,10 @@ import {
   ChatReplyQuote,
   GeminiChatMessage, 
   P2PConversation, 
-  P2PParticipant 
+  P2PParticipant,
+  QuizConfig,
+  FeatureKey,
+  MaintenanceConfig
 } from '../types';
 import { 
   sendPublicChatMessage, 
@@ -80,6 +83,10 @@ interface ChatViewProps {
   onBackHome?: () => void;
   onOpenEditUsername?: () => void;
   initialPeerUser?: UserProfile | null;
+  onStartQuiz?: (config: QuizConfig) => void;
+  onFeatureBlocked?: (key: FeatureKey) => void;
+  maintenanceConfig?: MaintenanceConfig;
+  isAdminUnlocked?: boolean;
 }
 
 const SUBJECT_OPTIONS = [
@@ -120,6 +127,69 @@ const QUICK_AI_SUGGESTIONS = [
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏', '🔥', '💡', '👏'];
 
+/**
+ * Evaluates whether an AI Study Tutor message explains substantive academic concepts
+ * suitable for targeted concept quizzing ("Test me on this").
+ */
+export function isMessageTestable(msg: GeminiChatMessage): boolean {
+  if (msg.role !== 'model') return false;
+  if (!msg.content || typeof msg.content !== 'string') return false;
+  const text = msg.content.trim();
+  
+  // Exclude error messages or abort messages
+  if (text.startsWith('⚠️') || text.includes('Unable to complete study analysis') || text.includes('Query was cancelled')) {
+    return false;
+  }
+  
+  // Exclude default intro greeting
+  if (msg.id === 'welcome_ai_msg' || text.includes('Namaste! I am your AI NCERT Study Mentor')) {
+    return false;
+  }
+
+  // Explicitly marked by AI model
+  if (msg.isTestable === true) return true;
+
+  // Pure conversational greetings or pleasantries
+  const isPureGreeting = /^(hi|hello|hey|namaste|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(text);
+  if (isPureGreeting) return false;
+
+  // Short clarifying questions
+  const isClarification = text.length < 130 && /\?$/.test(text) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(text);
+  if (isClarification) return false;
+
+  // Academic structure markers (definitions, formulas, laws, bullet points, numbers)
+  const hasAcademicMarkers = text.includes('**') || text.includes('\n-') || text.includes('\n1.') || text.includes('=') || text.includes('•') || text.includes('formula') || text.includes('law');
+  if (text.length > 50 && (hasAcademicMarkers || text.length > 70)) {
+    return true;
+  }
+
+  return Boolean(msg.isTestable);
+}
+
+/**
+ * Extracts a concise topic title for the quiz from the AI message content
+ */
+function getTopicTitleFromMessage(content: string, fallbackSubject?: string): string {
+  const firstLines = content.split('\n').slice(0, 4).join('\n');
+  const boldMatch = firstLines.match(/\*\*([^*]{3,50})\*\*/);
+  if (boldMatch && !boldMatch[1].toLowerCase().includes('namaste') && !boldMatch[1].toLowerCase().includes('hello') && !boldMatch[1].toLowerCase().includes('syllabus')) {
+    return boldMatch[1].replace(/[:\-]/g, '').trim();
+  }
+  
+  const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const clean = line.replace(/^[#*>\-\d.\s]+/, '').replace(/[*_`]/g, '').trim();
+    if (clean.length >= 4 && clean.length <= 45 && !clean.toLowerCase().includes('namaste') && !clean.toLowerCase().includes('hello')) {
+      return clean;
+    }
+  }
+
+  if (fallbackSubject && fallbackSubject !== 'All Subjects') {
+    return `${fallbackSubject} Concept Practice`;
+  }
+  return 'NCERT Study Concept';
+}
+
 export const ChatView: React.FC<ChatViewProps> = ({ 
   user, 
   isAdmin = false,
@@ -127,13 +197,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
   initialTab, 
   onBackHome,
   onOpenEditUsername,
-  initialPeerUser: externalPeerUser
+  initialPeerUser: externalPeerUser,
+  onStartQuiz,
+  onFeatureBlocked,
+  maintenanceConfig,
+  isAdminUnlocked = false
 }) => {
-  // Determine starting view: 'directory' (the box list of Public & P2P), 'public', or 'p2p'
-  const [activeTab, setActiveTab] = useState<'directory' | 'public' | 'p2p'>(() => {
+  // Determine starting view: 'directory' (the box list of Public, P2P & Quiz AI), 'public', 'p2p', or 'quiz_ai'
+  const [activeTab, setActiveTab] = useState<'directory' | 'public' | 'p2p' | 'quiz_ai'>(() => {
     if (externalPeerUser) return 'p2p';
     if (initialTab === 'public') return 'public';
     if (initialTab === 'p2p') return 'p2p';
+    if (initialTab === 'gemini') return 'quiz_ai';
     return 'directory';
   });
 
@@ -294,10 +369,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [publicMessages, activeTab]);
 
   useEffect(() => {
-    if (isQuizAiFloatingOpen && !isQuizAiMinimized) {
+    if (activeTab === 'quiz_ai' || (isQuizAiFloatingOpen && !isQuizAiMinimized)) {
       geminiMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [geminiMessages, isGeneratingAi, isQuizAiFloatingOpen, isQuizAiMinimized]);
+  }, [geminiMessages, isGeneratingAi, activeTab, isQuizAiFloatingOpen, isQuizAiMinimized]);
 
   // Start P2P with any author
   const handleStartP2PWithPeer = (peerUser: UserProfile | P2PParticipant) => {
@@ -367,6 +442,44 @@ export const ChatView: React.FC<ChatViewProps> = ({
       setGeminiMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsGeneratingAi(false);
+    }
+  };
+
+  // Launch practice quiz directly on the actual quiz screen based on AI testable response
+  const handleTestMeOnThis = (msg: GeminiChatMessage) => {
+    if (!isAdminUnlocked && maintenanceConfig?.features?.test_me_practice?.isUnderMaintenance) {
+      onFeatureBlocked?.('test_me_practice');
+      return;
+    }
+    if (!isAdminUnlocked && maintenanceConfig?.features?.quiz_generation?.isUnderMaintenance) {
+      onFeatureBlocked?.('quiz_generation');
+      return;
+    }
+
+    const topicTitle = getTopicTitleFromMessage(msg.content, msg.subjectContext || selectedSubject);
+    const targetClass = (msg.classContext && !msg.classContext.toLowerCase().includes('all')) 
+      ? msg.classContext 
+      : (selectedClass && !selectedClass.toLowerCase().includes('all') ? selectedClass : 'Class 10');
+    const targetSubject = (msg.subjectContext && !msg.subjectContext.toLowerCase().includes('all')) 
+      ? msg.subjectContext 
+      : (selectedSubject && !selectedSubject.toLowerCase().includes('all') ? selectedSubject : 'Science');
+
+    const config: QuizConfig = {
+      class: targetClass,
+      subject: targetSubject,
+      topics: [topicTitle],
+      strength: 'Medium',
+      quantity: 5,
+      timeLimitMinutes: 0,
+      syllabusYear: '2026-27',
+      questionType: 'single',
+      sourceType: 'notes',
+      sourceTitle: topicTitle,
+      sourceContent: msg.content,
+    };
+
+    if (onStartQuiz) {
+      onStartQuiz(config);
     }
   };
 
@@ -617,6 +730,54 @@ export const ChatView: React.FC<ChatViewProps> = ({
           {/* Directory Content Area */}
           <main className="flex-1 p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6 pb-24">
             
+            {/* ===================== BOX 0: QUIZ AI STUDY MENTOR (FULL-SCREEN AI TUTOR) ===================== */}
+            <section className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                  <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>NCERT AI Study Mentor</span>
+                </h3>
+                <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  24/7 AI Doubt Solver
+                </span>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('quiz_ai')}
+                className="group relative p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-[#0d2818] via-[#10241b] to-[#12222a] border border-emerald-500/40 hover:border-emerald-400/80 transition-all cursor-pointer shadow-xl hover:shadow-2xl hover:shadow-emerald-500/15 space-y-4"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 font-black shrink-0 shadow-lg group-hover:scale-105 transition-transform">
+                      <Bot className="w-6 h-6 text-slate-950" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-base sm:text-lg font-bold text-white group-hover:text-emerald-300 transition-colors">
+                          Quiz AI Study Mentor
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                          Full Screen & Test Mode
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Ask any academic doubt across Classes 1–12, get step-by-step solutions, and test yourself on any concept with one tap.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-md group-hover:bg-emerald-400 transition-colors self-start sm:self-center"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                    <span>Open Full Screen AI</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
             {/* ===================== BOX 1: PUBLIC CHAT BOX ===================== */}
             <section className="space-y-2.5">
               <div className="flex items-center justify-between">
@@ -1290,8 +1451,193 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
       )}
 
+      {/* 4. FULL-SCREEN QUIZ AI VIEW */}
+      {activeTab === 'quiz_ai' && (
+        <div className="flex-1 min-h-0 flex flex-col bg-[#0b141a]">
+          {/* Header */}
+          <header className="h-16 px-4 sm:px-6 bg-[#202c33] border-b border-[#2a3942] flex items-center justify-between gap-3 shrink-0 shadow-md">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('directory')}
+                className="p-2 rounded-full hover:bg-[#374248] text-[#aebac1] hover:text-white transition-colors cursor-pointer shrink-0"
+                title="Back to Study Rooms"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 font-black shrink-0 shadow-md">
+                <Bot className="w-5 h-5 text-slate-950" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <h2 className="font-bold text-base sm:text-lg text-white truncate flex items-center gap-2">
+                  <span>Quiz AI Study Mentor</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                </h2>
+                <p className="text-xs text-[#8696a0] truncate flex items-center gap-2">
+                  <span className="text-emerald-400 font-mono">24/7 NCERT Doubt Solver</span>
+                  <span className="hidden sm:inline">•</span>
+                  <span className="hidden sm:inline">Classes 1–12 NCF-SE 2026-27</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Selectors & Actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <select
+                value={selectedClass}
+                onChange={(e) => setSelectedClass(e.target.value)}
+                className="bg-[#111b21] text-xs font-semibold text-emerald-300 border border-[#2a3942] rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer max-w-[130px] hidden sm:block truncate"
+                title="Select Target Class"
+              >
+                {CLASS_OPTIONS.map((cls) => (
+                  <option key={cls} value={cls} className="bg-[#202c33] text-white">
+                    {cls}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={selectedSubject}
+                onChange={(e) => setSelectedSubject(e.target.value)}
+                className="bg-[#111b21] text-xs font-semibold text-emerald-300 border border-[#2a3942] rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer max-w-[120px] truncate"
+                title="Select Subject Focus"
+              >
+                {SUBJECT_OPTIONS.map((sub) => (
+                  <option key={sub} value={sub} className="bg-[#202c33] text-white">
+                    {sub}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={handleResetAiChat}
+                className="p-2 rounded-xl bg-[#111b21] hover:bg-[#374248] text-slate-400 hover:text-white border border-[#2a3942] transition-colors cursor-pointer"
+                title="Reset conversation"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+          </header>
+
+          {/* Quick Suggestions Chips */}
+          <div className="p-2.5 bg-[#182229] border-b border-[#2a3942] flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0 px-4 sm:px-6">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Quick Doubts:</span>
+            </span>
+            {QUICK_AI_SUGGESTIONS.map((sug) => (
+              <button
+                key={sug.label}
+                type="button"
+                onClick={() => handleSendGemini(sug.prompt)}
+                disabled={isGeneratingAi}
+                className="px-3 py-1 rounded-xl bg-[#202c33] hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 text-xs font-medium border border-[#2a3942] whitespace-nowrap shrink-0 transition-colors cursor-pointer active:scale-95"
+              >
+                {sug.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Message Stream */}
+          <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar bg-[#0b141a] max-w-4xl w-full mx-auto">
+            {geminiMessages.map((msg) => {
+              const isAi = msg.role === 'model';
+              const testable = isMessageTestable(msg);
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col ${isAi ? 'items-start' : 'items-end'} space-y-1.5`}
+                >
+                  <div
+                    className={`max-w-[88%] sm:max-w-[80%] p-4 rounded-2xl text-sm select-text shadow-lg ${
+                      isAi
+                        ? 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
+                        : 'bg-[#005c4b] text-white rounded-tr-none'
+                    }`}
+                  >
+                    <MathText content={msg.content} />
+
+                    {isAi && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-2.5 border-t border-[#2a3942]/60 text-xs text-slate-400">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-slate-400 text-[11px]">NCERT Syllabus</span>
+                          {testable && (
+                            <button
+                              type="button"
+                              onClick={() => handleTestMeOnThis(msg)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/50 hover:border-emerald-400 transition-all duration-200 cursor-pointer shadow-md active:scale-95 group"
+                              title="Test yourself with practice questions on this exact topic (redirects to Quiz Screen)"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400 group-hover:text-slate-950 transition-colors" />
+                              <span>Test me on this</span>
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(msg.id, msg.content)}
+                          className="flex items-center gap-1 text-emerald-400 hover:underline cursor-pointer text-xs"
+                        >
+                          {copiedMessageId === msg.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Answer</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {isGeneratingAi && (
+              <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-[#202c33] text-emerald-400 text-xs sm:text-sm w-fit border border-[#2a3942] animate-pulse shadow-md">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Quiz AI is synthesizing NCERT rationale & concept breakdown...</span>
+              </div>
+            )}
+            <div ref={geminiMessagesEndRef} />
+          </main>
+
+          {/* Input Bar */}
+          <footer className="p-3 sm:p-4 bg-[#202c33] border-t border-[#2a3942] shrink-0">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendGemini();
+              }}
+              className="max-w-4xl mx-auto flex items-center gap-2 sm:gap-3"
+            >
+              <input
+                type="text"
+                value={geminiInput}
+                onChange={(e) => setGeminiInput(e.target.value)}
+                placeholder="Ask Quiz AI any NCERT concept, formula, numerical, or doubt..."
+                disabled={isGeneratingAi}
+                className="flex-1 px-4 py-3 bg-[#111b21] border border-[#2a3942] rounded-xl text-sm text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500/60"
+              />
+              <button
+                type="submit"
+                disabled={!geminiInput.trim() || isGeneratingAi}
+                className="px-4 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-all cursor-pointer disabled:opacity-40 flex items-center gap-1.5 shadow-md shrink-0"
+              >
+                {isGeneratingAi ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span className="hidden sm:inline font-bold">Ask AI</span>
+              </button>
+            </form>
+          </footer>
+        </div>
+      )}
+
       {/* ===================== FLOATING QUIZ AI BOX (BOTTOM RIGHT) ===================== */}
-      {/* As requested: "Remove the quiz ai button from other chats, keep it only on the main screen, it overlaps send button in other chats." */}
+      {/* Accessible on directory screen */}
       {activeTab === 'directory' && (
         <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end">
         
@@ -1316,7 +1662,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 </div>
               </div>
 
-              {/* Class & Subject Selectors */}
+              {/* Class & Subject Selectors & Window Controls */}
               <div className="flex items-center gap-1 shrink-0">
                 <select
                   value={selectedSubject}
@@ -1337,6 +1683,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   title="Clear chat"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsQuizAiFloatingOpen(false);
+                    setActiveTab('quiz_ai');
+                  }}
+                  className="p-1 rounded-lg hover:bg-[#374248] text-slate-400 hover:text-emerald-400 transition-colors"
+                  title="Expand to Full Screen"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
                 </button>
 
                 <button
@@ -1378,6 +1736,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3 custom-scrollbar bg-[#0b141a]">
               {geminiMessages.map((msg) => {
                 const isAi = msg.role === 'model';
+                const testable = isMessageTestable(msg);
                 return (
                   <div
                     key={msg.id}
@@ -1393,8 +1752,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
                       <MathText content={msg.content} />
 
                       {isAi && (
-                        <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-black/10 text-[10px] text-slate-400">
-                          <span className="font-mono">NCERT Syllabus</span>
+                        <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-1.5 border-t border-black/10 text-[10px] text-slate-400">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-mono">NCERT Syllabus</span>
+                            {testable && (
+                              <button
+                                type="button"
+                                onClick={() => handleTestMeOnThis(msg)}
+                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 hover:border-emerald-400 transition-all cursor-pointer shadow-sm active:scale-95 group"
+                                title="Redirect to Quiz Screen and test your understanding with practice questions"
+                              >
+                                <Sparkles className="w-3 h-3 text-emerald-400 group-hover:text-slate-950 transition-colors" />
+                                <span>Test me on this</span>
+                              </button>
+                            )}
+                          </div>
                           <button
                             type="button"
                             onClick={() => handleCopyText(msg.id, msg.content)}

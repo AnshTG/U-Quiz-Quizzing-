@@ -52,6 +52,8 @@ export const FeatureMaintenanceModal: React.FC<FeatureMaintenanceModalProps> = (
         return <Globe className="w-6 h-6 text-emerald-400" />;
       case 'quiz_generation':
         return <Sparkles className="w-6 h-6 text-amber-400" />;
+      case 'test_me_practice':
+        return <Sparkles className="w-6 h-6 text-emerald-400" />;
       case 'ai_chat':
         return <MessageSquare className="w-6 h-6 text-cyan-400" />;
       case 'ocr_scan':

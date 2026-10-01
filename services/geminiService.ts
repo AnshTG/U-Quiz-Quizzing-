@@ -154,10 +154,13 @@ export const sendGeminiStudyQuery = async (
         cleanReply = rawReply.replace(/<!--\s*TESTABLE:\s*(true|false)\s*-->/gi, '').trim();
       }
 
-      if (typeof isTestable !== 'boolean') {
-        const isGreeting = /^(hi|hello|hey|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(cleanReply.trim());
-        const isClarification = cleanReply.length < 120 && /\?$/.test(cleanReply.trim()) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(cleanReply);
-        isTestable = !isGreeting && !isClarification && cleanReply.length > 80;
+      if (typeof isTestable !== 'boolean' || (!isTestable && cleanReply.length > 60)) {
+        const isGreeting = /^(hi|hello|hey|welcome|namaste|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(cleanReply.trim());
+        const isClarification = cleanReply.length < 130 && /\?$/.test(cleanReply.trim()) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(cleanReply);
+        const hasAcademicMarkers = cleanReply.includes('**') || cleanReply.includes('\n-') || cleanReply.includes('\n1.') || cleanReply.includes('=') || cleanReply.includes('•');
+        if (!isGreeting && !isClarification && (cleanReply.length > 60 || hasAcademicMarkers)) {
+          isTestable = true;
+        }
       }
 
       return {
