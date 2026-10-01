@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { QuizConfig, Question, UserProfile } from '../types';
-import { publishSharedQuiz } from '../services/firebase';
+import { publishSharedQuiz, computeDeterministicQuizId } from '../services/firebase';
 import { 
   Share2, 
   Copy, 
@@ -31,32 +31,38 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
   existingQuizId,
   onClose,
 }) => {
-  const [quizId, setQuizId] = useState<string | null>(existingQuizId || null);
-  const [isPublishing, setIsPublishing] = useState<boolean>(!existingQuizId);
+  const initialId = existingQuizId || computeDeterministicQuizId(config, questions);
+  const [quizId, setQuizId] = useState<string | null>(initialId);
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [showQrCode, setShowQrCode] = useState(true);
 
-  // Publish to Firestore on mount if not already published
+  // Sync to Firestore on mount to ensure record exists
   useEffect(() => {
-    if (!quizId) {
-      const publish = async () => {
-        try {
-          setIsPublishing(true);
-          const publishedId = await publishSharedQuiz(config, questions, user);
+    let isMounted = true;
+    const syncQuiz = async () => {
+      try {
+        setIsPublishing(true);
+        const publishedId = await publishSharedQuiz(config, questions, user);
+        if (isMounted) {
           setQuizId(publishedId);
-        } catch (err: any) {
-          console.error('Publish error:', err);
-          setError('Failed to create shareable challenge link. Please check your internet connection.');
-        } finally {
+        }
+      } catch (err: any) {
+        console.error('Publish error:', err);
+      } finally {
+        if (isMounted) {
           setIsPublishing(false);
         }
-      };
-      publish();
-    }
-  }, [config, questions, user, quizId]);
+      }
+    };
+    syncQuiz();
+    return () => {
+      isMounted = false;
+    };
+  }, [config, questions, user]);
 
   const getBaseUrl = () => {
     if (typeof window !== 'undefined' && window.location.origin) {

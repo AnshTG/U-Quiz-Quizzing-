@@ -19,7 +19,9 @@ import {
   SecurityIncident,
   SecuritySeverity,
   SecurityStatus,
-  SecurityIncidentType
+  SecurityIncidentType,
+  P2PConversation,
+  P2PMessage
 } from '../types';
 import { 
   fetchAllUsersForAdmin, 
@@ -48,6 +50,10 @@ import {
   adminBanUser,
   listenToPublicChat,
   deletePublicChatMessage,
+  listenToAllP2PConversationsForAdmin,
+  adminDeleteP2PConversation,
+  listenToP2PMessages,
+  deleteP2PMessage,
   listenToMaintenanceMode,
   updateMaintenanceMode,
   updateFeatureMaintenanceMode,
@@ -160,6 +166,12 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
   const [quizClassFilter, setQuizClassFilter] = useState<string>('all');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [adminChatSubTab, setAdminChatSubTab] = useState<'p2p' | 'public'>('p2p');
+  const [p2pConversations, setP2PConversations] = useState<P2PConversation[]>([]);
+  const [selectedAdminConversation, setSelectedAdminConversation] = useState<P2PConversation | null>(null);
+  const [adminConvMessages, setAdminConvMessages] = useState<P2PMessage[]>([]);
+  const [p2pSearchQuery, setP2pSearchQuery] = useState<string>('');
+  const [isLoadingConvMessages, setIsLoadingConvMessages] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Security Alerts & Anti-Tamper State
@@ -288,6 +300,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       setChatMessages(msgs);
     });
 
+    const unsubP2P = listenToAllP2PConversationsForAdmin((list) => {
+      setP2PConversations(list);
+    });
+
     const unsubFeedbacks = listenToAllFeedbacksForAdmin((liveFeedbacks) => {
       setFeedbacks(liveFeedbacks);
     });
@@ -325,11 +341,26 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
       unsubAttendance();
       unsubQuizzes();
       unsubChat();
+      unsubP2P();
       unsubFeedbacks();
       unsubSecurity();
       unsubMaintenance();
     };
   }, []);
+
+  // Listen to messages of selected P2P conversation for admin inspection
+  useEffect(() => {
+    if (!selectedAdminConversation) {
+      setAdminConvMessages([]);
+      return;
+    }
+    setIsLoadingConvMessages(true);
+    const unsub = listenToP2PMessages(selectedAdminConversation.id, (msgs) => {
+      setAdminConvMessages(msgs);
+      setIsLoadingConvMessages(false);
+    });
+    return () => unsub();
+  }, [selectedAdminConversation?.id]);
 
   // Filtered Attendance List
   const filteredAttendance = useMemo(() => {
@@ -922,6 +953,40 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
     }
   };
 
+  // Admin Delete P2P Message
+  const handleDeleteAdminP2PMessage = async (messageId: string) => {
+    if (!selectedAdminConversation) return;
+    if (!window.confirm('Delete this message from the conversation?')) return;
+    setActionLoading(`delete_p2p_msg_${messageId}`);
+    try {
+      await deleteP2PMessage(selectedAdminConversation.id, messageId);
+      setAdminConvMessages(prev => prev.filter(m => m.id !== messageId));
+      showToast('P2P Message deleted.');
+    } catch (e) {
+      alert('Failed to delete P2P message.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Admin Delete Entire P2P Conversation
+  const handleDeleteAdminP2PConversation = async (conversationId: string) => {
+    if (!window.confirm('Delete this entire conversation channel between scholars from the cloud?')) return;
+    setActionLoading(`delete_p2p_conv_${conversationId}`);
+    try {
+      await adminDeleteP2PConversation(conversationId);
+      if (selectedAdminConversation?.id === conversationId) {
+        setSelectedAdminConversation(null);
+      }
+      setP2PConversations(prev => prev.filter(c => c.id !== conversationId));
+      showToast('P2P Conversation deleted.');
+    } catch (e) {
+      alert('Failed to delete P2P conversation.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Feedback: Update Status & Admin Notes
   const handleUpdateFeedbackStatus = async (
     feedbackId: string, 
@@ -1403,9 +1468,9 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
             }`}
           >
             <MessageSquare className="w-4 h-4" />
-            <span>Public Chat</span>
+            <span>Chats & P2P</span>
             <span className="px-1.5 py-0.2 rounded bg-slate-950/40 text-[10px] font-mono">
-              {chatMessages.length}
+              {p2pConversations.length + chatMessages.length}
             </span>
           </button>
 
@@ -2695,51 +2760,361 @@ export const AdminView: React.FC<AdminViewProps> = ({ onExitAdmin, onEnterMainWe
         </div>
       )}
 
-      {/* ===================== TAB 5: PUBLIC CHAT ===================== */}
+      {/* ===================== TAB 5: CHATS & P2P MONITORING ===================== */}
       {activeTab === 'chat' && (
-        <div className="space-y-4">
-          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white">Public Study Chat Feed</h3>
-              <p className="text-xs text-slate-400">{chatMessages.length} real-time peer messages in database</p>
+        <div className="space-y-5">
+          {/* Top Sub-navigation Switcher & Metrics */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+              <button
+                onClick={() => setAdminChatSubTab('p2p')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  adminChatSubTab === 'p2p'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>P2P Direct Scholar Chats</span>
+                <span className="px-1.5 py-0.2 rounded bg-slate-900/80 text-[10px] font-mono">
+                  {p2pConversations.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setAdminChatSubTab('public')}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  adminChatSubTab === 'public'
+                    ? 'bg-blue-500 text-slate-950 shadow-md shadow-blue-500/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Public Study Room</span>
+                <span className="px-1.5 py-0.2 rounded bg-slate-900/80 text-[10px] font-mono">
+                  {chatMessages.length}
+                </span>
+              </button>
             </div>
 
-            <button
-              onClick={handleDeleteAllChatMessages}
-              disabled={actionLoading === 'delete_all_chat' || chatMessages.length === 0}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete All Chat Messages</span>
-            </button>
+            {adminChatSubTab === 'public' ? (
+              <button
+                onClick={handleDeleteAllChatMessages}
+                disabled={actionLoading === 'delete_all_chat' || chatMessages.length === 0}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer disabled:opacity-40"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete All Public Messages</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-mono">
+                  {p2pConversations.length} channel(s) recorded in cloud
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 divide-y divide-slate-800/60">
-            {filteredChatMessages.map((msg) => (
-              <div key={msg.id} className="p-4 flex items-center justify-between gap-4 hover:bg-slate-800/30 transition-colors">
-                <div className="flex items-start gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-teal-400 font-bold shrink-0">
-                    {msg.userName ? msg.userName.charAt(0) : 'U'}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-white">{msg.userName}</span>
-                      <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400">{msg.subjectTag || 'General'}</span>
-                      <span className="text-[10px] text-slate-500 font-mono">{msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ''}</span>
+          {/* SUBTAB 1: P2P DIRECT SCHOLAR CHATS */}
+          {adminChatSubTab === 'p2p' && (
+            <div className="space-y-4">
+              {/* Search Bar for P2P Conversations */}
+              <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center gap-3">
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={p2pSearchQuery}
+                  onChange={(e) => setP2pSearchQuery(e.target.value)}
+                  placeholder="Search P2P chats by scholar name, @username, or message text..."
+                  className="bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none flex-1 font-sans"
+                />
+                {p2pSearchQuery && (
+                  <button
+                    onClick={() => setP2pSearchQuery('')}
+                    className="p-1 hover:bg-slate-800 rounded-md text-slate-400 text-xs"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Main Split Layout: Left Conversations List, Right Thread Viewer */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                
+                {/* Conversations List Column */}
+                <div className={`${selectedAdminConversation ? 'lg:col-span-5' : 'lg:col-span-12'} space-y-3`}>
+                  {p2pConversations.length === 0 ? (
+                    <div className="p-12 text-center rounded-2xl bg-slate-900/60 border border-slate-800 text-slate-400 space-y-2">
+                      <Users className="w-8 h-8 mx-auto text-slate-600" />
+                      <p className="text-sm font-semibold text-slate-300">No P2P Conversations Recorded</p>
+                      <p className="text-xs text-slate-500">Students have not initiated any 1-on-1 direct chats yet.</p>
                     </div>
-                    <p className="text-xs text-slate-300 mt-1 break-words">{msg.message}</p>
-                  </div>
+                  ) : (
+                    p2pConversations
+                      .filter((c) => {
+                        if (!p2pSearchQuery.trim()) return true;
+                        const q = p2pSearchQuery.toLowerCase();
+                        const pList = Object.values(c.participants || {});
+                        const matchesScholar = pList.some(
+                          (p) =>
+                            p.displayName?.toLowerCase().includes(q) ||
+                            p.username?.toLowerCase().includes(q)
+                        );
+                        const matchesLastMsg = c.lastMessage?.toLowerCase().includes(q);
+                        return matchesScholar || matchesLastMsg;
+                      })
+                      .map((conv) => {
+                        const participantsList = Object.values(conv.participants || {});
+                        const p1 = participantsList[0];
+                        const p2 = participantsList[1];
+                        const isSelected = selectedAdminConversation?.id === conv.id;
+
+                        return (
+                          <div
+                            key={conv.id}
+                            className={`p-4 rounded-2xl border transition-all ${
+                              isSelected
+                                ? 'bg-emerald-950/20 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
+                                : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {/* Overlapping Avatars for the 2 scholars */}
+                                <div className="flex -space-x-2 shrink-0">
+                                  <div className="w-9 h-9 rounded-full bg-emerald-600 border-2 border-slate-900 flex items-center justify-center text-xs font-black text-white shadow">
+                                    {p1?.photoURL ? (
+                                      <img src={p1.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                                    ) : (
+                                      p1?.displayName?.charAt(0) || '1'
+                                    )}
+                                  </div>
+                                  <div className="w-9 h-9 rounded-full bg-teal-600 border-2 border-slate-900 flex items-center justify-center text-xs font-black text-white shadow">
+                                    {p2?.photoURL ? (
+                                      <img src={p2.photoURL} alt="" className="w-full h-full rounded-full object-cover" />
+                                    ) : (
+                                      p2?.displayName?.charAt(0) || '2'
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs font-bold text-white truncate">
+                                      {p1?.displayName || 'Scholar 1'}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-400 font-mono">@{p1?.username || 'user'}</span>
+                                    <span className="text-slate-500 text-xs font-mono">↔</span>
+                                    <span className="text-xs font-bold text-white truncate">
+                                      {p2?.displayName || 'Scholar 2'}
+                                    </span>
+                                    <span className="text-[10px] text-teal-400 font-mono">@{p2?.username || 'user'}</span>
+                                  </div>
+
+                                  <p className="text-xs text-slate-300 mt-1 line-clamp-1 break-words">
+                                    {conv.lastMessage || 'No messages exchanged'}
+                                  </p>
+
+                                  <div className="flex items-center gap-2 mt-1.5 text-[10px] text-slate-500 font-mono">
+                                    <Clock className="w-3 h-3" />
+                                    <span>
+                                      {conv.lastMessageTimestamp
+                                        ? new Date(conv.lastMessageTimestamp).toLocaleString()
+                                        : conv.updatedAt || 'Recently'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => setSelectedAdminConversation(isSelected ? null : conv)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-emerald-500 text-slate-950'
+                                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                                  }`}
+                                  title="Inspect live chat messages thread"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>{isSelected ? 'Viewing' : 'Inspect'}</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleDeleteAdminP2PConversation(conv.id)}
+                                  disabled={actionLoading === `delete_p2p_conv_${conv.id}`}
+                                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-700 transition-colors cursor-pointer"
+                                  title="Delete entire conversation"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
                 </div>
 
-                <button
-                  onClick={() => handleDeleteChatMessage(msg.id)}
-                  className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors shrink-0"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {/* Live Thread Inspector Column (When a conversation is chosen) */}
+                {selectedAdminConversation && (
+                  <div className="lg:col-span-7 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col h-[650px] overflow-hidden shadow-2xl">
+                    {/* Header */}
+                    <div className="p-3.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-white truncate">
+                            Live Thread: {Object.values(selectedAdminConversation.participants || {}).map(p => p.displayName).join(' ↔ ')}
+                          </h4>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Channel ID: {selectedAdminConversation.id} • {adminConvMessages.length} message(s)
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleDeleteAdminP2PConversation(selectedAdminConversation.id)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Delete Channel</span>
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedAdminConversation(null)}
+                          className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                          title="Close inspector"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Messages Body */}
+                    <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 bg-[#0b141a]/90 custom-scrollbar">
+                      {isLoadingConvMessages ? (
+                        <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+                          Loading message thread...
+                        </div>
+                      ) : adminConvMessages.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs space-y-2">
+                          <MessageSquare className="w-8 h-8 text-slate-700" />
+                          <span>No messages exchanged in this conversation yet.</span>
+                        </div>
+                      ) : (
+                        adminConvMessages.map((msg) => (
+                          <div
+                            key={msg.id}
+                            className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800/80 space-y-2 relative group hover:border-slate-700 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-xs text-emerald-400">{msg.senderName}</span>
+                                {msg.senderUsername && (
+                                  <span className="text-[10px] text-slate-500 font-mono">@{msg.senderUsername}</span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {msg.createdAt || (msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '')}
+                                </span>
+                                <button
+                                  onClick={() => handleDeleteAdminP2PMessage(msg.id)}
+                                  className="p-1 rounded hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors cursor-pointer"
+                                  title="Delete message from chat"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Message text */}
+                            <div className="text-xs text-slate-200 select-text">
+                              <MathText content={msg.message} />
+                            </div>
+
+                            {/* Image attachment if present */}
+                            {msg.imageUrl && (
+                              <div className="mt-2 rounded-lg overflow-hidden max-w-xs border border-slate-700">
+                                <img
+                                  src={msg.imageUrl}
+                                  alt="Attachment"
+                                  className="w-full max-h-48 object-cover rounded-lg cursor-pointer hover:opacity-90"
+                                  onClick={() => window.open(msg.imageUrl, '_blank')}
+                                />
+                              </div>
+                            )}
+
+                            {/* Reactions */}
+                            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {Object.entries(msg.reactions).map(([emoji, uids]) => (
+                                  <span
+                                    key={emoji}
+                                    className="px-1.5 py-0.5 rounded-md bg-slate-800 text-[10px] text-slate-300 border border-slate-700"
+                                  >
+                                    {emoji} {uids.length}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {/* SUBTAB 2: PUBLIC COMMUNITY CHAT FEED */}
+          {adminChatSubTab === 'public' && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 divide-y divide-slate-800/60">
+              {filteredChatMessages.length === 0 ? (
+                <div className="p-12 text-center text-slate-500 text-xs">
+                  No public chat messages found matching your criteria.
+                </div>
+              ) : (
+                filteredChatMessages.map((msg) => (
+                  <div key={msg.id} className="p-4 flex items-center justify-between gap-4 hover:bg-slate-800/30 transition-colors">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-teal-400 font-bold shrink-0">
+                        {msg.userName ? msg.userName.charAt(0) : 'U'}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs text-white">{msg.userName}</span>
+                          <span className="px-1.5 py-0.2 rounded bg-slate-800 text-[10px] font-mono text-slate-400">{msg.subjectTag || 'General'}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">{msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString() : ''}</span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-1 break-words">{msg.message}</p>
+                        {msg.imageUrl && (
+                          <div className="mt-1.5 max-w-xs">
+                            <img src={msg.imageUrl} alt="" className="rounded-lg max-h-32 object-cover border border-slate-700" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeleteChatMessage(msg.id)}
+                      className="p-1.5 rounded-lg hover:bg-rose-500/20 text-slate-500 hover:text-rose-400 transition-colors shrink-0"
+                      title="Delete public message"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
         </div>
       )}
 

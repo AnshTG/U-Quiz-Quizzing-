@@ -291,7 +291,7 @@ export const ScorecardExportModal: React.FC<ScorecardExportModalProps> = ({
               <span className="flex items-center gap-1 text-slate-400">
                 <Sparkles className="w-3 h-3 text-emerald-400" /> Verified by Gemini AI
               </span>
-              <span>ai.studio/build • U Quiz</span>
+              <span>NCERT Verified • U Quiz</span>
             </div>
           </div>
         </div>

@@ -175,14 +175,25 @@ export default function App() {
   useEffect(() => {
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const urlQuizId = searchParams.get('quizId');
+      const urlQuizId = searchParams.get('quizId') || searchParams.get('quiz') || searchParams.get('share') || searchParams.get('id');
       
       let hashQuizId: string | null = null;
       if (window.location.hash.startsWith('#quiz=')) {
         hashQuizId = window.location.hash.replace('#quiz=', '');
+      } else if (window.location.hash.startsWith('#quizId=')) {
+        hashQuizId = window.location.hash.replace('#quizId=', '');
+      } else if (window.location.hash.startsWith('#/quiz/')) {
+        hashQuizId = window.location.hash.replace('#/quiz/', '');
       }
 
-      const detectedId = urlQuizId || hashQuizId;
+      let pathQuizId: string | null = null;
+      const pathParts = window.location.pathname.split('/');
+      const quizIndex = pathParts.findIndex(p => p.toLowerCase() === 'quiz' || p.toLowerCase() === 'challenge');
+      if (quizIndex !== -1 && pathParts[quizIndex + 1]) {
+        pathQuizId = pathParts[quizIndex + 1];
+      }
+
+      const detectedId = urlQuizId || hashQuizId || pathQuizId;
       if (detectedId) {
         setSharedQuizId(detectedId);
         setView(AppState.SHARED_PREVIEW);
@@ -195,6 +206,15 @@ export default function App() {
   // Sync browser URL with application state for multi-page crawlable navigation
   useEffect(() => {
     const handlePopState = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlQuizId = searchParams.get('quizId') || searchParams.get('quiz') || searchParams.get('share');
+      if (urlQuizId) {
+        setSharedQuizId(urlQuizId);
+        setView(AppState.SHARED_PREVIEW);
+        setShowLoginScreen(false);
+        return;
+      }
+
       const path = window.location.pathname.toLowerCase();
       if (path.includes('/login')) {
         setShowLoginScreen(true);
@@ -273,7 +293,13 @@ export default function App() {
 
   const backToHome = () => {
     setShowLoginScreen(false);
+    setSharedQuizId(null);
     navigateTo(AppState.HOME);
+    try {
+      if (window.location.search.includes('quizId') || window.location.search.includes('quiz') || window.location.hash.includes('quiz')) {
+        window.history.pushState(null, '', '/');
+      }
+    } catch {}
   };
 
   const openDocs = () => {
@@ -712,7 +738,16 @@ export default function App() {
                 </div>
               </div>
             ) : !user && !isAdminUnlocked ? (
-              showLoginScreen ? (
+              (view === AppState.SHARED_PREVIEW && sharedQuizId) ? (
+                /* Unauthenticated / New User Visiting Shared Quiz Link: "To take this quiz, login" */
+                <SharedPreviewView
+                  quizId={sharedQuizId}
+                  user={user}
+                  onSignIn={handleSignIn}
+                  onPlayQuiz={handlePlaySharedQuiz}
+                  onBackHome={backToHome}
+                />
+              ) : showLoginScreen ? (
                 /* Dedicated Login Screen with Top Bar Options Removed */
                 <LoginView
                   onSignIn={handleSignIn}
@@ -863,6 +898,7 @@ export default function App() {
                 {view === AppState.CHAT && (
                   <ChatView
                     user={user}
+                    isAdmin={isAdminUnlocked || Boolean(user?.isAdmin)}
                     onSignIn={handleSignIn}
                     onBackHome={() => navigateTo(AppState.HOME)}
                     onOpenEditUsername={() => setIsEditUsernameModalOpen(true)}
@@ -872,8 +908,10 @@ export default function App() {
                 {view === AppState.SHARED_PREVIEW && sharedQuizId && (
                   <SharedPreviewView
                     quizId={sharedQuizId}
+                    user={user}
+                    onSignIn={handleSignIn}
                     onPlayQuiz={handlePlaySharedQuiz}
-                    onBackHome={() => navigateTo(AppState.HOME)}
+                    onBackHome={backToHome}
                   />
                 )}
               </>

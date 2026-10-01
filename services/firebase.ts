@@ -37,6 +37,7 @@ import {
   LeaderboardUser,
   AttendanceRecord,
   ChatMessage,
+  ChatReplyQuote,
   P2PConversation,
   P2PMessage,
   P2PParticipant,
@@ -1067,15 +1068,55 @@ export const deleteAllSavedQuizzes = async (userId: string): Promise<void> => {
 // SHARED QUIZZES (Public Challenges)
 // ==========================================
 
+/**
+ * Computes a stable deterministic ID for a quiz based on its academic content.
+ * This guarantees the exact same share link is generated every time for the same quiz.
+ */
+export const computeDeterministicQuizId = (config: QuizConfig, questions: Question[]): string => {
+  const questionFingerprints = (questions || [])
+    .slice(0, 20)
+    .map(q => (q.question || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30))
+    .join('');
+
+  const classFingerprint = (config.class || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const subjectFingerprint = (config.subject || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const countFingerprint = String(questions?.length || 0);
+
+  const rawSeed = `${classFingerprint}_${subjectFingerprint}_${countFingerprint}_${questionFingerprints}`;
+
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < rawSeed.length; i++) {
+    const ch = rawSeed.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+
+  const hash36 = (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36).toLowerCase();
+  return `q_${hash36}`;
+};
+
 export const publishSharedQuiz = async (
   config: QuizConfig,
   questions: Question[],
   user?: UserProfile | null
 ): Promise<string> => {
   try {
-    const quizId = 'q_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
-    const topicsStr = config.topics.length > 0 ? config.topics.slice(0, 2).join(', ') : config.subject;
-    const title = `${config.class} ${config.subject}: ${topicsStr} (${config.quantity} Qs)`;
+    const quizId = computeDeterministicQuizId(config, questions);
+    const quizRef = doc(db, 'sharedQuizzes', quizId);
+
+    // If already published, always re-use the exact same link and record
+    const existingSnap = await getDoc(quizRef);
+    if (existingSnap.exists()) {
+      return quizId;
+    }
+
+    const topicsStr = config.topics && config.topics.length > 0 ? config.topics.slice(0, 2).join(', ') : config.subject;
+    const title = `${config.class} ${config.subject}: ${topicsStr} (${questions.length} Qs)`;
 
     const sharedData: SharedQuiz = {
       id: quizId,
@@ -1090,7 +1131,6 @@ export const publishSharedQuiz = async (
       playsCount: 0
     };
 
-    const quizRef = doc(db, 'sharedQuizzes', quizId);
     await setDoc(quizRef, sharedData);
     return quizId;
   } catch (error) {
@@ -1748,7 +1788,8 @@ export const sendPublicChatMessage = async (
   subjectTag: string = 'General',
   imageUrl?: string,
   imageName?: string,
-  customMessageId?: string
+  customMessageId?: string,
+  replyTo?: ChatReplyQuote
 ): Promise<ChatMessage> => {
   if (!user || !user.uid) {
     throw new Error('You must be signed in to participate in the public study chat.');
@@ -1775,7 +1816,8 @@ export const sendPublicChatMessage = async (
     createdAt: new Date().toISOString(),
     subjectTag: subjectTag || 'General',
     ...(imageUrl ? { imageUrl } : {}),
-    ...(imageName ? { imageName } : {})
+    ...(imageName ? { imageName } : {}),
+    ...(replyTo ? { replyTo } : {})
   };
 
   const msgRef = doc(db, 'publicChat', messageId);
@@ -1939,8 +1981,9 @@ export const sendP2PMessage = async (params: {
   imageUrl?: string;
   imageName?: string;
   customMessageId?: string;
+  replyTo?: ChatReplyQuote;
 }): Promise<P2PMessage> => {
-  const { conversationId, currentUser, peerUser, messageText, imageUrl, imageName, customMessageId } = params;
+  const { conversationId, currentUser, peerUser, messageText, imageUrl, imageName, customMessageId, replyTo } = params;
 
   if (!currentUser || !currentUser.uid) {
     throw new Error('Authentication required to send message.');
@@ -1967,6 +2010,7 @@ export const sendP2PMessage = async (params: {
     message: trimmed,
     ...(imageUrl ? { imageUrl } : {}),
     ...(imageName ? { imageName } : {}),
+    ...(replyTo ? { replyTo } : {}),
     timestamp: Date.now(),
     createdAt: new Date().toISOString(),
     read: false
@@ -2024,6 +2068,58 @@ export const listenToP2PConversations = (
   } catch (err) {
     console.error('Failed to listen to P2P conversations:', err);
     return () => {};
+  }
+};
+
+/**
+ * Admin: Listen to all P2P conversations across the entire platform
+ */
+export const listenToAllP2PConversationsForAdmin = (
+  callback: (conversations: P2PConversation[]) => void,
+  limitCount: number = 100
+): Unsubscribe => {
+  try {
+    const colRef = collection(db, 'p2pConversations');
+    const q = query(colRef, limit(limitCount));
+
+    return onSnapshot(q, (snap) => {
+      const list: P2PConversation[] = [];
+      snap.forEach((d) => {
+        list.push({ ...d.data(), id: d.id } as P2PConversation);
+      });
+      list.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+      callback(list);
+    }, (err) => {
+      console.warn('Admin All P2P Conversations listener error:', err);
+      callback([]);
+    });
+  } catch (err) {
+    console.error('Failed to listen to all P2P conversations for admin:', err);
+    return () => {};
+  }
+};
+
+/**
+ * Admin: Delete an entire P2P conversation and clean up references
+ */
+export const adminDeleteP2PConversation = async (conversationId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'p2pConversations', conversationId));
+  } catch (err) {
+    console.error('Failed to delete P2P conversation by admin:', err);
+    throw err;
+  }
+};
+
+/**
+ * Delete a P2P conversation (for scholar or admin)
+ */
+export const deleteP2PConversation = async (conversationId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'p2pConversations', conversationId));
+  } catch (err) {
+    console.error('Failed to delete P2P conversation:', err);
+    throw err;
   }
 };
 

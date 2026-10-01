@@ -18,16 +18,20 @@ import {
   Flame, 
   Sparkles, 
   UserPlus,
-  Edit3
+  Edit3,
+  Copy,
+  Reply
 } from 'lucide-react';
-import { UserProfile, P2PConversation, P2PMessage, P2PParticipant } from '../types';
+import { UserProfile, P2PConversation, P2PMessage, P2PParticipant, ChatReplyQuote } from '../types';
 import { 
   listenToP2PConversations, 
+  listenToAllP2PConversationsForAdmin,
   listenToP2PMessages, 
   ensureP2PConversation, 
   sendP2PMessage, 
   markP2PConversationAsRead, 
   deleteP2PMessage, 
+  deleteP2PConversation,
   toggleP2PMessageReaction, 
   searchScholars, 
   getRecentActiveScholars,
@@ -38,20 +42,27 @@ import { MathText } from './MathText';
 
 interface P2PChatViewProps {
   currentUser: UserProfile | null;
+  isAdmin?: boolean;
   onSignIn: () => void;
   onOpenEditUsername?: () => void;
   initialPeerUser?: UserProfile | null;
+  initialConversationId?: string | null;
+  onBackToDirectory?: () => void;
 }
 
 const EMOJI_REACTIONS = ['👍', '❤️', '💡', '🔥', '👏', '🎯'];
 
 export const P2PChatView: React.FC<P2PChatViewProps> = ({
   currentUser,
+  isAdmin = false,
   onSignIn,
   onOpenEditUsername,
-  initialPeerUser
+  initialPeerUser,
+  initialConversationId,
+  onBackToDirectory
 }) => {
   const [conversations, setConversations] = useState<P2PConversation[]>([]);
+  const [adminAllMode, setAdminAllMode] = useState<boolean>(false);
   const [activeConversation, setActiveConversation] = useState<P2PConversation | null>(null);
   const [activePeer, setActivePeer] = useState<P2PParticipant | null>(null);
   const [messages, setMessages] = useState<P2PMessage[]>([]);
@@ -103,28 +114,42 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
     }).catch(console.warn);
   }, [currentUser?.uid]);
 
-  // Handle initial peer if provided
+  // Handle initial peer or initial conversation if provided
   useEffect(() => {
     if (initialPeerUser && currentUser && initialPeerUser.uid !== currentUser.uid) {
       handleSelectPeer(initialPeerUser);
     }
   }, [initialPeerUser, currentUser]);
 
-  // Subscribe to real-time conversations list
+  useEffect(() => {
+    if (initialConversationId && conversations.length > 0 && !activeConversation) {
+      const target = conversations.find(c => c.id === initialConversationId);
+      if (target) {
+        handleOpenConversation(target);
+      }
+    }
+  }, [initialConversationId, conversations, activeConversation]);
+
+  // Subscribe to real-time conversations list (or all platform chats if adminAllMode is active)
   useEffect(() => {
     if (!currentUser?.uid) return;
-    const unsub = listenToP2PConversations(currentUser.uid, (list) => {
-      setConversations(list);
-      // Keep active conversation metadata updated
-      if (activeConversation) {
-        const found = list.find(c => c.id === activeConversation.id);
-        if (found) {
-          setActiveConversation(found);
-        }
-      }
-    });
+    const unsub = (isAdmin && adminAllMode)
+      ? listenToAllP2PConversationsForAdmin((list) => {
+          setConversations(list);
+          if (activeConversation) {
+            const found = list.find(c => c.id === activeConversation.id);
+            if (found) setActiveConversation(found);
+          }
+        })
+      : listenToP2PConversations(currentUser.uid, (list) => {
+          setConversations(list);
+          if (activeConversation) {
+            const found = list.find(c => c.id === activeConversation.id);
+            if (found) setActiveConversation(found);
+          }
+        });
     return () => unsub();
-  }, [currentUser?.uid, activeConversation?.id]);
+  }, [currentUser?.uid, activeConversation?.id, isAdmin, adminAllMode]);
 
   // Subscribe to messages in the active conversation
   useEffect(() => {
@@ -333,17 +358,27 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
         }`}
       >
         {/* User Identity Banner with Customizable Handle */}
-        <div className="p-3.5 border-b border-[#2a3942] bg-[#202c33]/70 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="p-3 border-b border-[#2a3942] bg-[#202c33]/70 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {onBackToDirectory && (
+              <button
+                type="button"
+                onClick={onBackToDirectory}
+                className="p-1.5 rounded-lg bg-[#2a3942] hover:bg-[#374248] text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                title="Back to All Chats"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
             {currentUser.photoURL ? (
               <img
                 src={currentUser.photoURL}
                 alt={currentUser.displayName || 'Me'}
                 referrerPolicy="no-referrer"
-                className="w-9 h-9 rounded-full object-cover border border-emerald-500/40 shrink-0"
+                className="w-8 h-8 rounded-full object-cover border border-emerald-500/40 shrink-0"
               />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-sm border border-emerald-500/30 shrink-0">
+              <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs border border-emerald-500/30 shrink-0">
                 {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : 'S'}
               </div>
             )}
@@ -351,23 +386,38 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
               <span className="text-xs font-bold text-white truncate">
                 {currentUser.displayName || 'Scholar'}
               </span>
-              <span className="text-[11px] font-mono text-emerald-400 font-semibold truncate flex items-center gap-0.5">
-                <AtSign className="w-3 h-3 shrink-0" />
+              <span className="text-[10px] font-mono text-emerald-400 font-semibold truncate flex items-center gap-0.5">
+                <AtSign className="w-2.5 h-2.5 shrink-0" />
                 {currentUser.username || 'scholar'}
               </span>
             </div>
           </div>
 
-          {onOpenEditUsername && (
-            <button
-              onClick={onOpenEditUsername}
-              className="p-1.5 rounded-lg bg-[#2a3942] hover:bg-[#374248] text-slate-300 hover:text-emerald-400 text-xs transition-colors cursor-pointer flex items-center gap-1 shrink-0"
-              title="Change your unique @handle"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span className="text-[10px] font-semibold hidden sm:inline">Edit Handle</span>
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isAdmin && (
+              <button
+                onClick={() => setAdminAllMode(!adminAllMode)}
+                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  adminAllMode
+                    ? 'bg-amber-400 text-slate-950 font-black'
+                    : 'bg-[#2a3942] text-amber-300 hover:bg-[#374248]'
+                }`}
+                title="Toggle Admin All Platform Chats View"
+              >
+                {adminAllMode ? 'All Chats (Admin)' : 'Admin Mode'}
+              </button>
+            )}
+
+            {onOpenEditUsername && (
+              <button
+                onClick={onOpenEditUsername}
+                className="p-1.5 rounded-lg bg-[#2a3942] hover:bg-[#374248] text-slate-300 hover:text-emerald-400 text-xs transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                title="Change your unique @handle"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Scholar Search Bar */}
@@ -570,13 +620,24 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
             {/* Header: Peer info & Mobile Back Button */}
             <header className="h-16 px-4 bg-[#202c33] border-b border-[#2a3942] flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3 min-w-0">
-                <button
-                  onClick={() => setMobileView('list')}
-                  className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a3942] cursor-pointer"
-                  title="Back to conversation list"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
+                {onBackToDirectory ? (
+                  <button
+                    onClick={onBackToDirectory}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a3942] cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                    title="Back to All Chats"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span className="hidden sm:inline">All Chats</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setMobileView('list')}
+                    className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#2a3942] cursor-pointer"
+                    title="Back to conversation list"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                )}
 
                 <div className="relative shrink-0">
                   {activePeer.photoURL ? (
@@ -726,12 +787,12 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
                           <Smile className="w-3.5 h-3.5" />
                         </button>
 
-                        {isMine && (
+                        {(isMine || isAdmin) && (
                           <button
                             type="button"
                             onClick={() => deleteP2PMessage(activeConversation.id, msg.id)}
                             className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-[#202c33] cursor-pointer"
-                            title="Delete message"
+                            title={isMine ? "Delete message" : "Admin Delete message"}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

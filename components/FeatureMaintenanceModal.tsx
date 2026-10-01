@@ -66,6 +66,12 @@ export const FeatureMaintenanceModal: React.FC<FeatureMaintenanceModalProps> = (
         return <Trophy className="w-6 h-6 text-yellow-400" />;
       case 'feedback_submit':
         return <AlertCircle className="w-6 h-6 text-slate-400" />;
+      case 'p2p_chat':
+        return <MessageSquare className="w-6 h-6 text-emerald-400" />;
+      case 'public_chat':
+        return <Globe className="w-6 h-6 text-teal-400" />;
+      case 'shared_challenge':
+        return <Users className="w-6 h-6 text-amber-400" />;
       default:
         return <Wrench className="w-6 h-6 text-amber-400" />;
     }

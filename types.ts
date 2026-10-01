@@ -82,6 +82,7 @@ export interface UserProfile {
   isBanned?: boolean;
   banReason?: string;
   bannedAt?: string;
+  isAdmin?: boolean;
 }
 
 export interface AttendanceRecord {
@@ -140,6 +141,13 @@ export interface LeaderboardUser {
   isCurrentUser?: boolean;
 }
 
+export interface ChatReplyQuote {
+  id: string;
+  senderName: string;
+  message: string;
+  imageUrl?: string;
+}
+
 export interface ChatMessage {
   id: string;
   userId: string;
@@ -155,6 +163,7 @@ export interface ChatMessage {
   imageName?: string;
   isPending?: boolean;
   sendFailed?: boolean;
+  replyTo?: ChatReplyQuote;
 }
 
 export interface P2PParticipant {
@@ -192,6 +201,7 @@ export interface P2PMessage {
   reactions?: Record<string, string[]>;
   isPending?: boolean;
   sendFailed?: boolean;
+  replyTo?: ChatReplyQuote;
 }
 
 export interface GeminiChatMessage {
@@ -214,7 +224,10 @@ export type FeatureKey =
   | 'ocr_scan'
   | 'flashcards'
   | 'leaderboard'
-  | 'feedback_submit';
+  | 'feedback_submit'
+  | 'p2p_chat'
+  | 'public_chat'
+  | 'shared_challenge';
 
 export interface FeatureMaintenanceConfig {
   isUnderMaintenance: boolean;
@@ -304,6 +317,30 @@ export const PLATFORM_FEATURES: FeatureMetadata[] = [
     description: 'Student bug reporting and feature suggestion dispatch.',
     affectedButtons: ['"Report Feedback"', '"Submit Bug"'],
     defaultMessage: 'Feedback submission is temporarily offline for ticket processing.'
+  },
+  {
+    key: 'p2p_chat',
+    name: 'P2P Scholar Direct Chat',
+    category: 'Social & Competition',
+    description: '1-on-1 private scholar study conversations and peer doubt resolution.',
+    affectedButtons: ['"Direct Chat"', '"Message Scholar"', '"P2P Chat"'],
+    defaultMessage: 'Peer-to-peer scholar direct messaging is undergoing temporary routine database maintenance. Public Study Room and Quiz AI remain available.'
+  },
+  {
+    key: 'public_chat',
+    name: 'Public Community Study Room',
+    category: 'Social & Competition',
+    description: 'Real-time collaborative study discussions, doubts, and academic problem-solving.',
+    affectedButtons: ['"Public Room"', '"Public Study Room"'],
+    defaultMessage: 'The Public Study Room is currently in maintenance mode for routine optimization.'
+  },
+  {
+    key: 'shared_challenge',
+    name: 'Shared Quiz Challenges & Invite Links',
+    category: 'Social & Competition',
+    description: 'Public quiz share links, 6-character challenge codes, and student invite previews.',
+    affectedButtons: ['"Share Quiz"', '"Join Quiz"', '"Play Shared Challenge"'],
+    defaultMessage: 'Shared challenge links are undergoing routine platform maintenance. You can practice custom quizzes directly from the setup panel.'
   }
 ];
 
