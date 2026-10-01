@@ -33,6 +33,7 @@ export interface CustomSourceData {
   sourceContent: string;
   sourceFileBase64?: string;
   sourceMimeType?: string;
+  webpageUrl?: string;
 }
 
 interface CustomSourceUploaderProps {
@@ -58,7 +59,7 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [webpageUrl, setWebpageUrl] = useState('');
+  const [webpageUrl, setWebpageUrl] = useState(data.webpageUrl || '');
   const [imagePreview, setImagePreview] = useState<string | null>(data.sourceFileBase64 || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -70,6 +71,16 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
     onChange({
       ...data,
       sourceType: tab,
+      webpageUrl: tab === 'webpage' ? (webpageUrl || data.webpageUrl) : data.webpageUrl,
+    });
+  };
+
+  const handleUrlInputChange = (val: string) => {
+    setWebpageUrl(val);
+    setError(null);
+    onChange({
+      ...data,
+      webpageUrl: val,
     });
   };
 
@@ -194,25 +205,25 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
   };
 
   // Handle Webpage URL Fetch
-  const handleFetchWebpage = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleFetchWebpage = async (overrideUrl?: string) => {
     if (!isAdminUnlocked && maintenanceConfig?.features?.webpage_fetch?.isUnderMaintenance) {
       onFeatureBlocked?.('webpage_fetch');
       return;
     }
 
-    let rawUrl = webpageUrl.trim();
+    let rawUrl = (typeof overrideUrl === 'string' ? overrideUrl : webpageUrl).trim();
+    rawUrl = rawUrl.replace(/^["'<(\[]+|[>"')\]]+$/g, '').trim();
+
     if (!rawUrl) {
-      setError('Please enter a valid webpage or article URL (e.g. https://en.wikipedia.org/wiki/Newton%27s_laws_of_motion).');
+      setError('Please enter a valid webpage or Wikipedia article URL (e.g. https://en.wikipedia.org/wiki/Article).');
       return;
     }
 
     // Auto prepend https if user typed without protocol
     if (!/^https?:\/\//i.test(rawUrl)) {
       rawUrl = `https://${rawUrl}`;
-      setWebpageUrl(rawUrl);
     }
+    setWebpageUrl(rawUrl);
 
     // Security Inspection: Block loopbacks, SSRF, private IPs and cloud metadata
     const securityCheck = inspectUrlForSecurity(rawUrl, user);
@@ -229,17 +240,35 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
     try {
       const result = await fetchWebpageContent(rawUrl);
       onChange({
+        ...data,
         sourceType: 'webpage',
         sourceTitle: result.title || rawUrl,
         sourceContent: result.text,
+        webpageUrl: rawUrl,
       });
-      setSuccessMessage(`Successfully extracted ${result.wordCount} words from "${result.title}".`);
+      setSuccessMessage(`Successfully extracted ${result.wordCount} words from "${result.title}". Ready to generate quiz!`);
     } catch (err: any) {
       console.error('Webpage fetch failed:', err);
       setError(err.message || 'Failed to access webpage. You can also copy and paste the study text directly into the notes field below.');
     } finally {
       setIsProcessing(false);
       setProcessingStatus(null);
+    }
+  };
+
+  // Instant trigger when user pastes a URL in the webpage input field
+  const handleUrlPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text');
+    if (pasted && (pasted.includes('http') || pasted.includes('wikipedia') || pasted.includes('.org') || pasted.includes('.com') || pasted.includes('.edu'))) {
+      const cleanPasted = pasted.trim().replace(/^["'<(\[]+|[>"')\]]+$/g, '').trim();
+      setWebpageUrl(cleanPasted);
+      onChange({
+        ...data,
+        webpageUrl: cleanPasted,
+      });
+      setTimeout(() => {
+        handleFetchWebpage(cleanPasted);
+      }, 100);
     }
   };
 
@@ -254,6 +283,7 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
       sourceContent: '',
       sourceFileBase64: undefined,
       sourceMimeType: undefined,
+      webpageUrl: '',
     });
   };
 
@@ -493,7 +523,7 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
 
       {/* Tab 3: Webpage URL Link */}
       {activeTab === 'webpage' && (
-        <form onSubmit={handleFetchWebpage} className="space-y-3">
+        <div className="space-y-3">
           <div className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
               <Globe className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -501,24 +531,63 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
                 type="text"
                 inputMode="url"
                 value={webpageUrl}
-                onChange={(e) => setWebpageUrl(e.target.value)}
-                placeholder="Paste article or Wikipedia link (e.g. https://en.wikipedia.org/wiki/Photosynthesis)"
-                className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500 transition-colors"
+                onChange={(e) => handleUrlInputChange(e.target.value)}
+                onPaste={handleUrlPaste}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleFetchWebpage();
+                  }
+                }}
+                placeholder="Paste article or Wikipedia link (e.g. https://en.wikipedia.org/wiki/Article)"
+                className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500 transition-colors font-mono"
               />
             </div>
             <button
-              type="submit"
+              type="button"
+              onClick={() => handleFetchWebpage()}
               disabled={isProcessing || !webpageUrl.trim()}
-              className="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20"
+              className="px-4 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 text-xs font-bold transition-all cursor-pointer shrink-0 flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 active:scale-95"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Fetch Webpage</span>
+              <span>{isProcessing ? 'Extracting...' : 'Fetch Webpage'}</span>
             </button>
           </div>
-          <p className="text-[11px] text-slate-400">
-            Paste any educational article, Wikipedia entry, or tutorial link to extract key concepts.
-          </p>
-        </form>
+          
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+            <p className="text-[11px] text-slate-400">
+              Paste any Wikipedia entry, educational link, or article URL to extract concepts.
+            </p>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+              <span className="font-mono text-slate-400">Quick Test:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const testUrl = 'https://en.wikipedia.org/wiki/Article';
+                  setWebpageUrl(testUrl);
+                  onChange({ ...data, webpageUrl: testUrl });
+                  handleFetchWebpage(testUrl);
+                }}
+                className="hover:text-emerald-400 underline decoration-slate-700 hover:decoration-emerald-400 cursor-pointer font-mono"
+              >
+                Article
+              </button>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const testUrl = 'https://en.wikipedia.org/wiki/Photosynthesis';
+                  setWebpageUrl(testUrl);
+                  onChange({ ...data, webpageUrl: testUrl });
+                  handleFetchWebpage(testUrl);
+                }}
+                className="hover:text-emerald-400 underline decoration-slate-700 hover:decoration-emerald-400 cursor-pointer font-mono"
+              >
+                Photosynthesis
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Common Document Metadata: Title & Extracted Content Area */}
@@ -570,6 +639,28 @@ export const CustomSourceUploader: React.FC<CustomSourceUploaderProps> = ({
             }
             className="w-full p-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
           />
+
+          {data.sourceContent && /^https?:\/\/[^\s]+$/i.test(data.sourceContent.trim()) && (
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Webpage URL detected in notes!</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const url = data.sourceContent.trim();
+                  setActiveTab('webpage');
+                  setWebpageUrl(url);
+                  handleFetchWebpage(url);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Extract Content Now</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

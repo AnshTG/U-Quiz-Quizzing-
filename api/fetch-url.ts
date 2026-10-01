@@ -148,16 +148,17 @@ export default async function handler(req: any, res: any) {
     }
 
     // PATH 1: Dedicated Wikipedia REST & Action API for clean encyclopedia articles
-    const wikiMatch = cleanUrl.match(/https?:\/\/([a-z0-9-]+)(?:\.m)?\.wikipedia\.org\/(?:wiki\/([^#?]+)|w\/index\.php\?title=([^#?&]+))/i);
+    const wikiMatch = cleanUrl.match(/https?:\/\/(?:([a-z0-9-]+)(?:\.m)?\.)?(wikipedia|wikibooks|wikiversity|wikimedia)\.org\/(?:wiki\/([^#?]+)|w\/index\.php\?title=([^#?&]+))/i);
     if (wikiMatch) {
       try {
-        const lang = wikiMatch[1].toLowerCase();
-        const rawTitle = wikiMatch[2] || wikiMatch[3] || '';
+        const lang = wikiMatch[1] ? wikiMatch[1].toLowerCase() : 'en';
+        const domain = `${wikiMatch[2].toLowerCase()}.org`;
+        const rawTitle = wikiMatch[3] || wikiMatch[4] || '';
         const pageTitle = decodeURIComponent(rawTitle).split('#')[0].split('?')[0].replace(/_/g, ' ').trim();
 
         if (pageTitle) {
           // 1. Direct query with plain-text extract, auto-redirects, and origin=*
-          const wikiApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1&origin=*`;
+          const wikiApiUrl = `https://${lang}.${domain}/w/api.php?action=query&format=json&prop=extracts&explaintext=1&titles=${encodeURIComponent(pageTitle)}&redirects=1&origin=*`;
 
           const wikiRes = await fetch(wikiApiUrl, {
             headers: {
@@ -173,19 +174,29 @@ export default async function handler(req: any, res: any) {
             const pageId = Object.keys(pages)[0];
             if (pageId && pageId !== '-1' && pages[pageId]?.extract) {
               const page = pages[pageId];
-              const text = (page.extract as string).slice(0, 45000);
+              let text = (page.extract as string)
+                .replace(/={2,4}\s*(References|External links|See also|Notes|Further reading|Bibliography)\s*={2,4}[\s\S]*/i, '')
+                .trim();
+
+              const isDisambig = /often refers to:|may also refer to:|may refer to:/i.test(text);
+              if (isDisambig) {
+                text += '\n\n[Encyclopedia Scope: Multi-disciplinary overview. Assessment questions will synthesize facts across the referenced terms.]';
+              }
+
               const wordCount = text.split(/\s+/).filter(Boolean).length;
-              return res.status(200).json({
-                title: page.title || pageTitle,
-                text,
-                wordCount,
-                url: cleanUrl,
-              });
+              if (wordCount >= 15) {
+                return res.status(200).json({
+                  title: page.title || pageTitle,
+                  text: text.slice(0, 48000),
+                  wordCount,
+                  url: cleanUrl,
+                });
+              }
             }
           }
 
           // 2. Search generator fallback in case of typo or case discrepancy
-          const searchApiUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(pageTitle)}&gsrlimit=1&prop=extracts&explaintext=1&format=json&origin=*`;
+          const searchApiUrl = `https://${lang}.${domain}/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(pageTitle)}&gsrlimit=1&prop=extracts&explaintext=1&format=json&origin=*`;
           const searchRes = await fetch(searchApiUrl, {
             headers: {
               'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
@@ -200,19 +211,46 @@ export default async function handler(req: any, res: any) {
             const pageId = Object.keys(pages)[0];
             if (pageId && pages[pageId]?.extract) {
               const page = pages[pageId];
-              const text = (page.extract as string).slice(0, 45000);
+              const text = (page.extract as string)
+                .replace(/={2,4}\s*(References|External links|See also|Notes|Further reading|Bibliography)\s*={2,4}[\s\S]*/i, '')
+                .trim();
               const wordCount = text.split(/\s+/).filter(Boolean).length;
+              if (wordCount >= 15) {
+                return res.status(200).json({
+                  title: page.title || pageTitle,
+                  text: text.slice(0, 48000),
+                  wordCount,
+                  url: cleanUrl,
+                });
+              }
+            }
+          }
+
+          // 3. REST v1 HTML endpoint
+          const restHtmlUrl = `https://${lang}.${domain}/api/rest_v1/page/html/${encodeURIComponent(pageTitle)}`;
+          const restHtmlRes = await fetch(restHtmlUrl, {
+            headers: {
+              'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
+              'Accept': 'text/html',
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (restHtmlRes.ok) {
+            const html = await restHtmlRes.text();
+            const cleanText = stripHtml(html);
+            const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
+            if (wordCount >= 30) {
               return res.status(200).json({
-                title: page.title || pageTitle,
-                text,
+                title: pageTitle,
+                text: cleanText.slice(0, 48000),
                 wordCount,
                 url: cleanUrl,
               });
             }
           }
 
-          // 3. REST v1 summary fallback
-          const restSummaryUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
+          // 4. REST v1 summary fallback
+          const restSummaryUrl = `https://${lang}.${domain}/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`;
           const restRes = await fetch(restSummaryUrl, {
             headers: {
               'User-Agent': 'UQuizScholar/2.0 (Academic Study Assessment; https://uquiz.edu)',
@@ -268,8 +306,26 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    // Helper to check for bot challenge screens
+    const isBotChallenge = (rawText: string): boolean => {
+      const lower = rawText.toLowerCase();
+      return (
+        lower.includes('cf-browser-verification') ||
+        lower.includes('challenge-platform') ||
+        lower.includes('just a moment...') ||
+        lower.includes('checking your browser') ||
+        lower.includes('enable javascript and cookies') ||
+        lower.includes('access denied') ||
+        lower.includes('turnstile') ||
+        lower.includes('client challenge') ||
+        lower.includes('robot verification') ||
+        lower.includes('ddos protection') ||
+        lower.includes('attention required! | cloudflare') ||
+        lower.includes('please verify you are a human')
+      );
+    };
+
     // PATH 3: Standard Webpage Direct Fetch with Real Browser Headers
-    let fetchError: Error | null = null;
     try {
       const response = await fetch(parsedUrl.toString(), {
         headers: {
@@ -284,7 +340,7 @@ export default async function handler(req: any, res: any) {
           'Cache-Control': 'no-cache',
         },
         redirect: 'follow',
-        signal: AbortSignal.timeout(14000),
+        signal: AbortSignal.timeout(12000),
       });
 
       if (response.ok) {
@@ -293,50 +349,88 @@ export default async function handler(req: any, res: any) {
         const title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : parsedUrl.hostname;
 
         const cleanText = stripHtml(html);
-        if (cleanText.length >= 150) {
-          const truncatedText = cleanText.slice(0, 40000);
-          const wordCount = truncatedText.split(/\s+/).filter(Boolean).length;
+        const wordCount = cleanText.split(/\s+/).filter(Boolean).length;
+        if (cleanText.length >= 150 && wordCount >= 30 && !isBotChallenge(cleanText)) {
+          const truncatedText = cleanText.slice(0, 45000);
           return res.status(200).json({
             title,
             text: truncatedText,
-            wordCount,
+            wordCount: truncatedText.split(/\s+/).filter(Boolean).length,
             url: parsedUrl.toString(),
           });
         }
       }
     } catch (err: any) {
-      fetchError = err;
-      console.warn(`Direct fetch failed for ${cleanUrl} (${err.message}). Activating Gemini search grounding fallback...`);
+      console.warn(`Direct fetch failed for ${cleanUrl} (${err.message}). Activating reader & search fallbacks...`);
+    }
+
+    // PATH 3.5: High-Resilience Server-side Jina Reader Fallback (bypasses bot challenges and renders JS SPAs)
+    try {
+      const jinaRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
+        headers: {
+          'Accept': 'text/plain',
+          'User-Agent': 'UQuizScholar/2.0',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (jinaRes.ok) {
+        const markdown = await jinaRes.text();
+        if (markdown && markdown.length > 80 && !markdown.includes('Target URL returned error 404') && !isBotChallenge(markdown)) {
+          const titleMatch = markdown.match(/Title:\s*(.+)$/im) || markdown.match(/^#+\s+(.+)$/m);
+          const title = titleMatch ? titleMatch[1].trim() : parsedUrl.hostname;
+          const cleanContent = markdown
+            .replace(/URL Source:[\s\S]*?Markdown Content:/i, '')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            .trim();
+          const wordCount = cleanContent.split(/\s+/).filter(Boolean).length;
+          if (wordCount >= 25) {
+            return res.status(200).json({
+              title,
+              text: cleanContent.slice(0, 48000),
+              wordCount,
+              url: cleanUrl,
+            });
+          }
+        }
+      }
+    } catch (jinaErr: any) {
+      console.warn('Jina reader fallback notice in api/fetch-url.ts:', jinaErr?.message);
     }
 
     // PATH 4: Intelligent Gemini Google Search Grounding Fallback
-    // If the website has anti-bot protections (Cloudflare 403), captcha, or dynamic single-page javascript rendering:
     try {
       const ai = getAIClient();
       const searchPrompt = `Extract the full comprehensive academic syllabus, key concepts, detailed definitions, formulas, and educational notes from the webpage at: ${cleanUrl}.
 Provide a thorough, richly detailed study summary (aim for 600-1500 words) formatted clearly into academic sections, covering all core facts so an examiner can formulate quiz questions directly from it.`;
 
-      const aiResponse = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: searchPrompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
-      });
+      const fallbackModels = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest'];
+      for (const candidateModel of fallbackModels) {
+        try {
+          const aiResponse = await ai.models.generateContent({
+            model: candidateModel,
+            contents: searchPrompt,
+            config: {
+              tools: [{ googleSearch: {} }],
+            },
+          });
 
-      const extractedText = aiResponse.text?.trim();
-      if (extractedText && extractedText.length > 80) {
-        const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
-        const fallbackTitle = parsedUrl.pathname.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || parsedUrl.hostname;
-        return res.status(200).json({
-          title: fallbackTitle.charAt(0).toUpperCase() + fallbackTitle.slice(1),
-          text: extractedText,
-          wordCount,
-          url: cleanUrl,
-        });
+          const extractedText = aiResponse.text?.trim();
+          if (extractedText && extractedText.length > 80) {
+            const wordCount = extractedText.split(/\s+/).filter(Boolean).length;
+            const fallbackTitle = parsedUrl.pathname.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || parsedUrl.hostname;
+            return res.status(200).json({
+              title: fallbackTitle.charAt(0).toUpperCase() + fallbackTitle.slice(1),
+              text: extractedText,
+              wordCount,
+              url: cleanUrl,
+            });
+          }
+        } catch (modelErr: any) {
+          console.warn(`Gemini search model ${candidateModel} notice:`, modelErr?.message);
+        }
       }
     } catch (aiErr: any) {
-      console.error('Gemini Search Grounding fallback failed:', aiErr);
+      console.error('Gemini Search Grounding fallback failed in api/fetch-url.ts:', aiErr);
     }
 
     return res.status(400).json({

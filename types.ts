@@ -227,7 +227,9 @@ export type FeatureKey =
   | 'feedback_submit'
   | 'p2p_chat'
   | 'public_chat'
-  | 'shared_challenge';
+  | 'shared_challenge'
+  | 'chat_message_controls'
+  | 'scorecard_export';
 
 export interface FeatureMaintenanceConfig {
   isUnderMaintenance: boolean;
@@ -250,8 +252,8 @@ export const PLATFORM_FEATURES: FeatureMetadata[] = [
     key: 'webpage_fetch',
     name: 'Wikipedia & Webpage Extractor',
     category: 'Input & Media',
-    description: 'Instant academic text extraction from Wikipedia articles and educational links.',
-    affectedButtons: ['"Fetch Webpage"', '"Extract Wikipedia Link"'],
+    description: 'Instant academic text extraction from Wikipedia articles, research papers, and educational URLs.',
+    affectedButtons: ['"Fetch Webpage"', '"Auto-Extract Link"', '"Extract Wikipedia Link"'],
     defaultMessage: 'Webpage & Wikipedia extraction is undergoing scheduled maintenance. You can paste study notes or text directly into the notes field.'
   },
   {
@@ -261,6 +263,30 @@ export const PLATFORM_FEATURES: FeatureMetadata[] = [
     description: 'Generates NCERT syllabus-aligned multiple choice and numerical quizzes.',
     affectedButtons: ['"Generate Quiz"', '"Custom Source Quiz"', '"Start Practice Quiz"'],
     defaultMessage: 'Quiz generation is currently undergoing scheduled platform upgrades to expand question banks. Please explore the NCERT Curriculum directory or Flashcards.'
+  },
+  {
+    key: 'chat_message_controls',
+    name: 'Study Room Actions (Reply & Delete)',
+    category: 'Social & Competition',
+    description: 'Quote-replying, individual message deletion, conversation clearing, and message copying in scholar chats.',
+    affectedButtons: ['"Reply to Message"', '"Delete Message"', '"Clear Conversation"'],
+    defaultMessage: 'Message management actions are temporarily paused for database maintenance.'
+  },
+  {
+    key: 'scorecard_export',
+    name: 'Scorecard & Certificate Generator',
+    category: 'Study & Revision',
+    description: 'Generates high-resolution PNG scorecards and performance badges.',
+    affectedButtons: ['"Export Scorecard"', '"Download Scorecard PNG"'],
+    defaultMessage: 'Scorecard image export is undergoing canvas engine maintenance.'
+  },
+  {
+    key: 'shared_challenge',
+    name: 'Shared Quiz Challenges & Invite Links',
+    category: 'Social & Competition',
+    description: 'Persistent quiz share links, 6-character challenge codes, and instant scholar invite previews.',
+    affectedButtons: ['"Share Quiz"', '"Join Quiz"', '"Play Shared Challenge"'],
+    defaultMessage: 'Shared challenge links are undergoing routine platform maintenance. You can practice custom quizzes directly from the setup panel.'
   },
   {
     key: 'ai_chat',
@@ -333,14 +359,6 @@ export const PLATFORM_FEATURES: FeatureMetadata[] = [
     description: 'Real-time collaborative study discussions, doubts, and academic problem-solving.',
     affectedButtons: ['"Public Room"', '"Public Study Room"'],
     defaultMessage: 'The Public Study Room is currently in maintenance mode for routine optimization.'
-  },
-  {
-    key: 'shared_challenge',
-    name: 'Shared Quiz Challenges & Invite Links',
-    category: 'Social & Competition',
-    description: 'Public quiz share links, 6-character challenge codes, and student invite previews.',
-    affectedButtons: ['"Share Quiz"', '"Join Quiz"', '"Play Shared Challenge"'],
-    defaultMessage: 'Shared challenge links are undergoing routine platform maintenance. You can practice custom quizzes directly from the setup panel.'
   }
 ];
 

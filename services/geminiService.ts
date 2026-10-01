@@ -231,16 +231,20 @@ export const transcribeNotesImage = async (
 /**
  * Parse Wikipedia language code and page title from Wikipedia desktop, mobile, or index URLs
  */
+/**
+ * Parse Wikipedia language code and page title from Wikipedia desktop, mobile, or index URLs
+ */
 export function parseWikipediaUrl(rawUrl: string): { lang: string; title: string; domain: string } | null {
   try {
-    const urlStr = rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`;
+    let clean = rawUrl.trim().replace(/^["'<(\[]+|[>"')\]]+$/g, '').trim();
+    const urlStr = clean.startsWith('http') ? clean : `https://${clean}`;
     const parsed = new URL(urlStr);
-    const hostMatch = parsed.hostname.match(/^([a-z0-9-]+)(?:\.m)?\.(wikipedia|wikibooks|wikiversity)\.org$/i);
+    const hostMatch = parsed.hostname.match(/^(?:([a-z0-9-]+)(?:\.m)?)?\.(wikipedia|wikibooks|wikiversity|wikimedia)\.org$/i);
     let lang = 'en';
     let domain = 'wikipedia.org';
 
     if (hostMatch) {
-      lang = hostMatch[1].toLowerCase();
+      lang = hostMatch[1] ? hostMatch[1].toLowerCase() : 'en';
       domain = `${hostMatch[2].toLowerCase()}.org`;
     } else if (/wikipedia\.org$/i.test(parsed.hostname)) {
       lang = 'en';
@@ -294,20 +298,26 @@ export const fetchWikipediaDirect = async (
       const pageId = Object.keys(pages)[0];
       const page = pages[pageId];
 
-      if (page && pageId !== '-1' && page.extract && page.extract.trim().length >= 80) {
-        const cleanExtract = page.extract
-          .replace(/===\s*References\s*===[\s\S]*/i, '')
-          .replace(/===\s*External links\s*===[\s\S]*/i, '')
-          .replace(/===\s*See also\s*===[\s\S]*/i, '')
+      if (page && pageId !== '-1' && page.extract && page.extract.trim().length >= 40) {
+        let cleanExtract = page.extract
+          .replace(/={2,4}\s*(References|External links|See also|Notes|Further reading|Bibliography)\s*={2,4}[\s\S]*/i, '')
           .trim();
 
+        // Handle disambiguation pages by noting broad scope for examination
+        const isDisambig = /often refers to:|may also refer to:|may refer to:/i.test(cleanExtract);
+        if (isDisambig) {
+          cleanExtract += '\n\n[Encyclopedia Scope: Multi-disciplinary overview. Assessment questions will synthesize facts across the referenced terms.]';
+        }
+
         const words = cleanExtract.split(/\s+/).filter(Boolean).length;
-        return {
-          title: page.title || title,
-          text: cleanExtract.slice(0, 50000),
-          wordCount: words,
-          url: `https://${lang}.${domain}/wiki/${encodeURIComponent(page.title || title)}`,
-        };
+        if (words >= 15) {
+          return {
+            title: page.title || title,
+            text: cleanExtract.slice(0, 50000),
+            wordCount: words,
+            url: `https://${lang}.${domain}/wiki/${encodeURIComponent(page.title || title)}`,
+          };
+        }
       }
     }
   } catch (err: any) {
@@ -329,11 +339,9 @@ export const fetchWikipediaDirect = async (
       const pageId = Object.keys(pages)[0];
       const page = pages[pageId];
 
-      if (page && page.extract && page.extract.trim().length >= 80) {
+      if (page && page.extract && page.extract.trim().length >= 40) {
         const cleanExtract = page.extract
-          .replace(/===\s*References\s*===[\s\S]*/i, '')
-          .replace(/===\s*External links\s*===[\s\S]*/i, '')
-          .replace(/===\s*See also\s*===[\s\S]*/i, '')
+          .replace(/={2,4}\s*(References|External links|See also|Notes|Further reading|Bibliography)\s*={2,4}[\s\S]*/i, '')
           .trim();
 
         const words = cleanExtract.split(/\s+/).filter(Boolean).length;
@@ -349,7 +357,50 @@ export const fetchWikipediaDirect = async (
     if (err.name === 'AbortError') throw err;
   }
 
-  // Step 3: Wikipedia REST v1 page summary endpoint
+  // Step 3: Wikipedia REST v1 HTML endpoint (extracts comprehensive raw article text)
+  try {
+    const restHtmlUrl = `https://${lang}.${domain}/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+    const res = await fetch(restHtmlUrl, {
+      method: 'GET',
+      headers: { 'Accept': 'text/html' },
+      signal,
+    });
+
+    if (res.ok) {
+      const html = await res.text();
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      const articleTitle = titleMatch ? titleMatch[1].replace(/\s*-\s*Wikipedia$/i, '').trim() : title;
+      const cleanText = html
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+        .replace(/<table class="metadata.*?<\/table>/gi, '')
+        .replace(/<section data-mw-section-id="[^"]*"(?:[^>]*)(?:id="(?:References|External_links|See_also|Notes)")[\s\S]*?<\/section>/gi, '')
+        .replace(/<[^>]*>?/gm, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const words = cleanText.split(/\s+/).filter(Boolean).length;
+      if (words >= 30) {
+        return {
+          title: articleTitle,
+          text: cleanText.slice(0, 50000),
+          wordCount: words,
+          url: `https://${lang}.${domain}/wiki/${encodeURIComponent(title)}`,
+        };
+      }
+    }
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw err;
+  }
+
+  // Step 4: Wikipedia REST v1 page summary endpoint
   try {
     const restUrl = `https://${lang}.${domain}/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
     const res = await fetch(restUrl, {
@@ -360,7 +411,7 @@ export const fetchWikipediaDirect = async (
 
     if (res.ok) {
       const data = await res.json();
-      if (data && data.extract && data.extract.trim().length >= 60) {
+      if (data && data.extract && data.extract.trim().length >= 40) {
         const fullContent = `${data.title}\n\n${data.description ? `Overview: ${data.description}\n\n` : ''}${data.extract}`;
         return {
           title: data.title || title,
@@ -384,11 +435,13 @@ export const fetchWebpageContent = async (
   url: string,
   signal?: AbortSignal
 ): Promise<{ title: string; text: string; wordCount: number; url: string }> => {
-  const cleanUrl = url.trim().startsWith('http') ? url.trim() : `https://${url.trim()}`;
+  let cleanUrl = url.trim().replace(/^["'<(\[]+|[>"')\]]+$/g, '').trim();
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
 
   // If the target is a Wikipedia/Wikimedia URL, prioritize direct browser extraction
-  // This guarantees instantaneous results and immunizes users against serverless 404s and proxy gateways
-  if (/wiki(pedia|books|versity)\.org/i.test(cleanUrl)) {
+  if (/wiki(pedia|books|versity|media)\.org/i.test(cleanUrl)) {
     try {
       return await fetchWikipediaDirect(cleanUrl, signal);
     } catch (wikiErr: any) {
@@ -444,18 +497,21 @@ export const fetchWebpageContent = async (
       }
 
       const data = await res.json();
-      return {
-        title: data.title || cleanUrl,
-        text: data.text || '',
-        wordCount: data.wordCount || 0,
-        url: data.url || cleanUrl,
-      };
+      if (data && data.text && data.text.trim().length >= 40) {
+        return {
+          title: data.title || cleanUrl,
+          text: data.text || '',
+          wordCount: data.wordCount || data.text.split(/\s+/).filter(Boolean).length,
+          url: data.url || cleanUrl,
+        };
+      }
     } catch (err: any) {
       if (err.name === 'AbortError') {
         throw new Error('Webpage extraction was cancelled.');
       }
       lastError = err;
       if (!err.message?.includes('404') && !err.message?.includes('405')) {
+        // Try next fallback if status error
         break;
       }
     }
@@ -470,16 +526,21 @@ export const fetchWebpageContent = async (
     });
     if (readerRes.ok) {
       const markdown = await readerRes.text();
-      if (markdown && markdown.length > 80) {
+      if (markdown && markdown.length > 80 && !markdown.includes('Target URL returned error 404')) {
         const titleMatch = markdown.match(/Title:\s*(.+)$/im) || markdown.match(/^#+\s+(.+)$/m);
-        const hostname = new URL(cleanUrl).hostname;
+        let hostname = cleanUrl;
+        try {
+          hostname = new URL(cleanUrl).hostname;
+        } catch {
+          // ignore
+        }
         const title = titleMatch ? titleMatch[1].trim() : hostname;
         const cleanContent = markdown
           .replace(/URL Source:[\s\S]*?Markdown Content:/i, '')
           .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
           .trim();
         const words = cleanContent.split(/\s+/).filter(Boolean).length;
-        if (words >= 25) {
+        if (words >= 20) {
           return {
             title,
             text: cleanContent.slice(0, 45000),

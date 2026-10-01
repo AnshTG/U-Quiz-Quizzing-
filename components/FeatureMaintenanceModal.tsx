@@ -72,6 +72,10 @@ export const FeatureMaintenanceModal: React.FC<FeatureMaintenanceModalProps> = (
         return <Globe className="w-6 h-6 text-teal-400" />;
       case 'shared_challenge':
         return <Users className="w-6 h-6 text-amber-400" />;
+      case 'chat_message_controls':
+        return <MessageSquare className="w-6 h-6 text-pink-400" />;
+      case 'scorecard_export':
+        return <Trophy className="w-6 h-6 text-emerald-400" />;
       default:
         return <Wrench className="w-6 h-6 text-amber-400" />;
     }

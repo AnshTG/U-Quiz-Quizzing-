@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { ShareReminderModal } from './ShareReminderModal';
 import { CustomSourceUploader, CustomSourceData } from './CustomSourceUploader';
+import { fetchWebpageContent } from '../services/geminiService';
 import { FeatureKey, MaintenanceConfig, UserProfile } from '../types';
 
 interface SetupViewProps {
@@ -104,6 +105,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
   const [topicSearch, setTopicSearch] = useState<string>('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState<boolean>(false);
+  const [isAutoFetching, setIsAutoFetching] = useState<boolean>(false);
 
   // Canonical NCERT dataset
   const activeSyllabusData = NCERT_DATA;
@@ -170,7 +172,7 @@ export const SetupView: React.FC<SetupViewProps> = ({
     setSelectedTopics([]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!isAdminUnlocked && maintenanceConfig?.features?.quiz_generation?.isUnderMaintenance) {
@@ -179,10 +181,65 @@ export const SetupView: React.FC<SetupViewProps> = ({
     }
 
     if (generationMode === 'custom') {
-      const hasContent = !!customSourceData.sourceContent.trim() || !!customSourceData.sourceFileBase64;
+      let finalContent = customSourceData.sourceContent.trim();
+      let finalTitle = customSourceData.sourceTitle.trim();
+      let finalType = customSourceData.sourceType;
+      let hasContent = !!finalContent || !!customSourceData.sourceFileBase64;
+
+      // Auto-extract if user supplied a webpage URL but hasn't clicked "Fetch Webpage" yet
+      if (!hasContent && customSourceData.sourceType === 'webpage' && customSourceData.webpageUrl?.trim()) {
+        const rawUrl = customSourceData.webpageUrl.trim().replace(/^["'<(\[]+|[>"')\]]+$/g, '');
+        try {
+          setIsAutoFetching(true);
+          setValidationError(null);
+          const result = await fetchWebpageContent(rawUrl);
+          finalContent = result.text;
+          finalTitle = finalTitle || result.title;
+          setCustomSourceData(prev => ({
+            ...prev,
+            sourceTitle: finalTitle,
+            sourceContent: finalContent,
+          }));
+          hasContent = true;
+        } catch (err: any) {
+          setValidationError(`Failed to extract text from "${rawUrl}": ${err.message || 'Please check the URL or paste notes directly.'}`);
+          setIsAutoFetching(false);
+          return;
+        } finally {
+          setIsAutoFetching(false);
+        }
+      }
+
+      // Auto-extract if user pasted a raw URL into the notes textarea
+      if (!hasContent && customSourceData.sourceType === 'notes' && /^https?:\/\/[^\s]+$/i.test(customSourceData.sourceContent.trim())) {
+        const rawUrl = customSourceData.sourceContent.trim();
+        try {
+          setIsAutoFetching(true);
+          setValidationError(null);
+          const result = await fetchWebpageContent(rawUrl);
+          finalContent = result.text;
+          finalTitle = finalTitle || result.title;
+          finalType = 'webpage';
+          setCustomSourceData(prev => ({
+            ...prev,
+            sourceType: 'webpage',
+            sourceTitle: finalTitle,
+            sourceContent: finalContent,
+            webpageUrl: rawUrl,
+          }));
+          hasContent = true;
+        } catch (err: any) {
+          setValidationError(`Failed to extract text from link: ${err.message}`);
+          setIsAutoFetching(false);
+          return;
+        } finally {
+          setIsAutoFetching(false);
+        }
+      }
+
       if (!hasContent) {
         if (customSourceData.sourceType === 'webpage') {
-          setValidationError('Please enter a webpage URL and click "Fetch Webpage" to extract the study text, or paste your notes directly into the study content field.');
+          setValidationError('Please enter a webpage URL or paste notes into the study content field.');
         } else {
           setValidationError('Please upload a notes image, PDF document, webpage link, or paste study content in the Custom Source section.');
         }
@@ -204,14 +261,14 @@ export const SetupView: React.FC<SetupViewProps> = ({
       onGenerateQuiz({
         class: selectedClass || 'Custom Study',
         subject: selectedSubject || 'Custom Assessment',
-        topics: [customSourceData.sourceTitle || `${customSourceData.sourceType.toUpperCase()} Notes`],
+        topics: [finalTitle || `${finalType.toUpperCase()} Notes`],
         strength,
         quantity,
         timeLimitMinutes,
         questionType,
-        sourceType: customSourceData.sourceType,
-        sourceTitle: customSourceData.sourceTitle || 'Custom Study Material',
-        sourceContent: customSourceData.sourceContent,
+        sourceType: finalType,
+        sourceTitle: finalTitle || 'Custom Study Material',
+        sourceContent: finalContent,
         sourceFileBase64: customSourceData.sourceFileBase64,
         sourceMimeType: customSourceData.sourceMimeType,
         customInstructions: customInstructions.trim() || undefined,
@@ -259,9 +316,14 @@ export const SetupView: React.FC<SetupViewProps> = ({
   };
 
   // Check how many configuration steps are completed
+  const hasCustomSourceInput =
+    !!customSourceData.sourceContent.trim() ||
+    !!customSourceData.sourceFileBase64 ||
+    (customSourceData.sourceType === 'webpage' && !!customSourceData.webpageUrl?.trim());
+
   const completedSteps = generationMode === 'custom'
     ? [
-        (!!customSourceData.sourceContent.trim() || !!customSourceData.sourceFileBase64),
+        hasCustomSourceInput,
         !!strength,
         !!quantity,
         timeLimitMinutes !== null,
@@ -939,15 +1001,24 @@ export const SetupView: React.FC<SetupViewProps> = ({
             <div className="space-y-3 pt-2">
               <button
                 type="submit"
+                disabled={isAutoFetching}
                 className={`w-full py-3.5 px-6 rounded-2xl font-display font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg active:scale-98 ${
-                  isFormComplete
+                  isAutoFetching
+                    ? 'bg-emerald-600 text-slate-950 opacity-90 cursor-wait'
+                    : isFormComplete
                     ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/25'
                     : 'bg-slate-800 text-slate-400 hover:bg-slate-750'
                 }`}
               >
-                <Sparkles className="w-4 h-4" />
-                <span>{isFormComplete ? 'Generate & Begin Quiz' : 'Complete All Options Above'}</span>
-                <ArrowRight className="w-4 h-4" />
+                <Sparkles className={`w-4 h-4 ${isAutoFetching ? 'animate-spin' : ''}`} />
+                <span>
+                  {isAutoFetching
+                    ? 'Extracting Webpage Study Material...'
+                    : isFormComplete
+                    ? 'Generate & Begin Quiz'
+                    : 'Complete All Options Above'}
+                </span>
+                {!isAutoFetching && <ArrowRight className="w-4 h-4" />}
               </button>
 
               {/* Share Reminder Button */}
