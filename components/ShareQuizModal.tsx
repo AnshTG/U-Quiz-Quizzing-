@@ -40,28 +40,26 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [showQrCode, setShowQrCode] = useState(true);
 
+  const handlePublish = async () => {
+    try {
+      setIsPublishing(true);
+      setError(null);
+      const publishedId = await publishSharedQuiz(config, questions, user);
+      const targetId = publishedId || initialId;
+      setQuizId(targetId);
+    } catch (err: any) {
+      console.error('Publish error:', err);
+      // Ensure quizId is always populated with deterministic ID so fields are never empty!
+      setQuizId(initialId);
+      setError(err?.message || 'Failed to sync with cloud. The share link below was created deterministically; tap retry to re-sync.');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   // Sync to Firestore on mount to ensure record exists
   useEffect(() => {
-    let isMounted = true;
-    const syncQuiz = async () => {
-      try {
-        setIsPublishing(true);
-        const publishedId = await publishSharedQuiz(config, questions, user);
-        if (isMounted) {
-          setQuizId(publishedId);
-        }
-      } catch (err: any) {
-        console.error('Publish error:', err);
-      } finally {
-        if (isMounted) {
-          setIsPublishing(false);
-        }
-      }
-    };
-    syncQuiz();
-    return () => {
-      isMounted = false;
-    };
+    handlePublish();
   }, [config, questions, user]);
 
   const getBaseUrl = () => {
@@ -166,11 +164,8 @@ export const ShareQuizModal: React.FC<ShareQuizModalProps> = ({
           <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs space-y-2">
             <p>{error}</p>
             <button
-              onClick={() => {
-                setError(null);
-                setQuizId(null);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-rose-500 text-white font-bold text-xs"
+              onClick={handlePublish}
+              className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer transition-colors shadow-md"
             >
               Retry Publishing
             </button>
