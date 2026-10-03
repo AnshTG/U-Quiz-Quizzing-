@@ -34,7 +34,6 @@ import {
   deleteP2PConversation,
   toggleP2PMessageReaction, 
   searchScholars, 
-  getRecentActiveScholars,
   sanitizeUsernameCandidate
 } from '../services/firebase';
 import { compressImageForChat, CompressedImageResult, formatFileSize } from '../services/imageCompression';
@@ -68,11 +67,10 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
   const [messages, setMessages] = useState<P2PMessage[]>([]);
   const [pendingMessages, setPendingMessages] = useState<P2PMessage[]>([]);
   
-  // Search & Active Scholars
+  // Scholar Search
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [activeScholars, setActiveScholars] = useState<UserProfile[]>([]);
   
   // Chat input
   const [inputMessage, setInputMessage] = useState('');
@@ -105,14 +103,6 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
     document.addEventListener('click', handleDocClick);
     return () => document.removeEventListener('click', handleDocClick);
   }, []);
-
-  // Fetch recent active scholars
-  useEffect(() => {
-    if (!currentUser?.uid) return;
-    getRecentActiveScholars(currentUser.uid, 12).then((scholars) => {
-      setActiveScholars(scholars);
-    }).catch(console.warn);
-  }, [currentUser?.uid]);
 
   // Handle initial peer or initial conversation if provided
   useEffect(() => {
@@ -442,43 +432,6 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
           </div>
         </div>
 
-        {/* Active Scholars Carousel (Quick connect) */}
-        {!searchQuery && activeScholars.length > 0 && (
-          <div className="p-2.5 border-b border-[#2a3942] bg-[#111b21]/80">
-            <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase px-1 mb-2 block">
-              Active Scholars Online
-            </span>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {activeScholars.map((scholar) => (
-                <button
-                  key={scholar.uid}
-                  onClick={() => handleSelectPeer(scholar)}
-                  className="flex flex-col items-center gap-1 p-1 rounded-xl hover:bg-[#202c33] transition-colors cursor-pointer shrink-0 w-16 text-center group"
-                >
-                  <div className="relative">
-                    {scholar.photoURL ? (
-                      <img
-                        src={scholar.photoURL}
-                        alt={scholar.displayName || 'Scholar'}
-                        referrerPolicy="no-referrer"
-                        className="w-10 h-10 rounded-full object-cover border border-[#2a3942] group-hover:border-emerald-400 transition-colors"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-[#202c33] border border-[#2a3942] group-hover:border-emerald-400 text-emerald-400 font-bold flex items-center justify-center text-xs">
-                        {scholar.displayName ? scholar.displayName[0].toUpperCase() : 'S'}
-                      </div>
-                    )}
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#111b21] absolute bottom-0 right-0" />
-                  </div>
-                  <span className="text-[10px] text-slate-300 font-medium truncate w-full group-hover:text-emerald-400">
-                    {scholar.displayName?.split(' ')[0] || 'Scholar'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Search Results Dropdown/Overlay */}
         {searchQuery && (
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -545,7 +498,7 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
                 </div>
                 <h4 className="text-xs font-bold text-slate-300">No Direct Messages Yet</h4>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Start a study conversation by searching for a scholar above or selecting one from active scholars!
+                  Start a study conversation by searching for a scholar by @username or name above!
                 </p>
               </div>
             ) : (
@@ -652,7 +605,6 @@ export const P2PChatView: React.FC<P2PChatViewProps> = ({
                       {activePeer.displayName[0]?.toUpperCase() || 'S'}
                     </div>
                   )}
-                  <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#202c33] absolute bottom-0 right-0" />
                 </div>
 
                 <div className="flex flex-col min-w-0">

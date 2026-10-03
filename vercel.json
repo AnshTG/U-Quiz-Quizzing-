@@ -5,12 +5,7 @@
   "cleanUrls": true,
   "functions": {
     "api/**/*.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "api/*.ts": {
-      "maxDuration": 60,
-      "memory": 1024
+      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -35,6 +30,10 @@
       "destination": "/api/health"
     },
     {
+      "source": "/admin/verify",
+      "destination": "/api/admin/verify"
+    },
+    {
       "source": "/login",
       "destination": "/login/index.html"
     },
@@ -55,7 +54,7 @@
       "destination": "/about/index.html"
     },
     {
-      "source": "/((?!api/|assets/|favicon|robots\\.txt|sitemap\\.xml).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],

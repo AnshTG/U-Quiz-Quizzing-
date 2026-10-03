@@ -18,7 +18,6 @@ import {
   listenToP2PConversations,
   listenToAllP2PConversationsForAdmin,
   deleteP2PConversation,
-  getRecentActiveScholars,
   searchScholars,
   getISTTimeString 
 } from '../services/firebase';
@@ -130,6 +129,7 @@ const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '🙏', '🔥', '💡
 /**
  * Evaluates whether an AI Study Tutor message explains substantive academic concepts
  * suitable for targeted concept quizzing ("Test me on this").
+ * Does NOT show on greetings, conversational pleasantries, study tips, or clarification questions.
  */
 export function isMessageTestable(msg: GeminiChatMessage): boolean {
   if (msg.role !== 'model') return false;
@@ -141,29 +141,52 @@ export function isMessageTestable(msg: GeminiChatMessage): boolean {
     return false;
   }
   
-  // Exclude default intro greeting
+  // Exclude default intro greeting and welcome messages
   if (msg.id === 'welcome_ai_msg' || text.includes('Namaste! I am your AI NCERT Study Mentor')) {
     return false;
   }
 
-  // Explicitly marked by AI model
-  if (msg.isTestable === true) return true;
+  // If the message was explicitly flagged as non-testable by the model, strictly respect it
+  if (msg.isTestable === false) {
+    return false;
+  }
+
+  // Strict check: if the message is too short (< 180 chars), it does not have a complete concept suitable for a quiz
+  if (text.length < 180) {
+    return false;
+  }
 
   // Pure conversational greetings or pleasantries
-  const isPureGreeting = /^(hi|hello|hey|namaste|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you)[\s!.]*$/i.test(text);
-  if (isPureGreeting) return false;
+  const isGreeting = /^(hi|hello|hey|namaste|welcome|good\s+(morning|afternoon|evening)|sure|you'?re\s+welcome|no\s+problem|thanks|thank\s+you|glad\s+to\s+help|of\s+course)[\s!.,]/i.test(text);
+  if (isGreeting && text.length < 280) return false;
 
-  // Short clarifying questions
-  const isClarification = text.length < 130 && /\?$/.test(text) && /(which|what)\s+(grade|class|subject|chapter|topic)/i.test(text);
+  // Clarifying questions from tutor asking student for details rather than explaining syllabus
+  const isClarification = /\?[\s]*$/.test(text) && /(which|what|tell me|let me know|would you like|do you want)\s+(grade|class|subject|chapter|topic|concept|doubt|help)/i.test(text);
   if (isClarification) return false;
 
-  // Academic structure markers (definitions, formulas, laws, bullet points, numbers)
-  const hasAcademicMarkers = text.includes('**') || text.includes('\n-') || text.includes('\n1.') || text.includes('=') || text.includes('•') || text.includes('formula') || text.includes('law');
-  if (text.length > 50 && (hasAcademicMarkers || text.length > 70)) {
+  // General study advice without testable syllabus facts
+  const isGenericAdvice = /(make a timetable|sleep 8 hours|stay hydrated|take short breaks|study routine|relax before exam|pomodoro|time management)/i.test(text) && 
+    !/(\b(formula|equation|reaction|theorem|law|cell|photosynthesis|gravity|current|voltage|force|osmosis)\b)/i.test(text);
+  if (isGenericAdvice) return false;
+
+  // Must contain substantive academic subject keywords or mathematical / chemical notation
+  const hasAcademicSubjectContent = 
+    /(\b(formula|equation|theorem|definition|law|principle|property|reaction|molecule|cell|organism|gravity|force|velocity|acceleration|momentum|energy|work|power|current|voltage|resistance|acid|base|salt|photosynthesis|respiration|circulation|reproduction|chromosome|dna|rna|heredity|evolution|fraction|decimal|polynomial|quadratic|triangle|circle|geometry|trigonometry|calculus|probability|statistics|democracy|constitution|dynasty|revolt|monsoon|climate|latitude|longitude|resource|sector|gdp|molarity|atomic|valency|stoichiometry|osmosis|mitosis|meiosis|newton|joule|pascal|coulomb|ohm|amphere|faraday|mendel|dalton|bohr|lavoisier)\b|\\frac|\\times|\\ce|\\alpha|\\beta|\\gamma|\\theta|\$|\bstate\s+and\s+explain\b|\bstep\s*1\b|\bdefinition\s*:|\bconcept\s*:)/i.test(text);
+
+  const hasStructuredBreakdown = (text.includes('\n- ') || text.includes('\n* ') || text.includes('\n1. ') || text.includes('\n2. ')) && text.length >= 220;
+
+  // Academic concept must be verified
+  if (!hasAcademicSubjectContent && !hasStructuredBreakdown) {
+    return false;
+  }
+
+  // If marked explicitly as testable by the model AND passed all above criteria
+  if (msg.isTestable === true) {
     return true;
   }
 
-  return Boolean(msg.isTestable);
+  // Fallback heuristic
+  return (hasAcademicSubjectContent || hasStructuredBreakdown) && text.length >= 200;
 }
 
 /**
@@ -215,16 +238,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [selectedPeerForP2P, setSelectedPeerForP2P] = useState<UserProfile | null>(externalPeerUser || null);
   const [adminAllP2PMode, setAdminAllP2PMode] = useState<boolean>(false);
   const [p2pConversations, setP2PConversations] = useState<P2PConversation[]>([]);
-  const [activeScholars, setActiveScholars] = useState<UserProfile[]>([]);
   
   // Search scholars for P2P start
   const [scholarSearchQuery, setScholarSearchQuery] = useState('');
   const [searchedScholars, setSearchedScholars] = useState<UserProfile[]>([]);
   const [isSearchingScholars, setIsSearchingScholars] = useState(false);
 
-  // Floating Quiz AI state
-  const [isQuizAiFloatingOpen, setIsQuizAiFloatingOpen] = useState(false);
-  const [isQuizAiMinimized, setIsQuizAiMinimized] = useState(false);
+  // Ref for full-screen Quiz AI scroll container
+  const aiChatScrollContainerRef = useRef<HTMLDivElement>(null);
 
   // ---------------- GEMINI AI CHAT STATE (FOR FLOATING QUIZ AI) ----------------
   const [geminiMessages, setGeminiMessages] = useState<GeminiChatMessage[]>(() => {
@@ -330,14 +351,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [user?.uid, isAdmin, adminAllP2PMode]);
 
-  // Fetch recent active scholars
-  useEffect(() => {
-    if (!user?.uid) return;
-    getRecentActiveScholars(user.uid, 10).then((scholars) => {
-      setActiveScholars(scholars);
-    }).catch(console.warn);
-  }, [user?.uid]);
-
   // Debounced search for scholars
   useEffect(() => {
     if (!scholarSearchQuery.trim() || !user?.uid) {
@@ -368,11 +381,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [publicMessages, activeTab]);
 
+  // Auto-scroll full-screen Quiz AI internally without causing window scroll anomalies
   useEffect(() => {
-    if (activeTab === 'quiz_ai' || (isQuizAiFloatingOpen && !isQuizAiMinimized)) {
-      geminiMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'quiz_ai' && aiChatScrollContainerRef.current) {
+      aiChatScrollContainerRef.current.scrollTop = aiChatScrollContainerRef.current.scrollHeight;
     }
-  }, [geminiMessages, isGeneratingAi, activeTab, isQuizAiFloatingOpen, isQuizAiMinimized]);
+  }, [geminiMessages, isGeneratingAi, activeTab]);
+
+  // Ensure window scroll is always at top when entering Quiz AI full screen
+  useEffect(() => {
+    if (activeTab === 'quiz_ai') {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      document.body.scrollTop = 0;
+      document.documentElement.scrollTop = 0;
+      if (aiChatScrollContainerRef.current) {
+        aiChatScrollContainerRef.current.scrollTop = aiChatScrollContainerRef.current.scrollHeight;
+      }
+    }
+  }, [activeTab]);
 
   // Start P2P with any author
   const handleStartP2PWithPeer = (peerUser: UserProfile | P2PParticipant) => {
@@ -730,54 +756,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
           {/* Directory Content Area */}
           <main className="flex-1 p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-6 pb-24">
             
-            {/* ===================== BOX 0: QUIZ AI STUDY MENTOR (FULL-SCREEN AI TUTOR) ===================== */}
-            <section className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                  <Bot className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>NCERT AI Study Mentor</span>
-                </h3>
-                <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  24/7 AI Doubt Solver
-                </span>
-              </div>
-
-              <div
-                onClick={() => setActiveTab('quiz_ai')}
-                className="group relative p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-[#0d2818] via-[#10241b] to-[#12222a] border border-emerald-500/40 hover:border-emerald-400/80 transition-all cursor-pointer shadow-xl hover:shadow-2xl hover:shadow-emerald-500/15 space-y-4"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 font-black shrink-0 shadow-lg group-hover:scale-105 transition-transform">
-                      <Bot className="w-6 h-6 text-slate-950" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-base sm:text-lg font-bold text-white group-hover:text-emerald-300 transition-colors">
-                          Quiz AI Study Mentor
-                        </h4>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
-                          Full Screen & Test Mode
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 mt-0.5">
-                        Ask any academic doubt across Classes 1–12, get step-by-step solutions, and test yourself on any concept with one tap.
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs flex items-center gap-1.5 shrink-0 shadow-md group-hover:bg-emerald-400 transition-colors self-start sm:self-center"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Open Full Screen AI</span>
-                  </button>
-                </div>
-              </div>
-            </section>
-
             {/* ===================== BOX 1: PUBLIC CHAT BOX ===================== */}
             <section className="space-y-2.5">
               <div className="flex items-center justify-between">
@@ -956,44 +934,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 )}
               </div>
 
-              {/* Active Scholars Avatars Bar */}
-              {activeScholars.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] text-slate-400 font-semibold">Active Study Scholars:</span>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                    {activeScholars.map((scholar) => (
-                      <button
-                        key={scholar.uid}
-                        onClick={() => handleStartP2PWithPeer(scholar)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#111b21] hover:bg-[#202c33] border border-[#2a3942] hover:border-emerald-500/40 text-left transition-all shrink-0 cursor-pointer"
-                        title={`Message @${scholar.username || 'scholar'}`}
-                      >
-                        <div className="relative shrink-0">
-                          {scholar.photoURL ? (
-                            <img src={scholar.photoURL} alt="" className="w-6 h-6 rounded-full object-cover" />
-                          ) : (
-                            <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center">
-                              {scholar.displayName ? scholar.displayName[0].toUpperCase() : 'S'}
-                            </div>
-                          )}
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 absolute -bottom-0.5 -right-0.5 border border-[#111b21]" />
-                        </div>
-                        <span className="text-xs font-semibold text-white max-w-[100px] truncate">
-                          {scholar.displayName || scholar.username}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* List of P2P Chats as Boxes / Cards */}
               {p2pConversations.length === 0 ? (
                 <div className="p-8 text-center rounded-2xl bg-[#111b21] border border-[#2a3942] text-slate-400 space-y-2">
                   <MessageSquare className="w-8 h-8 text-slate-600 mx-auto" />
                   <h4 className="text-sm font-bold text-white">No Direct Chats Yet</h4>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Search for a scholar above or tap any of the active scholars to start your first 1-on-1 private study conversation!
+                    Search for a scholar by @username or name above to start your first 1-on-1 private study conversation!
                   </p>
                 </div>
               ) : (
@@ -1042,7 +989,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
                                 {peer?.displayName ? peer.displayName[0].toUpperCase() : 'S'}
                               </div>
                             )}
-                            <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#111b21] absolute bottom-0 right-0" />
                           </div>
 
                           <div className="min-w-0">
@@ -1455,8 +1401,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       {activeTab === 'quiz_ai' && (
         <div className="flex-1 min-h-0 flex flex-col bg-[#0b141a]">
           {/* Header */}
-          <header className="h-16 px-4 sm:px-6 bg-[#202c33] border-b border-[#2a3942] flex items-center justify-between gap-3 shrink-0 shadow-md">
-            <div className="flex items-center gap-3 min-w-0">
+          <header className="h-16 px-3 sm:px-6 bg-[#202c33] border-b border-[#2a3942] flex items-center justify-between gap-2 sm:gap-3 shrink-0 shadow-md">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button
                 type="button"
                 onClick={() => setActiveTab('directory')}
@@ -1469,24 +1415,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 <Bot className="w-5 h-5 text-slate-950" />
               </div>
               <div className="flex flex-col min-w-0">
-                <h2 className="font-bold text-base sm:text-lg text-white truncate flex items-center gap-2">
+                <h2 className="font-bold text-sm sm:text-base text-white truncate flex items-center gap-1.5 sm:gap-2">
                   <span>Quiz AI Study Mentor</span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 </h2>
-                <p className="text-xs text-[#8696a0] truncate flex items-center gap-2">
+                <p className="text-[11px] sm:text-xs text-[#8696a0] truncate flex items-center gap-1.5 sm:gap-2">
                   <span className="text-emerald-400 font-mono">24/7 NCERT Doubt Solver</span>
                   <span className="hidden sm:inline">•</span>
-                  <span className="hidden sm:inline">Classes 1–12 NCF-SE 2026-27</span>
+                  <span className="hidden sm:inline">Classes 1–12 NCF-SE</span>
                 </p>
               </div>
             </div>
 
             {/* Selectors & Actions */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <select
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="bg-[#111b21] text-xs font-semibold text-emerald-300 border border-[#2a3942] rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer max-w-[130px] hidden sm:block truncate"
+                className="bg-[#111b21] text-xs font-semibold text-emerald-300 border border-[#2a3942] rounded-xl px-2 py-1.5 sm:px-3 sm:py-1.5 focus:outline-none cursor-pointer max-w-[100px] sm:max-w-[130px] truncate"
                 title="Select Target Class"
               >
                 {CLASS_OPTIONS.map((cls) => (
@@ -1499,7 +1445,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <select
                 value={selectedSubject}
                 onChange={(e) => setSelectedSubject(e.target.value)}
-                className="bg-[#111b21] text-xs font-semibold text-emerald-300 border border-[#2a3942] rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer max-w-[120px] truncate"
+                className="bg-[#111b21] text-xs font-semibold text-emerald-300 border border-[#2a3942] rounded-xl px-2 py-1.5 sm:px-3 sm:py-1.5 focus:outline-none cursor-pointer max-w-[95px] sm:max-w-[120px] truncate"
                 title="Select Subject Focus"
               >
                 {SUBJECT_OPTIONS.map((sub) => (
@@ -1512,7 +1458,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <button
                 type="button"
                 onClick={handleResetAiChat}
-                className="p-2 rounded-xl bg-[#111b21] hover:bg-[#374248] text-slate-400 hover:text-white border border-[#2a3942] transition-colors cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-xl bg-[#111b21] hover:bg-[#374248] text-slate-400 hover:text-white border border-[#2a3942] transition-colors cursor-pointer"
                 title="Reset conversation"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -1521,89 +1467,98 @@ export const ChatView: React.FC<ChatViewProps> = ({
           </header>
 
           {/* Quick Suggestions Chips */}
-          <div className="p-2.5 bg-[#182229] border-b border-[#2a3942] flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0 px-4 sm:px-6">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Quick Doubts:</span>
-            </span>
-            {QUICK_AI_SUGGESTIONS.map((sug) => (
-              <button
-                key={sug.label}
-                type="button"
-                onClick={() => handleSendGemini(sug.prompt)}
-                disabled={isGeneratingAi}
-                className="px-3 py-1 rounded-xl bg-[#202c33] hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 text-xs font-medium border border-[#2a3942] whitespace-nowrap shrink-0 transition-colors cursor-pointer active:scale-95"
-              >
-                {sug.label}
-              </button>
-            ))}
+          <div className="p-2 sm:p-2.5 bg-[#182229] border-b border-[#2a3942] shrink-0">
+            <div className="max-w-4xl mx-auto flex items-center gap-2 overflow-x-auto custom-scrollbar px-2 sm:px-0">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Quick Doubts:</span>
+              </span>
+              {QUICK_AI_SUGGESTIONS.map((sug) => (
+                <button
+                  key={sug.label}
+                  type="button"
+                  onClick={() => handleSendGemini(sug.prompt)}
+                  disabled={isGeneratingAi}
+                  className="px-3 py-1 rounded-xl bg-[#202c33] hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 text-xs font-medium border border-[#2a3942] whitespace-nowrap shrink-0 transition-colors cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  {sug.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Message Stream */}
-          <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar bg-[#0b141a] max-w-4xl w-full mx-auto">
-            {geminiMessages.map((msg) => {
-              const isAi = msg.role === 'model';
-              const testable = isMessageTestable(msg);
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col ${isAi ? 'items-start' : 'items-end'} space-y-1.5`}
-                >
+          <main
+            ref={aiChatScrollContainerRef}
+            className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 custom-scrollbar bg-[#0b141a] w-full"
+          >
+            <div className="max-w-4xl w-full mx-auto space-y-4">
+              {geminiMessages.map((msg) => {
+                const isAi = msg.role === 'model';
+                const testable = isMessageTestable(msg);
+                return (
                   <div
-                    className={`max-w-[88%] sm:max-w-[80%] p-4 rounded-2xl text-sm select-text shadow-lg ${
-                      isAi
-                        ? 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
-                        : 'bg-[#005c4b] text-white rounded-tr-none'
-                    }`}
+                    key={msg.id}
+                    className={`flex flex-col ${isAi ? 'items-start' : 'items-end'} space-y-1.5`}
                   >
-                    <MathText content={msg.content} />
-
-                    {isAi && (
-                      <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-2.5 border-t border-[#2a3942]/60 text-xs text-slate-400">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-slate-400 text-[11px]">NCERT Syllabus</span>
-                          {testable && (
-                            <button
-                              type="button"
-                              onClick={() => handleTestMeOnThis(msg)}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/50 hover:border-emerald-400 transition-all duration-200 cursor-pointer shadow-md active:scale-95 group"
-                              title="Test yourself with practice questions on this exact topic (redirects to Quiz Screen)"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-emerald-400 group-hover:text-slate-950 transition-colors" />
-                              <span>Test me on this</span>
-                            </button>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyText(msg.id, msg.content)}
-                          className="flex items-center gap-1 text-emerald-400 hover:underline cursor-pointer text-xs"
-                        >
-                          {copiedMessageId === msg.id ? (
-                            <>
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Copied</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy Answer</span>
-                            </>
-                          )}
-                        </button>
+                    <div
+                      className={`max-w-[92%] sm:max-w-[85%] p-4 rounded-2xl text-sm select-text shadow-lg ${
+                        isAi
+                          ? 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
+                          : 'bg-[#005c4b] text-white rounded-tr-none'
+                      }`}
+                    >
+                      <div className="overflow-x-auto break-words">
+                        <MathText content={msg.content} />
                       </div>
-                    )}
+
+                      {isAi && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-2.5 border-t border-[#2a3942]/60 text-xs text-slate-400">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-slate-400 text-[11px]">NCERT Syllabus</span>
+                            {testable && (
+                              <button
+                                type="button"
+                                onClick={() => handleTestMeOnThis(msg)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/50 hover:border-emerald-400 transition-all duration-200 cursor-pointer shadow-md active:scale-95 group shrink-0"
+                                title="Redirect to Quiz Screen and practice questions on this topic"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-400 group-hover:text-slate-950 transition-colors" />
+                                <span>Test me on this</span>
+                              </button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(msg.id, msg.content)}
+                            className="flex items-center gap-1 text-emerald-400 hover:underline cursor-pointer text-xs shrink-0"
+                          >
+                            {copiedMessageId === msg.id ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy Answer</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                );
+              })}
+              {isGeneratingAi && (
+                <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-[#202c33] text-emerald-400 text-xs sm:text-sm w-fit border border-[#2a3942] animate-pulse shadow-md">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span>Quiz AI is synthesizing NCERT rationale & concept breakdown...</span>
                 </div>
-              );
-            })}
-            {isGeneratingAi && (
-              <div className="flex items-center gap-2.5 p-3.5 rounded-2xl bg-[#202c33] text-emerald-400 text-xs sm:text-sm w-fit border border-[#2a3942] animate-pulse shadow-md">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Quiz AI is synthesizing NCERT rationale & concept breakdown...</span>
-              </div>
-            )}
-            <div ref={geminiMessagesEndRef} />
+              )}
+              <div ref={geminiMessagesEndRef} />
+            </div>
           </main>
 
           {/* Input Bar */}
@@ -1636,211 +1591,25 @@ export const ChatView: React.FC<ChatViewProps> = ({
         </div>
       )}
 
-      {/* ===================== FLOATING QUIZ AI BOX (BOTTOM RIGHT) ===================== */}
-      {/* Accessible on directory screen */}
+      {/* ===================== FLOATING QUIZ AI BUTTON ===================== */}
+      {/* Accessible on directory screen: clicking directly opens Quiz AI in full screen */}
       {activeTab === 'directory' && (
-        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end">
-        
-        {/* Expanded Floating Box Window */}
-        {isQuizAiFloatingOpen && !isQuizAiMinimized && (
-          <div className="w-[370px] sm:w-[420px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[78vh] rounded-2xl bg-[#111b21] border border-[#00a884]/60 shadow-2xl shadow-emerald-500/20 flex flex-col overflow-hidden mb-3 animate-in slide-in-from-bottom-5 duration-200">
-            
-            {/* Floating Box Header */}
-            <div className="p-3 bg-[#202c33] border-b border-[#2a3942] flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 font-black shrink-0 shadow-sm">
-                  <Bot className="w-4 h-4 text-slate-950" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                    <span>Quiz AI Study Mentor</span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  </h4>
-                  <span className="text-[10px] text-emerald-400 font-mono truncate block">
-                    24/7 NCERT Doubt Solver
-                  </span>
-                </div>
-              </div>
-
-              {/* Class & Subject Selectors & Window Controls */}
-              <div className="flex items-center gap-1 shrink-0">
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="bg-[#111b21] text-[11px] font-semibold text-emerald-300 border border-[#2a3942] rounded-lg px-2 py-1 focus:outline-none cursor-pointer max-w-[90px] truncate"
-                >
-                  {SUBJECT_OPTIONS.map((sub) => (
-                    <option key={sub} value={sub} className="bg-[#202c33] text-white">
-                      {sub}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  onClick={handleResetAiChat}
-                  className="p-1 rounded-lg hover:bg-[#374248] text-slate-400 hover:text-white transition-colors"
-                  title="Clear chat"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsQuizAiFloatingOpen(false);
-                    setActiveTab('quiz_ai');
-                  }}
-                  className="p-1 rounded-lg hover:bg-[#374248] text-slate-400 hover:text-emerald-400 transition-colors"
-                  title="Expand to Full Screen"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsQuizAiMinimized(true)}
-                  className="p-1 rounded-lg hover:bg-[#374248] text-slate-400 hover:text-white transition-colors"
-                  title="Minimize"
-                >
-                  <Minimize2 className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsQuizAiFloatingOpen(false)}
-                  className="p-1 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors"
-                  title="Close Quiz AI"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Suggestions Chips */}
-            <div className="p-2 bg-[#182229] border-b border-[#2a3942] flex items-center gap-1.5 overflow-x-auto custom-scrollbar shrink-0">
-              {QUICK_AI_SUGGESTIONS.map((sug) => (
-                <button
-                  key={sug.label}
-                  type="button"
-                  onClick={() => handleSendGemini(sug.prompt)}
-                  disabled={isGeneratingAi}
-                  className="px-2 py-0.5 rounded-lg bg-[#202c33] hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 text-[10px] font-medium border border-[#2a3942] whitespace-nowrap shrink-0 transition-colors cursor-pointer"
-                >
-                  {sug.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Message Stream */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3 custom-scrollbar bg-[#0b141a]">
-              {geminiMessages.map((msg) => {
-                const isAi = msg.role === 'model';
-                const testable = isMessageTestable(msg);
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${isAi ? 'items-start' : 'items-end'} space-y-1`}
-                  >
-                    <div
-                      className={`max-w-[90%] p-3 rounded-2xl text-xs select-text shadow ${
-                        isAi
-                          ? 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
-                          : 'bg-[#005c4b] text-white rounded-tr-none'
-                      }`}
-                    >
-                      <MathText content={msg.content} />
-
-                      {isAi && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-1.5 border-t border-black/10 text-[10px] text-slate-400">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono">NCERT Syllabus</span>
-                            {testable && (
-                              <button
-                                type="button"
-                                onClick={() => handleTestMeOnThis(msg)}
-                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 hover:border-emerald-400 transition-all cursor-pointer shadow-sm active:scale-95 group"
-                                title="Redirect to Quiz Screen and test your understanding with practice questions"
-                              >
-                                <Sparkles className="w-3 h-3 text-emerald-400 group-hover:text-slate-950 transition-colors" />
-                                <span>Test me on this</span>
-                              </button>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyText(msg.id, msg.content)}
-                            className="flex items-center gap-1 text-emerald-400 hover:underline cursor-pointer"
-                          >
-                            {copiedMessageId === msg.id ? (
-                              <>
-                                <Check className="w-3 h-3 text-emerald-400" />
-                                <span>Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3 h-3" />
-                                <span>Copy Answer</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {isGeneratingAi && (
-                <div className="flex items-center gap-2 p-3 rounded-2xl bg-[#202c33] text-emerald-400 text-xs w-fit border border-[#2a3942] animate-pulse">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Quiz AI is synthesizing NCERT rationale...</span>
-                </div>
-              )}
-              <div ref={geminiMessagesEndRef} />
-            </div>
-
-            {/* Input Bar */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendGemini();
-              }}
-              className="p-2.5 bg-[#202c33] border-t border-[#2a3942] flex items-center gap-2 shrink-0"
-            >
-              <input
-                type="text"
-                value={geminiInput}
-                onChange={(e) => setGeminiInput(e.target.value)}
-                placeholder="Ask Quiz AI any doubt, formula, or concept..."
-                disabled={isGeneratingAi}
-                className="flex-1 px-3 py-2 bg-[#111b21] border border-[#2a3942] rounded-xl text-xs text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500/60"
-              />
-              <button
-                type="submit"
-                disabled={!geminiInput.trim() || isGeneratingAi}
-                className="p-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-all cursor-pointer disabled:opacity-40"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
-
-          </div>
-        )}
-
-        {/* Floating Toggle Button (Always accessible on right bottom) */}
-        {(!isQuizAiFloatingOpen || isQuizAiMinimized) && (
+        <div className="fixed bottom-5 right-5 sm:bottom-6 sm:right-6 z-40">
           <button
             type="button"
             onClick={() => {
-              setIsQuizAiFloatingOpen(true);
-              setIsQuizAiMinimized(false);
+              if (!isAdminUnlocked && maintenanceConfig?.features?.ai_chat?.isUnderMaintenance) {
+                onFeatureBlocked?.('ai_chat');
+                return;
+              }
+              setActiveTab('quiz_ai');
             }}
-            className="group flex items-center gap-2.5 px-4 py-3 rounded-full bg-[#111b21] hover:bg-[#182229] border-2 border-emerald-500 text-white shadow-2xl shadow-emerald-500/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
-            title="Open Quiz AI Doubt Solver"
+            className="group flex items-center gap-2.5 px-4 py-3 rounded-full bg-[#111b21] hover:bg-[#1a2730] border-2 border-emerald-500 text-white shadow-2xl shadow-emerald-500/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            title="Open Quiz AI Doubt Solver in Full Screen"
           >
             <div className="relative">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 shadow">
-                <Bot className="w-4 h-4 text-slate-950" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#00a884] to-[#25d366] flex items-center justify-center text-slate-950 shadow">
+                <Bot className="w-4.5 h-4.5 text-slate-950" />
               </div>
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-[#111b21] absolute -top-0.5 -right-0.5 animate-pulse" />
             </div>
@@ -1850,14 +1619,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 Quiz AI
               </span>
               <span className="text-[10px] text-emerald-400 font-mono -mt-0.5">
-                Doubt Solver
+                Doubt Solver &bull; Full Screen
               </span>
             </div>
 
             <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-bounce ml-0.5" />
           </button>
-        )}
-
         </div>
       )}
 

@@ -68,6 +68,7 @@ export interface UserProfile {
   displayName: string | null;
   username?: string;
   usernameLower?: string;
+  hasCustomUsername?: boolean;
   photoURL: string | null;
   createdAt?: string;
   lastLoginAt?: string;

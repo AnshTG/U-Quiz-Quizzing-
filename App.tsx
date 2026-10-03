@@ -334,6 +334,10 @@ export default function App() {
         const list = await fetchUserSavedQuizzes(profile.uid);
         setSavedQuizzesCount(list.length);
       }
+      // If user does not have a custom username yet, prompt them to pick one
+      if (!profile.hasCustomUsername) {
+        setIsEditUsernameModalOpen(true);
+      }
     } catch (err: any) {
       if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
         return;

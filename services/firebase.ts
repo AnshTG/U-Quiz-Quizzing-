@@ -312,6 +312,7 @@ export const updateUserCustomUsername = async (
     batch.set(userRef, {
       username: normalizedNew,
       usernameLower: normalizedNew,
+      hasCustomUsername: true,
       updatedAt: new Date().toISOString()
     }, { merge: true });
 
